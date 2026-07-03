@@ -215,20 +215,12 @@ Bun.serve({
           
           const googleBody = transformToGoogleBody(openaiBody, effectiveProjectId, useCliPool, "", sessionId, aggressive); 
 
-          // If we retry with a different account, strip all thoughtSignatures
-          // because they are cryptographically tied to the original account/project.
+          // Keep thoughtSignatures intact even when retrying with different accounts
+          // as they are globally validated by the model and stripping them causes 400 errors.
           if (attempts === 1) {
             originAccountEmail = account.email;
           } else if (originAccountEmail && originAccountEmail !== account.email) {
-            const reqContents = googleBody.request?.contents || [];
-            for (const c of reqContents) {
-              for (const p of (c.parts || [])) {
-                if (p.thoughtSignature) {
-                  delete p.thoughtSignature;
-                }
-              }
-            }
-            console.log(`[Signature] Stripped thoughtSignatures for retry with different account (${account.email})`);
+            console.log(`[Signature] Retrying with different account (${account.email}), keeping signatures intact`);
           }
 
           const isClaudeModelTarget = googleBody.model.toLowerCase().includes("claude");

@@ -348,7 +348,7 @@ export function transformToGoogleBody(
     }
 
     if (parts.length === 0) {
-        parts.push({ text: " " });
+        parts.push({ text: "." });
     }
 
     return {
@@ -374,9 +374,9 @@ export function transformToGoogleBody(
       if (wouldMixTypes) {
         // Insert a minimal model placeholder to break the consecutive same-role sequence
         if (entry.role === "user") {
-          contents.push({ role: "model", parts: [{ text: " " }] });
+          contents.push({ role: "model", parts: [{ text: "." }] });
         } else {
-          contents.push({ role: "user", parts: [{ text: " " }] });
+          contents.push({ role: "user", parts: [{ text: "." }] });
         }
         contents.push(entry);
       } else {
