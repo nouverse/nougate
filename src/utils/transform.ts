@@ -230,37 +230,87 @@ export function transformToGoogleBody(
     }
   }
 
+  // Determine if thinking is enabled (Gemini 3 Pro models require thought_signature on ALL functionCall parts)
+  const isThinkingEnabled = (rawModel.includes("-thinking") || (rawModel.includes("gemini-3") && rawModel.includes("pro")));
+
+  // Build a set of tool_call_ids that have cached signatures
+  // so we can decide which function calls to keep as native vs convert to text
+  const unsignedCallIds = new Set<string>();
+  if (isThinkingEnabled) {
+    for (const msg of otherMessages) {
+      if (msg.tool_calls) {
+        for (const tc of msg.tool_calls) {
+          let cleanId = tc.id || "";
+          if (cleanId.startsWith("sig:")) {
+            const idParts = cleanId.split(":");
+            if (idParts.length >= 3) cleanId = idParts.slice(2).join(":");
+          }
+          const sig = getSignatureByCallId(cleanId);
+          if (!sig) {
+            unsignedCallIds.add(cleanId);
+            unsignedCallIds.add(tc.id || "");
+          }
+        }
+      }
+    }
+    if (unsignedCallIds.size > 0) {
+      console.log(`[Signature] Found ${unsignedCallIds.size} unsigned function calls in history, will convert to text summaries`);
+    }
+  }
+
+  // Build a lookup: tool_call_id → tool response content (for text summarization of unsigned calls)
+  const toolResponseMap = new Map<string, { name: string, content: string }>();
+  if (unsignedCallIds.size > 0) {
+    for (const msg of otherMessages) {
+      if (msg.role === "tool" && msg.tool_call_id) {
+        const funcName = msg.name || toolCallNameMap.get(msg.tool_call_id) || "function_result";
+        const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content || {});
+        // Truncate very large tool responses to keep context manageable
+        const truncated = content.length > 500 ? content.substring(0, 500) + "... [truncated]" : content;
+        toolResponseMap.set(msg.tool_call_id, { name: funcName, content: truncated });
+      }
+    }
+  }
+
   const rawContents = otherMessages.map((msg: any, msgIndex: number) => {
     const parts = [];
     const isInCurrentTurn = msgIndex >= currentTurnStartIndex;
     
     if (msg.role === "tool") {
-      let responseObj;
-      try {
-        responseObj = typeof msg.content === 'string' ? JSON.parse(msg.content) : msg.content;
-      } catch {
-        responseObj = msg.content;
+      // Check if this tool response belongs to an unsigned function call
+      // that we've already converted to a text summary in the assistant message
+      if (unsignedCallIds.size > 0 && unsignedCallIds.has(msg.tool_call_id) && !isInCurrentTurn) {
+        // Skip — the tool response was already inlined as text in the assistant message
+        // We'll emit a placeholder text part instead
+        parts.push({ text: "." });
+      } else {
+        let responseObj;
+        try {
+          responseObj = typeof msg.content === 'string' ? JSON.parse(msg.content) : msg.content;
+        } catch {
+          responseObj = msg.content;
+        }
+
+        if (typeof responseObj !== "object" || responseObj === null || Array.isArray(responseObj)) {
+          responseObj = { result: responseObj };
+        }
+
+        // Resolve function name: try msg.name first, then look up from tool_call_id
+        const funcName = msg.name || toolCallNameMap.get(msg.tool_call_id) || "function_result";
+
+        const funcResp: any = {
+          name: funcName,
+          response: responseObj
+        };
+        
+        if (googleModel.includes("claude") || googleModel.includes("gemini-3")) {
+            funcResp.id = msg.tool_call_id;
+        }
+
+        parts.push({
+          functionResponse: funcResp
+        });
       }
-
-      if (typeof responseObj !== "object" || responseObj === null || Array.isArray(responseObj)) {
-        responseObj = { result: responseObj };
-      }
-
-      // Resolve function name: try msg.name first, then look up from tool_call_id
-      const funcName = msg.name || toolCallNameMap.get(msg.tool_call_id) || "function_result";
-
-      const funcResp: any = {
-        name: funcName,
-        response: responseObj
-      };
-      
-      if (googleModel.includes("claude") || googleModel.includes("gemini-3")) {
-          funcResp.id = msg.tool_call_id;
-      }
-
-      parts.push({
-        functionResponse: funcResp
-      });
     } else {
       // For previous turns: strip all thinking content and signatures entirely.
       // For current turn: include thinking content with signatures from cache.
@@ -304,6 +354,7 @@ export function transformToGoogleBody(
 
       if (msg.tool_calls) {
         let isFirstFuncCallInStep = true;
+
         for (const tc of msg.tool_calls) {
           if (tc.function) {
             let callId = tc.id || "";
@@ -314,6 +365,34 @@ export function transformToGoogleBody(
               if (idParts.length >= 3) {
                 cleanId = idParts.slice(2).join(":");
               }
+            }
+
+            // For previous-turn function calls without signatures:
+            // Convert to text summary instead of native functionCall to avoid
+            // "Function call is missing a thought_signature" 400 errors from Gemini 3
+            if (!isInCurrentTurn && unsignedCallIds.has(cleanId)) {
+              let argsStr: string;
+              try {
+                const args = typeof tc.function.arguments === 'string' 
+                  ? JSON.parse(tc.function.arguments || "{}") 
+                  : tc.function.arguments;
+                argsStr = JSON.stringify(args);
+              } catch {
+                argsStr = tc.function.arguments || "{}";
+              }
+              // Truncate long args
+              if (argsStr.length > 300) argsStr = argsStr.substring(0, 300) + "...";
+
+              let summary = `[Tool Call: ${tc.function.name}(${argsStr})]`;
+              
+              // Inline the tool response if available
+              const resp = toolResponseMap.get(callId) || toolResponseMap.get(cleanId);
+              if (resp) {
+                summary += `\n[Tool Result: ${resp.content}]`;
+              }
+
+              parts.push({ text: summary });
+              continue;
             }
 
             const funcCall: any = {
@@ -329,10 +408,8 @@ export function transformToGoogleBody(
               functionCall: funcCall
             };
             
-            // Only attach signatures for function calls in the CURRENT turn.
-            // Per Google docs: only the first functionCall part in each step needs a signature.
-            // For previous turns: NEVER attach signatures (Google doesn't validate them,
-            // and attaching stale/invalid ones causes "Thought signature is not valid" errors).
+            // Attach signatures for function calls in the CURRENT turn.
+            // Per Google docs: the first functionCall part in each step needs a signature.
             if (isInCurrentTurn && isFirstFuncCallInStep) {
               const sig = getSignatureByCallId(cleanId);
               if (sig) {

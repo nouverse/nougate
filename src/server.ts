@@ -352,6 +352,24 @@ Bun.serve({
                 }
 
 
+               // Thought signature errors are structural — retrying with a different account won't fix them.
+               // The transform layer should have already converted unsigned function calls to text summaries,
+               // but if we still hit this, return a clear error immediately instead of burning all retries.
+               if (status === 400 && errText.includes("thought_signature")) {
+                  console.error(`[Signature] Fatal: thought_signature error persists after text summarization fallback. Breaking retry loop.`);
+                  await updateAccountUsage(account.email, false, openaiBody.model, useCliPool ? "cli" : "sandbox", clientId, status);
+                  return new Response(JSON.stringify({ 
+                      error: { 
+                        message: "This conversation contains function calls without thought signatures. Please start a new conversation or clear the conversation history to resolve this.", 
+                        type: "invalid_request_error", 
+                        code: "thought_signature_missing" 
+                      } 
+                  }), { 
+                      status: 400, 
+                      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "X-Antigravity-Attempts": attempts.toString() } 
+                  });
+               }
+
                if (status === 400 && (errText.toLowerCase().includes("tool schema") || errText.includes("Invalid JSON payload") || errText.toLowerCase().includes("function_declarations")) && !aggressive) {
                   console.log(`[Schema] Detected tool schema error for ${account.email}, retrying with aggressive cleaning...`);
                   aggressive = true;
