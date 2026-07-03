@@ -269,7 +269,7 @@ export function transformToGoogleBody(
         if (thoughtText) {
           const sig = getSignature(sessionId, thoughtText);
           if (sig) {
-            parts.push({ thought: true, text: thoughtText, thoughtSignature: sig });
+            parts.push({ thought: true, text: thoughtText, thoughtSignature: sig, thought_signature: sig });
           } else if (proxyConfig.features.keepThinking) {
             parts.push({ thought: true, text: thoughtText });
           }
@@ -337,6 +337,7 @@ export function transformToGoogleBody(
               const sig = getSignatureByCallId(cleanId);
               if (sig) {
                 funcPart.thoughtSignature = sig;
+                funcPart.thought_signature = sig;
               }
               isFirstFuncCallInStep = false;
             }
