@@ -22,16 +22,29 @@ Dokumen ini merangkum fitur-fitur inti dari [Antigravity-Manager](https://github
 | Tiered account sorting (Ultra/Pro/Free) | ❌ | ✅ | 🔴 High |
 | Model-level rate limiting | ❌ (account-level only) | ✅ (account + model level) | 🔴 High |
 | Rate limit tracker with exponential backoff | 🟡 Basic cooldown | ✅ (per-account failure counter + backoff) | 🔴 High |
-| Model routing / regex mapping | ❌ (hardcoded) | ✅ (dynamic, configurable) | 🟡 Medium |
+| **JSON Schema cleaning for Gemini** | ❌ | ✅ ($ref flatten, anyOf, constraint→desc) | 🔴 **High** |
+| **Smart retry delay parsing + grace retry** | ❌ | ✅ (recursive JSON parse + 1.5s grace window) | 🔴 **High** |
+| Model routing / wildcard mapping | ❌ (hardcoded) | ✅ (exact + wildcard + specificity scoring) | 🟡 Medium |
+| **Session fingerprinting** | 🟡 (x-client-id header) | ✅ (SHA256 of first user message) | 🟡 **Medium** |
+| **Client adapter system** | ❌ | ✅ (per-IDE behavior via User-Agent) | 🟡 **Medium** |
 | Background task silent downgrade | ❌ | ✅ (reroute ke Flash) | 🟡 Medium |
 | Tool result compression | ❌ | ✅ (browser snapshot, HTML cleanup) | 🟡 Medium |
 | Context purification (thinking strip) | 🟡 Basic | ✅ (soft/aggressive + token estimation) | 🟡 Medium |
+| **Multi-level context compression** | ❌ | ✅ (L1: tool trim, L2: thinking, L3: fork) | 🟡 **Medium** |
+| **Estimation calibrator** | ❌ | ✅ (self-learning token estimation) | 🟡 **Medium** |
+| **Global system prompt injection** | ❌ | ✅ (auto-inject to all requests) | 🟡 **Medium** |
+| **Thinking budget config** | ❌ | ✅ (Auto/Passthrough/Custom/Adaptive modes) | 🟡 **Medium** |
 | Request monitoring / usage logging | ❌ | ✅ (SQLite + real-time stats) | 🟡 Medium |
+| **Model specs from JSON** | ❌ | ✅ (per-model max_output_tokens, thinking_budget) | 🟡 **Medium** |
 | `/v1/models` endpoint | ❌ | ✅ | 🟢 Low |
 | `/v1/images/generations` (Imagen 3) | ❌ | ✅ | 🟢 Low |
 | API Key auth middleware (multi-token) | ❌ (single header) | ✅ (per-user tokens + whitelist/blacklist) | 🟢 Low |
 | IP filtering / security | ❌ | ✅ (whitelist/blacklist + access logs) | 🟢 Low |
 | Account warmup | ❌ | ✅ (pre-flight token validation) | 🟢 Low |
+| **Quota scheduler** | ❌ | ✅ (auto-scan 100% quota, trigger warmup) | 🟢 **Low** |
+| **Tool artifact store** | ❌ | ✅ (sidecar store for large tool outputs) | 🟢 **Low** |
+| **Error classifier** | ❌ | ✅ (categorize stream errors with i18n) | 🟢 **Low** |
+| **Debug payload logger** | ❌ | ✅ (dump req/res JSON to disk) | 🟢 **Low** |
 | Proxy pool (outbound HTTP proxy rotation) | ❌ | ✅ | 🟢 Low |
 | OAuth browser flow | ❌ | ✅ (callback handler) | 🟢 Low |
 
@@ -299,6 +312,106 @@ L167  pub fn should_rotate_account(status_code, strategy) -> bool
 
 ---
 
+### 2.5 🔴 JSON Schema Cleaning for Gemini
+
+**Mengapa penting:** Gemini API TIDAK mendukung banyak fitur JSON Schema standar yang tool/MCP declarations gunakan (`$ref`, `$defs`, `additionalProperties`, `anyOf`, `format`, `default`, dll.). Tanpa cleaning, tool calling akan sering gagal dengan error "Invalid schema" yang membingungkan.
+
+**Referensi kode:**
+
+| File (REF:) | Ukuran | Fungsi |
+|-------------|--------|--------|
+| `common/json_schema.rs` | 61KB, 1669 lines | Recursive JSON Schema cleaner |
+| `common/tool_adapter.rs` | 2.7KB, 96 lines | Tool adapter trait |
+| `common/tool_adapters/pencil.rs` | 5.5KB | MCP Pencil tool adapter |
+
+**Key methods & constants (json_schema.rs):**
+```
+--- Constants ---
+L8    const CONSTRAINT_FIELDS = [
+          ("minLength", "minLen"), ("maxLength", "maxLen"),
+          ("pattern", "pattern"), ("minimum", "min"),
+          ("maximum", "max"), ("format", "format"), ...
+      ]  — Fields stripped but preserved as description hints
+L34   const MAX_RECURSION_DEPTH: usize = 10
+
+--- Main entry points ---
+L44   pub fn clean_json_schema(value: &mut Value)
+      — Recursive cleaner:
+        1. Flatten $ref/$defs (resolve references inline)
+        2. Remove $schema, additionalProperties, format, default, uniqueItems
+        3. Simplify union types: ["string", "null"] → "string"
+        4. Simplify anyOf: anyOf[{type:string},{type:null}] → type:string
+        5. Lowercase type values (Gemini v1internal requirement)
+        6. Convert constraint fields (minLength, pattern, etc.) → description hints
+L79   pub fn clean_json_schema_for_tool(value, tool_name)
+      — Same as above but with tool-specific adapter pre/post processing
+L742  pub fn fix_tool_call_args(args: &mut Value, schema: &Value)
+      — Fix AI-generated tool call args to match schema (type coercion, etc.)
+```
+
+**Tool Adapter trait (tool_adapter.rs):**
+```
+L7    pub trait ToolAdapter: Send + Sync {
+          fn matches(&self, tool_name: &str) -> bool;
+          fn pre_process(&self, schema: &mut Value) -> Result<(), String>;
+          fn post_process(&self, schema: &mut Value) -> Result<(), String>;
+      }
+L45   pub fn append_hint_to_schema(schema, hint)
+      — Append hint text to schema description field
+```
+
+**Implementasi:**
+- Tambah `cleanJsonSchema(schema)` function di `transform.ts`
+- Handle: `$ref` flattening, `anyOf` simplification, constraint→description conversion
+- Strip: `$schema`, `additionalProperties`, `format`, `default`, `uniqueItems`
+- Apply sebelum tool declarations dikirim ke Google API
+- CRITICAL: Tanpa ini, MCP tools yang complex (Pencil, filesystem, dll.) akan gagal
+
+---
+
+### 2.6 🔴 Smart Retry Delay Parsing + Grace Retry
+
+**Mengapa penting:** Saat ini kita hanya parse header `Retry-After` yang sederhana. Antigravity-Manager melakukan **deep recursive parsing** dari error body untuk extract delay yang tepat, dan menambahkan "grace window" 1.5s.
+
+**Referensi kode:**
+
+| File (REF:) | Ukuran | Fungsi |
+|-------------|--------|--------|
+| `upstream/retry.rs` | 6KB, 192 lines | Smart retry delay parser |
+
+**Key methods & constants (retry.rs):**
+```
+--- Duration Parser ---
+L7    static DURATION_RE: Regex = r"([\d.]+)\s*(ms|s|m|h)"
+L34   pub fn parse_duration_ms(duration_str) -> Option<u64>
+      — Parse "1.5s", "200ms", "1h16m0.667s" → milliseconds
+
+--- Retry Delay Extraction ---
+L60   pub fn parse_retry_delay(error_text) -> Option<u64>
+      — 3-stage parsing:
+        1. Regex: "quota will reset after X" / "retry after X"
+        2. Structured JSON: recursive scan for retryDelay/quotaResetDelay keys
+        3. Google Duration object: {seconds: 1, nanos: 500000000}
+      — Adds 1500ms grace window to all parsed delays
+
+L128  fn parse_structured_duration_object(value) -> Option<u64>
+      — Parse Google's {"seconds": 1, "nanos": 0} format
+
+--- Grace Retry Decision ---
+L161  pub fn should_grace_retry(duration_ms) -> bool
+      — If delay ≤ 2000ms: retry IN-PLACE (don't rotate account)
+      — If delay > 2000ms: rotate to next account
+```
+
+**Implementasi:**
+- Tambah `parseRetryDelay(errorBody)` di `utils/`
+- Parse dari: regex patterns, recursive JSON, Google duration objects
+- Grace window: tambah 1.5s ke semua parsed delays
+- Grace retry: kalau delay ≤ 2s, sleep dan retry di akun yang sama (jangan rotasi)
+- Ini akan significantly reduce unnecessary account rotations
+
+---
+
 ## 3. Fitur yang Akan Diadopsi (Prioritas Medium)
 
 ### 3.1 🟡 Dynamic Model Routing
@@ -556,6 +669,236 @@ mappers/openai/collector.rs:                — Response token counting & aggreg
 
 ---
 
+### 3.6 🟡 Session Fingerprinting
+
+**Mengapa penting:** Saat ini kita generate session ID dari `x-client-id` header yang dikirim client. Antigravity-Manager generate **stable session fingerprint** dari SHA256 hash of the first user message, sehingga session tetap konsisten meskipun client tidak mengirim session ID.
+
+**Referensi kode:**
+
+| File (REF:) | Ukuran | Fungsi |
+|-------------|--------|--------|
+| `session_manager.rs` | 6.5KB, 172 lines | Session fingerprint generator |
+
+**Key methods (session_manager.rs):**
+```
+L7    pub struct SessionManager;
+L20   pub fn extract_session_id(request: &ClaudeRequest) -> String
+      — Priority: 1) metadata.user_id, 2) SHA256 of first user message
+      — Min text length: 3 chars (lowered from 10 for short messages)
+      — Excludes system-injected messages (<system-reminder>, [System)
+      — Output format: "sid-{hash[..16]}"
+L87   pub fn extract_openai_session_id(request: &OpenAIRequest) -> String
+      — Same logic for OpenAI format messages
+L132  pub fn extract_gemini_session_id(request: &Value, model_name) -> String
+      — Same logic for raw Gemini JSON
+```
+
+**Implementasi:** Pindahkan session ID generation ke content-based fingerprint. Ini enable:
+- Stable session tracking tanpa butuh client header
+- Better signature cache hit rate (Layer 3)
+- Account stickiness per conversation
+
+---
+
+### 3.7 🟡 Client Adapter System
+
+**Mengapa penting:** Tiap IDE/CLI client punya quirks berbeda. Zed, Claude Code, opencode, Cherry Studio, dll. punya behavior yang berbeda soal signature handling, retry behavior, dan required headers.
+
+**Referensi kode:**
+
+| File (REF:) | Ukuran | Fungsi |
+|-------------|--------|--------|
+| `common/client_adapter.rs` | 4.3KB, 152 lines | ClientAdapter trait + registry |
+| `common/client_adapters/opencode.rs` | 3.6KB, 129 lines | Opencode CLI adapter |
+
+**Key trait (client_adapter.rs):**
+```
+L15   pub trait ClientAdapter: Send + Sync {
+          fn matches(&self, headers: &HeaderMap) -> bool;
+          fn bypass_signature_matching(&self) -> bool;  // Default: false
+          fn let_it_crash(&self) -> bool;               // Default: false (fast-fail)
+          fn signature_buffer_strategy(&self) -> SignatureBufferStrategy; // FIFO/LIFO
+          fn inject_beta_headers(&self, headers: &mut HeaderMap);
+          fn supported_protocols(&self) -> Vec<Protocol>;
+      }
+L65   pub enum SignatureBufferStrategy { Default, Fifo, Lifo }
+L78   pub enum Protocol { Anthropic, OpenAI, OACompatible, GoogleGemini }
+L88   pub static CLIENT_ADAPTERS: Lazy<Vec<Arc<dyn ClientAdapter>>>
+      — Global registry, checked on every request
+L97   pub fn get_user_agent(headers) -> Option<String>
+```
+
+**Opencode adapter example (opencode.rs):**
+```
+L18   pub struct OpencodeAdapter;
+      — matches: user-agent contains "opencode"
+      — let_it_crash: true (reduce unnecessary retries)
+      — signature_buffer_strategy: FIFO (multi-concurrent tool calls)
+      — inject_beta_headers: adds "anthropic-beta: context-1m-2025-08-07"
+```
+
+**Implementasi:** Buat adapter registry sederhana di TypeScript:
+- Detect client dari `User-Agent` header
+- Per-client config: signature strategy, retry behavior, injected headers
+- Start dengan adapter untuk: Zed, Claude Code, Continue, Cursor
+
+---
+
+### 3.8 🟡 Multi-Level Context Compression
+
+**Mengapa penting:** Antigravity-Manager tidak hanya punya soft/aggressive purification, tapi juga **3 threshold levels** yang triggered berdasarkan context usage ratio.
+
+**Referensi kode:**
+
+| File (REF:) | Ukuran | Fungsi |
+|-------------|--------|--------|
+| `config.rs` L260-303 | — | ExperimentalConfig with compression thresholds |
+
+**Key config (config.rs):**
+```
+L260  pub struct ExperimentalConfig {
+          pub enable_signature_cache: bool,              // Default: true
+          pub enable_tool_loop_recovery: bool,           // Default: true
+          pub enable_cross_model_checks: bool,           // Default: true
+          pub enable_usage_scaling: bool,                // Default: false
+L280      pub context_compression_threshold_l1: f32,     // Default: 0.4 (40%)
+L284      pub context_compression_threshold_l2: f32,     // Default: 0.55 (55%)
+L288      pub context_compression_threshold_l3: f32,     // Default: 0.70 (70%)
+      }
+```
+
+**Compression levels:**
+- **L1 (40% usage)**: Tool trimming — hapus old tool call/result pairs, keep last N rounds
+- **L2 (55% usage)**: Thinking compression — strip thinking blocks, preserve signatures
+- **L3 (70% usage)**: Fork + Summary — aggressive purification, summarize old context
+
+**Implementasi:** Tambah ke context manager kita:
+- Estimate context usage ratio sebelum kirim ke Google
+- Apply compression level yang sesuai secara otomatis
+- Log level yang diterapkan dan token yang dihemat
+
+---
+
+### 3.9 🟡 Global System Prompt Injection
+
+**Mengapa penting:** Kadang kita ingin inject system instruction ke SEMUA request (misal: safety rules, response format, language preference) tanpa client perlu set-nya.
+
+**Referensi kode:**
+
+| File (REF:) | Ukuran | Fungsi |
+|-------------|--------|--------|
+| `config.rs` L60-95 | — | Global system prompt config |
+
+**Key methods (config.rs):**
+```
+L64   static GLOBAL_SYSTEM_PROMPT_CONFIG: OnceLock<RwLock<GlobalSystemPromptConfig>>
+L67   pub fn get_global_system_prompt() -> GlobalSystemPromptConfig
+L76   pub fn update_global_system_prompt_config(config)
+L126  pub struct GlobalSystemPromptConfig {
+          pub enabled: bool,
+          pub content: String,  // The system prompt text to inject
+      }
+```
+
+**Implementasi:** Tambah env var atau config field `GLOBAL_SYSTEM_PROMPT`. Jika set, prepend ke `system_instruction` di Google API request.
+
+---
+
+### 3.10 🟡 Estimation Calibrator (Self-Learning Token Estimation)
+
+**Mengapa penting:** Token estimation kita static (character-based). Antigravity-Manager punya **self-learning calibrator** yang membandingkan estimated vs actual tokens dari Google API response, lalu auto-adjust factor-nya.
+
+**Referensi kode:**
+
+| File (REF:) | Ukuran | Fungsi |
+|-------------|--------|--------|
+| `mappers/estimation_calibrator.rs` | 5KB, 160 lines | Self-learning token estimator |
+
+**Key struct & methods (estimation_calibrator.rs):**
+```
+L14   pub struct EstimationCalibrator {
+          total_estimated: AtomicU64,
+          total_actual: AtomicU64,
+          sample_count: AtomicU64,
+          calibration_factor: RwLock<f32>,    // Initial: 2.0
+      }
+L41   pub fn record(&self, estimated: u32, actual: u32)
+      — Record estimated vs actual, auto-recalibrate every 5 samples
+L59   fn update_calibration(&self)
+      — new_factor = actual / estimated, clamped [0.8, 4.0]
+      — EMA: 60% old + 40% new (stability + adaptability)
+L89   pub fn apply(&self, raw_estimate: u32) -> u32
+      — Apply calibration: raw_estimate * calibration_factor
+```
+
+**Implementasi:**
+- Track `usageMetadata.promptTokenCount` dari Google API response
+- Compare dengan estimated tokens dari `estimate_tokens_from_str()`
+- Auto-adjust calibration factor menggunakan exponential moving average
+- Gunakan calibrated estimate untuk menentukan compression level
+
+---
+
+### 3.11 🟡 Thinking Budget Config
+
+**Mengapa penting:** Saat ini kita hardcode thinking budget. Antigravity-Manager punya 4 mode yang configurable.
+
+**Referensi kode:**
+
+| File (REF:) | Ukuran | Fungsi |
+|-------------|--------|--------|
+| `config.rs` L320-358 | — | ThinkingBudgetConfig |
+
+**Key structs (config.rs):**
+```
+L320  pub enum ThinkingBudgetMode {
+          Auto,        // Cap at 24576 for Flash/Thinking models
+          Passthrough, // Use client's value unchanged
+          Custom,      // Use fixed custom_value
+          Adaptive,    // Use effort parameter (low/medium/high)
+      }
+L339  pub struct ThinkingBudgetConfig {
+          pub mode: ThinkingBudgetMode,
+          pub custom_value: u32,        // Default: 24576
+          pub effort: Option<String>,   // "low" | "medium" | "high"
+      }
+```
+
+**Implementasi:** Tambah env var `THINKING_BUDGET_MODE` (auto/passthrough/custom/adaptive) dan `THINKING_BUDGET_VALUE`.
+
+---
+
+### 3.12 🟡 Model Specs from JSON Config
+
+**Mengapa penting:** Per-model output token limits dan thinking budgets di-hardcode. Antigravity-Manager load dari JSON file, bisa di-override oleh account quota data.
+
+**Referensi kode:**
+
+| File (REF:) | Ukuran | Fungsi |
+|-------------|--------|--------|
+| `model_specs.rs` | 2.6KB, 87 lines | Model specs loader |
+
+**Key methods (model_specs.rs):**
+```
+L7    pub struct ModelSpec {
+          pub max_output_tokens: Option<u64>,
+          pub thinking_budget: Option<u64>,
+          pub is_thinking: Option<bool>,
+      }
+L25   pub fn resolve_alias(model_id) -> String
+      — Resolve model aliases from specs JSON
+L34   pub fn get_max_output_tokens(model_id, token) -> u64
+      — Priority: 1) account dynamic data, 2) static JSON, 3) fallback 65535
+L60   pub fn get_thinking_budget(model_id, token) -> u64
+      — Priority: 1) static JSON config, 2) fallback 24576
+L80   pub fn is_thinking_model(model_id) -> bool
+      — Check from specs or model name contains "-thinking"
+```
+
+**Implementasi:** Buat `config/model-specs.json` yang loaded at startup. Per-model config untuk max_output_tokens, thinking_budget, is_thinking.
+
+---
+
 ## 4. Fitur Prioritas Rendah (Nice-to-Have)
 
 ### 4.1 🟢 `/v1/models` Endpoint
@@ -602,6 +945,51 @@ Pre-flight validation: kirim request minimal ke Google saat startup untuk verify
 Rotasi HTTP proxy untuk outbound requests ke Google API (anti-fingerprinting).
 
 **REF:** `proxy_pool.rs` (22KB, 620 lines) — HTTP proxy rotation manager
+
+### 4.7 🟢 Tool Artifact Store
+
+Sidecar store untuk large tool outputs. Daripada replay tool output besar (100KB+) di chat history, simpan di store dan berikan model hanya summary + artifact ID. Model bisa request full content via `read_tool_artifact`.
+
+**REF:**
+- `adapters/artifact_store.rs` L60 `pub struct ToolArtifactStore` (21KB, 569 lines)
+- `adapters/artifact_store.rs` L109 `pub fn save(call_id, kind, raw_content) -> StoredToolArtifact`
+- `adapters/artifact_store.rs` L152 `pub fn get(artifact_id) -> Option<ToolArtifactRecord>`
+- `adapters/artifact_store.rs` L431 `pub fn global_tool_artifact_store()` — Global singleton
+
+### 4.8 🟢 Error Classifier
+
+Kategorisasi stream errors menjadi user-friendly types (timeout, connection, decode, stream, unknown) dengan i18n keys.
+
+**REF:**
+- `mappers/error_classifier.rs` L12 `pub fn classify_stream_error(error) -> (type, message, i18n_key)`
+- Returns: `"timeout_error"`, `"connection_error"`, `"decode_error"`, `"stream_error"`, `"unknown_error"`
+
+### 4.9 🟢 Debug Payload Logger
+
+Dump full request/response JSON ke disk untuk debugging. Configurable output directory dan toggle.
+
+**REF:**
+- `debug_logger.rs` L24 `pub async fn write_debug_payload(cfg, trace_id, prefix, payload)`
+- `config.rs` L374 `pub struct DebugLoggingConfig { enabled, output_dir }`
+
+### 4.10 🟢 Quota Scheduler
+
+Background task yang scan semua akun setiap 10 menit, detect model yang sudah 100% quota, dan trigger warmup untuk pre-refresh tokens.
+
+**REF:**
+- `modules/scheduler.rs` L53 `pub fn start_scheduler()` — Scan every 600s
+- `modules/scheduler.rs` L309 `pub async fn trigger_warmup_for_account(account)`
+- `modules/quota.rs` L654 `pub async fn warm_up_all_accounts()`
+
+### 4.11 🟢 HTTP Session Store (Codex)
+
+In-memory session store untuk `/v1/responses` POST mode. Enables multi-turn via `previous_response_id` chain tanpa WebSocket.
+
+**REF:**
+- `http_session_store.rs` L14 `pub struct HttpSessionEntry { input_items, instructions, model }`
+- `http_session_store.rs` L62 `pub async fn get_session(previous_response_id) -> Option<HttpSessionEntry>`
+- `http_session_store.rs` L67 `pub async fn save_session(response_id, entry)`
+- TTL: 1 hour, lazy eviction
 
 ---
 
@@ -689,12 +1077,15 @@ src/
 ### Phase 1: Core Robustness (1-2 minggu)
 Perkuat fondasi yang sudah ada tanpa mengubah API surface.
 
+- [ ] **JSON Schema Cleaning** — Strip `$ref`, `anyOf`, `additionalProperties`, constraint→description
 - [ ] **4-Layer Signature Cache** — Upgrade `cache.ts` dengan session tracking + rewind detection
+- [ ] **Smart Retry Delay Parsing** — Deep parse 429 errors + grace retry ≤2s
 - [ ] **Tiered Account Sorting** — Upgrade `manager.ts` dengan multi-dimension sorting
 - [ ] **Model-Level Rate Limiting** — Upgrade rate limit dari account-level ke account:model level
 - [ ] **Rate Limit Exponential Backoff** — Per-account failure counter + grace window
 - [ ] **Tool Result Compression** — Tambah compression layer di `transform.ts`
 - [ ] **Context Purification Enhancement** — Token estimation + auto aggressive mode
+- [ ] **Session Fingerprinting** — SHA256 first user message → stable session ID
 
 ### Phase 2: Multi-Protocol (2-3 minggu)
 Tambah endpoint baru untuk mendukung lebih banyak client.
@@ -703,17 +1094,30 @@ Tambah endpoint baru untuk mendukung lebih banyak client.
 - [ ] **Anthropic `/v1/messages`** — Full Claude Code CLI support
 - [ ] **Codex `/v1/responses`** — OpenAI Codex CLI support
 - [ ] **`GET /v1/models`** — Model listing endpoint
-- [ ] **Dynamic Model Router** — Configurable routing via JSON
+- [ ] **Dynamic Model Router** — Configurable routing via JSON + wildcard
+- [ ] **Model Specs from JSON** — Per-model max_output_tokens, thinking_budget
 
-### Phase 3: Observability (1 minggu)
+### Phase 3: Intelligence (1-2 minggu)
+Fitur-fitur cerdas yang meningkatkan kualitas proxying.
+
+- [ ] **Multi-Level Context Compression** — L1 (40%), L2 (55%), L3 (70%) thresholds
+- [ ] **Estimation Calibrator** — Self-learning token estimation dari actual usage
+- [ ] **Client Adapter System** — Per-IDE behavior (Zed, Claude Code, Continue)
+- [ ] **Thinking Budget Config** — Auto/Passthrough/Custom/Adaptive modes
+- [ ] **Global System Prompt Injection** — Auto-inject system instruction to all requests
+
+### Phase 4: Observability (1 minggu)
 - [ ] **Request Monitor** — In-memory request logging
 - [ ] **Stats API** — `/api/stats/summary`, `/api/stats/models`, `/api/stats/accounts`
+- [ ] **Error Classifier** — Categorize errors into user-friendly types
+- [ ] **Debug Payload Logger** — Optional JSON dump to disk
 - [ ] **Structured Logging** — Consistent log format dengan request ID tracking
 
-### Phase 4: Security & Polish (1 minggu)
+### Phase 5: Security & Polish (1 minggu)
 - [ ] **Multi-Token Auth** — Support multiple API keys
 - [ ] **IP Filtering** — Whitelist/blacklist
 - [ ] **Account Warmup** — Pre-flight validation on startup
+- [ ] **Quota Scheduler** — Background scan for 100% quota, auto-warmup
 - [ ] **Imagen 3 Support** — `/v1/images/generations`
 
 ---
