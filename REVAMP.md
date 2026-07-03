@@ -12,42 +12,42 @@ Dokumen ini merangkum fitur-fitur inti dari [Antigravity-Manager](https://github
 
 ## 1. Gap Analysis: Kita vs Antigravity-Manager
 
-| Fitur | Proxy Kita | Antigravity-Manager | Priority | Section |
-|-------|:----------:|:-------------------:|:--------:|:-------:|
-| OpenAI-compatible endpoint | ✅ | ✅ | — | — |
-| Anthropic native `/v1/messages` | ❌ | ✅ | 🔴 High | [§2.1](#21--native-anthropic-endpoint-v1messages) |
-| Multi-layer signature cache | 🟡 Basic (2-layer) | ✅ (4-layer: tool, family, session, reasoning) | 🔴 High | [§2.2](#22--multi-layer-signature-cache) |
-| Tiered account sorting (Ultra/Pro/Free) | ❌ | ✅ | 🔴 High | [§2.3](#23--tiered-account-sorting) |
-| Model-level rate limiting | ❌ (account-level only) | ✅ (account + model level) | 🔴 High | [§2.4](#24--model-level-rate-limiting) |
-| Rate limit tracker with exponential backoff | 🟡 Basic cooldown | ✅ (per-account failure counter + backoff) | 🔴 High | [§2.4](#24--model-level-rate-limiting) |
-| **JSON Schema cleaning for Gemini** | ❌ | ✅ ($ref flatten, anyOf, constraint→desc) | 🔴 **High** | [§2.5](#25--json-schema-cleaning-for-gemini) |
-| **Smart retry delay parsing + grace retry** | ❌ | ✅ (recursive JSON parse + 1.5s grace window) | 🔴 **High** | [§2.6](#26--smart-retry-delay-parsing--grace-retry) |
-| Model routing / wildcard mapping | ❌ (hardcoded) | ✅ (exact + wildcard + specificity scoring) | 🟡 Medium | [§3.1](#31--dynamic-model-routing) |
-| Tool result compression | ❌ | ✅ (browser snapshot, HTML cleanup) | 🟡 Medium | [§3.2](#32--tool-result-compression) |
-| Context purification (thinking strip) | 🟡 Basic | ✅ (soft/aggressive + token estimation) | 🟡 Medium | [§3.3](#33--context-purification) |
-| Request monitoring / usage logging | ❌ | ✅ (SQLite + real-time stats) | 🟡 Medium | [§3.4](#34--request-monitoring--usage-stats) |
-| Codex `/v1/responses` endpoint | ❌ | ✅ | 🟡 Medium | [§3.5](#35--codex--responses-endpoint) |
-| **Session fingerprinting** | 🟡 (x-client-id header) | ✅ (SHA256 of first user message) | 🟡 **Medium** | [§3.6](#36--session-fingerprinting) |
-| **Client adapter system** | ❌ | ✅ (per-IDE behavior via User-Agent) | 🟡 **Medium** | [§3.7](#37--client-adapter-system) |
-| **Multi-level context compression** | ❌ | ✅ (L1: tool trim, L2: thinking, L3: fork) | 🟡 **Medium** | [§3.8](#38--multi-level-context-compression) |
-| **Global system prompt injection** | ❌ | ✅ (auto-inject to all requests) | 🟡 **Medium** | [§3.9](#39--global-system-prompt-injection) |
-| **Estimation calibrator** | ❌ | ✅ (self-learning token estimation) | 🟡 **Medium** | [§3.10](#310--estimation-calibrator-self-learning-token-estimation) |
-| **Thinking budget config** | ❌ | ✅ (Auto/Passthrough/Custom/Adaptive modes) | 🟡 **Medium** | [§3.11](#311--thinking-budget-config) |
-| **Model specs from JSON** | ❌ | ✅ (per-model max_output_tokens, thinking_budget) | 🟡 **Medium** | [§3.12](#312--model-specs-from-json-config) |
-| Background task silent downgrade | ❌ | ✅ (reroute ke Flash) | 🟡 Medium | [§3.1](#31--dynamic-model-routing) |
-| Gemini native endpoint | ❌ | ✅ | 🟡 Medium | — |
-| `/v1/models` endpoint | ❌ | ✅ | 🟢 Low | [§4.1](#41--v1models-endpoint) |
-| `/v1/images/generations` (Imagen 3) | ❌ | ✅ | 🟢 Low | [§4.2](#42--imagen-3-support) |
-| API Key auth middleware (multi-token) | ❌ (single header) | ✅ (per-user tokens + whitelist/blacklist) | 🟢 Low | [§4.3](#43--api-key-auth-middleware-multi-token) |
-| IP filtering / security | ❌ | ✅ (whitelist/blacklist + access logs) | 🟢 Low | [§4.4](#44--ip-whitelistblacklist) |
-| Account warmup | ❌ | ✅ (pre-flight token validation) | 🟢 Low | [§4.5](#45--account-warmup) |
-| Proxy pool (outbound HTTP proxy rotation) | ❌ | ✅ | 🟢 Low | [§4.6](#46--outbound-proxy-pool) |
-| **Tool artifact store** | ❌ | ✅ (sidecar store for large tool outputs) | 🟢 **Low** | [§4.7](#47--tool-artifact-store) |
-| **Error classifier** | ❌ | ✅ (categorize stream errors with i18n) | 🟢 **Low** | [§4.8](#48--error-classifier) |
-| **Debug payload logger** | ❌ | ✅ (dump req/res JSON to disk) | 🟢 **Low** | [§4.9](#49--debug-payload-logger) |
-| **Quota scheduler** | ❌ | ✅ (auto-scan 100% quota, trigger warmup) | 🟢 **Low** | [§4.10](#410--quota-scheduler) |
-| HTTP Session Store (Codex) | ❌ | ✅ (multi-turn via previous_response_id) | 🟢 Low | [§4.11](#411--http-session-store-codex) |
-| OAuth browser flow | ❌ | ✅ (callback handler) | 🟢 Low | — |
+| Fitur | Proxy Kita | Antigravity-Manager | Implemented | Priority | Section |
+|-------|:----------:|:-------------------:|:-----------:|:--------:|:-------:|
+| OpenAI-compatible endpoint | ✅ | ✅ | ✅ | — | — |
+| Anthropic native `/v1/messages` | ❌ | ✅ | ❌ | 🔴 High | [§2.1](#21--native-anthropic-endpoint-v1messages) |
+| Multi-layer signature cache | 🟡 Basic (2-layer) | ✅ (4-layer: tool, family, session, reasoning) | 🟡 Basic | 🔴 High | [§2.2](#22--multi-layer-signature-cache) |
+| Tiered account sorting (Ultra/Pro/Free) | ❌ | ✅ | ❌ | 🔴 High | [§2.3](#23--tiered-account-sorting) |
+| Model-level rate limiting | ❌ (account-level only) | ✅ (account + model level) | ❌ | 🔴 High | [§2.4](#24--model-level-rate-limiting) |
+| Rate limit tracker with exponential backoff | 🟡 Basic cooldown | ✅ (per-account failure counter + backoff) | 🟡 Basic | 🔴 High | [§2.4](#24--model-level-rate-limiting) |
+| **JSON Schema cleaning for Gemini** | ❌ | ✅ ($ref flatten, anyOf, constraint→desc) | ❌ | 🔴 **High** | [§2.5](#25--json-schema-cleaning-for-gemini) |
+| **Smart retry delay parsing + grace retry** | ❌ | ✅ (recursive JSON parse + 1.5s grace window) | ❌ | 🔴 **High** | [§2.6](#26--smart-retry-delay-parsing--grace-retry) |
+| Model routing / wildcard mapping | ❌ (hardcoded) | ✅ (exact + wildcard + specificity scoring) | ❌ | 🟡 Medium | [§3.1](#31--dynamic-model-routing) |
+| Tool result compression | ❌ | ✅ (browser snapshot, HTML cleanup) | ❌ | 🟡 Medium | [§3.2](#32--tool-result-compression) |
+| Context purification (thinking strip) | 🟡 Basic | ✅ (soft/aggressive + token estimation) | 🟡 Basic | 🟡 Medium | [§3.3](#33--context-purification) |
+| Request monitoring / usage logging | ❌ | ✅ (SQLite + real-time stats) | ❌ | 🟡 Medium | [§3.4](#34--request-monitoring--usage-stats) |
+| Codex `/v1/responses` endpoint | ❌ | ✅ | ❌ | 🟡 Medium | [§3.5](#35--codex--responses-endpoint) |
+| **Session fingerprinting** | 🟡 (x-client-id header) | ✅ (SHA256 of first user message) | 🟡 | 🟡 **Medium** | [§3.6](#36--session-fingerprinting) |
+| **Client adapter system** | ❌ | ✅ (per-IDE behavior via User-Agent) | ❌ | 🟡 **Medium** | [§3.7](#37--client-adapter-system) |
+| **Multi-level context compression** | ❌ | ✅ (L1: tool trim, L2: thinking, L3: fork) | ❌ | 🟡 **Medium** | [§3.8](#38--multi-level-context-compression) |
+| **Global system prompt injection** | ❌ | ✅ (auto-inject to all requests) | ❌ | 🟡 **Medium** | [§3.9](#39--global-system-prompt-injection) |
+| **Estimation calibrator** | ❌ | ✅ (self-learning token estimation) | ❌ | 🟡 **Medium** | [§3.10](#310--estimation-calibrator-self-learning-token-estimation) |
+| **Thinking budget config** | ❌ | ✅ (Auto/Passthrough/Custom/Adaptive modes) | ❌ | 🟡 **Medium** | [§3.11](#311--thinking-budget-config) |
+| **Model specs from JSON** | ❌ | ✅ (per-model max_output_tokens, thinking_budget) | ✅ | 🟡 **Medium** | [§3.12](#312--model-specs-from-json-config) |
+| Background task silent downgrade | ❌ | ✅ (reroute ke Flash) | ❌ | 🟡 Medium | [§3.1](#31--dynamic-model-routing) |
+| Gemini native endpoint | ❌ | ✅ | ❌ | 🟡 Medium | — |
+| `/v1/models` endpoint | ❌ | ✅ | ❌ | 🟢 Low | [§4.1](#41--v1models-endpoint) |
+| `/v1/images/generations` (Imagen 3) | ❌ | ✅ | ❌ | 🟢 Low | [§4.2](#42--imagen-3-support) |
+| API Key auth middleware (multi-token) | ❌ (single header) | ✅ (per-user tokens + whitelist/blacklist) | ❌ | 🟢 Low | [§4.3](#43--api-key-auth-middleware-multi-token) |
+| IP filtering / security | ❌ | ✅ (whitelist/blacklist + access logs) | ❌ | 🟢 Low | [§4.4](#44--ip-whitelistblacklist) |
+| Account warmup | ❌ | ✅ (pre-flight token validation) | ❌ | 🟢 Low | [§4.5](#45--account-warmup) |
+| Proxy pool (outbound HTTP proxy rotation) | ❌ | ✅ | ❌ | 🟢 Low | [§4.6](#46--outbound-proxy-pool) |
+| **Tool artifact store** | ❌ | ✅ (sidecar store for large tool outputs) | ❌ | 🟢 **Low** | [§4.7](#47--tool-artifact-store) |
+| **Error classifier** | ❌ | ✅ (categorize stream errors with i18n) | ❌ | 🟢 **Low** | [§4.8](#48--error-classifier) |
+| **Debug payload logger** | ❌ | ✅ (dump req/res JSON to disk) | ❌ | 🟢 **Low** | [§4.9](#49--debug-payload-logger) |
+| **Quota scheduler** | ❌ | ✅ (auto-scan 100% quota, trigger warmup) | ❌ | 🟢 **Low** | [§4.10](#410--quota-scheduler) |
+| HTTP Session Store (Codex) | ❌ | ✅ (multi-turn via previous_response_id) | ❌ | 🟢 Low | [§4.11](#411--http-session-store-codex) |
+| OAuth browser flow | ❌ | ✅ (callback handler) | ❌ | 🟢 Low | — |
 
 ---
 
@@ -869,7 +869,7 @@ L339  pub struct ThinkingBudgetConfig {
 
 ---
 
-### 3.12 🟡 Model Specs from JSON Config
+### 3.12 ✅ Model Specs from JSON Config
 
 **Mengapa penting:** Per-model output token limits dan thinking budgets di-hardcode. Antigravity-Manager load dari JSON file, bisa di-override oleh account quota data.
 
@@ -1096,7 +1096,7 @@ Tambah endpoint baru untuk mendukung lebih banyak client.
 - [ ] **Codex `/v1/responses`** — OpenAI Codex CLI support
 - [ ] **`GET /v1/models`** — Model listing endpoint
 - [ ] **Dynamic Model Router** — Configurable routing via JSON + wildcard
-- [ ] **Model Specs from JSON** — Per-model max_output_tokens, thinking_budget
+- [x] **Model Specs from JSON** — Per-model max_output_tokens, thinking_budget
 
 ### Phase 3: Intelligence (1-2 minggu)
 Fitur-fitur cerdas yang meningkatkan kualitas proxying.

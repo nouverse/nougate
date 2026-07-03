@@ -1,7 +1,9 @@
 #!/usr/bin/env bun
 import { loadProxyConfig, getProxyConfig, updateProxyConfig } from "./config/manager";
+import { loadModelSpecs } from "./config/model-specs";
 
 await loadProxyConfig();
+await loadModelSpecs();
 
 const pkg = await Bun.file("package.json").json();
 const APP_VERSION = pkg.version || "0.0.0";

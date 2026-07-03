@@ -1,6 +1,18 @@
 import { getSignature, cacheSignature, cacheSignatureByCallId, getSignatureByCallId } from "./cache";
 import { cleanJSONSchemaForAntigravity } from "./schema";
 import { getProxyConfig } from "../config/manager";
+import {
+  resolveClaudeModel,
+  isNativelySupportedModel,
+  applyThinkingAlias,
+  getGptFallback,
+  resolveSandboxTieredModel,
+  isSandboxPassthroughModel,
+  getThinkingBudget,
+  usesThinkingLevel,
+  getDefaultThinkingLevel,
+  getMaxOutputTokens
+} from "../config/model-specs";
 
 const TOOL_NAME_REMAP_CACHE = new Map<string, string>();
 
@@ -32,39 +44,14 @@ export function getOriginalToolName(sanitizedName: string): string | undefined {
   return undefined;
 }
 
-const CLAUDE_MODEL_REGISTRY = [
-    "claude-3-7-sonnet-20250219",
-    "claude-3-5-sonnet-20241022",
-    "claude-3-5-sonnet-v2-20241022",
-    "claude-3-5-sonnet-20240620",
-    "claude-3-5-haiku-20241022",
-    "claude-3-opus-20240229",
-    "claude-opus-4-6-thinking",
-    "claude-sonnet-4-6",
-    "claude-sonnet-4-6-thinking",
-    "claude-3-sonnet-20240229",
-    "claude-3-haiku-20240307"
-];
-
 function resolveModelId(modelId: string): string {
     let cleanId = modelId.toLowerCase().replace(/^(openai|antigravity|custom_openai|litellm|google)\//i, "");
     cleanId = cleanId.replace(/^antigravity-/i, "");
     cleanId = cleanId.replace(/^gemini-claude-/i, "claude-");
 
     if (cleanId.includes("claude")) {
-        const exactMatch = CLAUDE_MODEL_REGISTRY.find(m => m === cleanId);
-        if (exactMatch) return exactMatch;
-
-        const baseId = cleanId.replace(/-(thinking|preview)(-(low|medium|high))?$/i, "");
-        
-        const fuzzyMatches = CLAUDE_MODEL_REGISTRY.filter(m => 
-            m.startsWith(cleanId) || m.startsWith(baseId) || cleanId.startsWith(m)
-        );
-
-        if (fuzzyMatches.length > 0) {
-            fuzzyMatches.sort((a, b) => b.localeCompare(a));
-            return fuzzyMatches[0];
-        }
+        const resolved = resolveClaudeModel(cleanId);
+        if (resolved) return resolved;
     }
 
     return cleanId;
@@ -99,36 +86,12 @@ export function transformToGoogleBody(
       baseModel = baseModel.replace(previewMatch[0], "");
   }
 
-  // Force Claude model IDs to strip tier for the backend
-        if (googleModel.includes("claude")) {
-            googleModel = baseModel;
-            if (googleModel === "claude-opus-4-6") googleModel = "claude-opus-4-6-thinking";
-            if (googleModel === "claude-sonnet-4-6") googleModel = "claude-sonnet-4-6-thinking";
-            if (googleModel === "claude-sonnet-4-5") googleModel = "claude-sonnet-4-5-thinking";
-        }
+  // Force Claude model IDs to strip tier and apply thinking aliases from config
+  if (googleModel.includes("claude")) {
+      googleModel = applyThinkingAlias(baseModel);
+  }
 
-    const nativelySupported = [
-      "claude-opus-4-6-thinking",
-      "gemini-3.5-flash-low",
-      "gemini-3.1-pro-high",
-      "gemini-3.1-pro-low",
-      "gemini-3.1-pro",
-      "gemini-3.1-pro-preview",
-      "gemini-3-flash",
-      "gemini-3-pro-high", 
-      "gemini-3-pro-low",
-      "gemini-3-pro",
-      "gemini-2.5-pro",
-      "gemini-2.5-flash",
-      "gemini-2.5-flash-lite",
-      "gemini-2.5-flash-thinking",
-      "gemini-3-pro-preview",
-      "gemini-3-flash-preview",
-      "gpt-oss-120b",
-      "gpt-oss-120b-medium"
-  ];
-  
-  const isNative = (nativelySupported.includes(googleModel) || nativelySupported.includes(baseModel));
+  const isNative = isNativelySupportedModel(googleModel, baseModel);
 
   if (isCli) {
       if (!googleModel.includes("claude")) {
@@ -139,54 +102,35 @@ export function transformToGoogleBody(
                   googleModel = `${googleModel}-preview`;
               }
           } else if (googleModel.includes("gpt-oss")) {
-              // GPT-OSS 120B: pass through as-is
               googleModel = baseModel;
           } else if (googleModel.includes("gpt")) {
-              if (googleModel.includes("thinking")) {
-                   googleModel = "gemini-2.0-flash-thinking-exp";
-              } else {
-                   googleModel = "gemini-2.0-pro-exp";
-              }
+              googleModel = getGptFallback(googleModel.includes("thinking"));
           } else {
-               googleModel = baseModel;
+              googleModel = baseModel;
           }
-       } else {
-           googleModel = baseModel;
-           if (googleModel === "claude-sonnet-4-6") googleModel = "claude-sonnet-4-6-thinking";
-           if (googleModel === "claude-sonnet-4-5") googleModel = "claude-sonnet-4-5-thinking";
-       }
-   } else {
-       if (googleModel.endsWith("-preview")) {
-           googleModel = googleModel.replace("-preview", "");
-       }
-       
-       if (isNative) {
-            if (baseModel.includes("gemini-3.5-flash")) {
-                googleModel = `gemini-3.5-flash-${extractedTier || "high"}`;
-            } else if (baseModel.includes("gemini-3.1-pro")) {
-                googleModel = `gemini-3.1-pro-${extractedTier || "high"}`;
-            } else if (baseModel.includes("gemini-3-pro")) {
-                // Respect extracted tier for Gemini 3 Pro, fallback to high
-                googleModel = `gemini-3-pro-${extractedTier || "high"}`;
-            } else if (baseModel.includes("gemini-3-flash")) {
-                googleModel = "gemini-3-flash";
-            } else if (baseModel.includes("gpt-oss")) {
-                googleModel = baseModel;
-            } else {
-                googleModel = baseModel;
-            }
+      } else {
+          googleModel = applyThinkingAlias(baseModel);
+      }
+  } else {
+      if (googleModel.endsWith("-preview")) {
+          googleModel = googleModel.replace("-preview", "");
+      }
+      
+      if (isNative) {
+          // Try tiered model resolution from config (e.g. gemini-3-pro → gemini-3-pro-high)
+          const tiered = resolveSandboxTieredModel(baseModel, extractedTier);
+          if (tiered) {
+              googleModel = tiered;
+          } else if (isSandboxPassthroughModel(baseModel)) {
+              googleModel = baseModel;
+          } else {
+              googleModel = baseModel;
+          }
 
-             if (googleModel === "claude-opus-4-6" || googleModel === "antigravity-claude-opus-4-6") {
-                 googleModel = "claude-opus-4-6-thinking";
-             }
-           if (googleModel === "claude-sonnet-4-6" || googleModel === "antigravity-claude-sonnet-4-6") {
-               googleModel = "claude-sonnet-4-6-thinking";
-           }
-           if (googleModel === "claude-sonnet-4-5" || googleModel === "antigravity-claude-sonnet-4-5") {
-               googleModel = "claude-sonnet-4-5-thinking";
-           }
-       }
-   }
+          // Apply thinking aliases from config
+          googleModel = applyThinkingAlias(googleModel);
+      }
+  }
 
   // Extract system instruction (like plugin)
   const systemMessage = openaiBody.messages.find((m: any) => m.role === "system");
@@ -230,8 +174,8 @@ export function transformToGoogleBody(
     }
   }
 
-  // Determine if thinking is enabled (Gemini 3 Pro models require thought_signature on ALL functionCall parts)
-  const isThinkingEnabled = (rawModel.includes("-thinking") || (rawModel.includes("gemini-3") && rawModel.includes("pro")));
+  // Determine if thinking is enabled (models with thinkingLevel require thought_signature on ALL functionCall parts)
+  const isThinkingEnabled = (rawModel.includes("-thinking") || usesThinkingLevel(googleModel));
 
   // Build a set of tool_call_ids that have cached signatures
   // so we can decide which function calls to keep as native vs convert to text
@@ -484,10 +428,7 @@ export function transformToGoogleBody(
   }
 
   if (!thinkingBudget && isThinkingModel) {
-      if (extractedTier === "low") thinkingBudget = 8192;
-      else if (extractedTier === "medium") thinkingBudget = 16000;
-      else if (extractedTier === "high") thinkingBudget = 32768;
-      else thinkingBudget = 16000;
+      thinkingBudget = getThinkingBudget(extractedTier);
   }
   
   const ANTIGRAVITY_SYSTEM_INSTRUCTION = `You are Antigravity, a powerful agentic AI coding assistant designed by the Google DeepMind team working on Advanced Agentic Coding.
@@ -518,7 +459,7 @@ You are pair programming with a USER to solve their coding task. The task may re
     systemInstruction,
     generationConfig: {
       temperature: openaiBody.temperature ?? 0.7,
-      maxOutputTokens: (isThinkingModel || hasExplicitBudget) ? Math.max(openaiBody.max_tokens || 0, 64000) : (openaiBody.max_tokens ?? 4096),
+      maxOutputTokens: (isThinkingModel || hasExplicitBudget) ? Math.max(openaiBody.max_tokens || 0, getMaxOutputTokens(true)) : (openaiBody.max_tokens ?? getMaxOutputTokens(false)),
       topP: openaiBody.top_p ?? 0.95,
       stopSequences: Array.isArray(openaiBody.stop) ? openaiBody.stop : (openaiBody.stop ? [openaiBody.stop] : undefined),
       candidateCount: 1
@@ -532,19 +473,19 @@ You are pair programming with a USER to solve their coding task. The task may re
     sessionId: sessionId || crypto.randomUUID()
   };
 
-  const isGemini3Pro = googleModel.includes("gemini-3") && googleModel.includes("pro");
+  const usesLevel = usesThinkingLevel(googleModel);
   // Flash models (without explicit -thinking) must NEVER get thinkingConfig
   const isFlashModel = googleModel.includes("flash") && !rawModel.includes("-thinking");
   
-  if ((isThinkingModel || isGemini3Pro) && !isFlashModel) {
+  if ((isThinkingModel || usesLevel) && !isFlashModel) {
     googleRequest.generationConfig.thinkingConfig = {
       includeThoughts: true
     };
     
-    if (isGemini3Pro) {
-        googleRequest.generationConfig.thinkingConfig.thinkingLevel = extractedTier || "low";
+    if (usesLevel) {
+        googleRequest.generationConfig.thinkingConfig.thinkingLevel = extractedTier || getDefaultThinkingLevel();
     } else {
-        googleRequest.generationConfig.thinkingConfig.thinkingBudget = thinkingBudget || 16000;
+        googleRequest.generationConfig.thinkingConfig.thinkingBudget = thinkingBudget || getThinkingBudget();
     }
   }
 
