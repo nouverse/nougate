@@ -1,5 +1,5 @@
 import { expect, test, describe } from "bun:test";
-import { getFamilyName } from "../../src/auth/manager";
+import { getFamilyName } from "../../src/providers/antigravity/auth/manager";
 
 describe("Manager Utils", () => {
   test("getFamilyName should correctly classify models", () => {

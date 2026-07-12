@@ -1,5 +1,6 @@
-import { join } from "path";
 import { existsSync } from "fs";
+import { join } from "path";
+
 import { type AntigravityAccount, type SelectionStrategy } from "./types";
 
 // In Docker, /app/data/ is the writable volume. Fallback to cwd for local dev.
@@ -10,8 +11,8 @@ const DEFAULT_PATH = existsSync("/app/data")
 const ACCOUNTS_FILE = process.env.ACCOUNTS_FILE || DEFAULT_PATH;
 
 interface StorageFormat {
-    accounts: AntigravityAccount[];
-    strategy?: SelectionStrategy;
+  accounts: AntigravityAccount[];
+  strategy?: SelectionStrategy;
 }
 
 export async function loadConfig(): Promise<StorageFormat> {
@@ -20,8 +21,8 @@ export async function loadConfig(): Promise<StorageFormat> {
     if (await file.exists()) {
       const data = await file.json();
       if (Array.isArray(data)) {
-          // Migration from old format
-          return { accounts: data, strategy: 'hybrid' };
+        // Migration from old format
+        return { accounts: data, strategy: "hybrid" };
       }
       return data;
     }
@@ -33,7 +34,7 @@ export async function loadConfig(): Promise<StorageFormat> {
 
 // Kept for backward compatibility but deprecated
 export async function loadAccounts(): Promise<AntigravityAccount[]> {
-    return (await loadConfig()).accounts;
+  return (await loadConfig()).accounts;
 }
 
 export async function saveConfig(config: StorageFormat): Promise<void> {

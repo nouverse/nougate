@@ -1,7 +1,7 @@
 import { getImpersonationHeaders, generateFingerprint } from "../utils/headers";
-import { type AntigravityAccount } from "../auth/types";
-import { getAccounts, saveAccounts } from "../auth/manager";
-import { refreshAccessToken } from "../auth/oauth";
+import { getAccounts, saveAccounts } from "../providers/antigravity/auth/manager";
+import { refreshAccessToken } from "../providers/antigravity/auth/oauth";
+import { type AntigravityAccount } from "../providers/antigravity/auth/types";
 
 export async function fetchQuota(account: AntigravityAccount, retry = true): Promise<AntigravityAccount['quota'] | null> {
   if (!account.projectId || !account.accessToken) return null;

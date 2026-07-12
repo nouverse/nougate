@@ -1,5 +1,5 @@
-import { OAUTH_CONFIG, getImpersonationHeaders } from "../utils/headers";
 import { type GoogleTokenResponse } from "./types";
+import { OAUTH_CONFIG, getImpersonationHeaders } from "../../../utils/headers";
 
 export function generateAuthUrl(): string {
   const params = new URLSearchParams({
@@ -8,9 +8,9 @@ export function generateAuthUrl(): string {
     response_type: "code",
     scope: OAUTH_CONFIG.scopes.join(" "),
     access_type: "offline",
-    prompt: "consent", 
+    prompt: "consent",
     // Static challenge to match repo analysis
-    code_challenge: "cFH3lPzU2FhJjQhHlGqKqQhHlGqKqQhHlGqKqQhHlGq", 
+    code_challenge: "cFH3lPzU2FhJjQhHlGqKqQhHlGqKqQhHlGqKqQhHlGq",
     code_challenge_method: "plain"
   });
   return `${OAUTH_CONFIG.authUri}?${params.toString()}`;
@@ -23,7 +23,7 @@ export async function exchangeCode(code: string): Promise<GoogleTokenResponse> {
     redirect_uri: OAUTH_CONFIG.redirectUri,
     grant_type: "authorization_code",
     code: code,
-    code_verifier: "cFH3lPzU2FhJjQhHlGqKqQhHlGqKqQhHlGqKqQhHlGq" 
+    code_verifier: "cFH3lPzU2FhJjQhHlGqKqQhHlGqKqQhHlGqKqQhHlGq"
   });
 
   const res = await fetch(OAUTH_CONFIG.tokenUri, {
@@ -56,7 +56,7 @@ export async function refreshAccessToken(refreshToken: string): Promise<GoogleTo
 
 export async function getProjectId(accessToken: string): Promise<string> {
   const ideTypes = ["VSCODE", "JETBRAINS", "CLOUD_SHELL", "IDE_UNSPECIFIED"];
-  
+
   for (const ideType of ideTypes) {
     try {
       const res = await fetch("https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist", {
@@ -71,7 +71,7 @@ export async function getProjectId(accessToken: string): Promise<string> {
         const data = await res.json() as any;
         const project = data?.cloudaicompanionProject;
         const projectId = typeof project === "string" ? project : project?.id;
-        
+
         if (projectId) {
           console.log(`[OAuth] Discovered Project ID using ${ideType}: ${projectId}`);
           return projectId;
@@ -86,10 +86,10 @@ export async function getProjectId(accessToken: string): Promise<string> {
 }
 
 export async function getUserEmail(accessToken: string): Promise<string> {
-   const res = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+  const res = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
     headers: { Authorization: `Bearer ${accessToken}` }
-   });
-   if (!res.ok) throw new Error("Failed to fetch user info");
-   const data = await res.json() as any;
-   return data.email as string;
+  });
+  if (!res.ok) throw new Error("Failed to fetch user info");
+  const data = await res.json() as any;
+  return data.email as string;
 }

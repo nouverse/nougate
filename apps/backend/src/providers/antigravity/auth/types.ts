@@ -29,7 +29,7 @@ export interface AntigravityAccount {
   expiresAt?: number; // timestamp
   projectId?: string;
   managedProjectId?: string;
-  
+
   // Rotation stats
   healthScore: number;
   modelScores?: Record<string, number>;
@@ -38,10 +38,10 @@ export interface AntigravityAccount {
   consecutiveFailures?: number;
   cooldowns?: Record<string, number>;
   history?: Array<{ timestamp: number; status: 'success' | 'error' }>;
-  
+
   // Device fingerprint (persistent per account)
   fingerprint?: DeviceFingerprint;
-  
+
   challenge?: {
     type: string;
     url: string;
@@ -50,7 +50,7 @@ export interface AntigravityAccount {
     message?: string;
   };
   capabilities?: Record<string, boolean>;
-  
+
   // Quota info (cached)
   quota?: Array<{
     groupName: string; // e.g., "Gemini 1.5 Pro"
@@ -61,7 +61,7 @@ export interface AntigravityAccount {
     quotaLeft: string; // e.g., "80%"
     resetIn: string; // e.g., "14h 20m"
     resetTime?: string; // ISO date
-  }>
+  }>;
 }
 
 export interface GoogleTokenResponse {

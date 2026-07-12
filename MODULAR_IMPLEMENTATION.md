@@ -612,13 +612,13 @@ export function mapOpenAIToGoogle(
 > Cukup pastikan `antigravityModelRegistry` ter-export dari `model-specs.ts` dan compile.
 
 #### 1.3 — Migrasi Provider Antigravity: Auth Layer
-- [ ] Buat direktori `src/providers/antigravity/auth/`
-- [ ] Move `src/auth/types.ts` → `src/providers/antigravity/auth/types.ts` (update internal imports)
-- [ ] Move `src/auth/storage.ts` → `src/providers/antigravity/auth/storage.ts` (update imports)
-- [ ] Move `src/auth/oauth.ts` → `src/providers/antigravity/auth/oauth.ts` (update imports)
-- [ ] Move `src/auth/manager.ts` → `src/providers/antigravity/auth/manager.ts` (update imports)
-- [ ] **Hapus** direktori `src/auth/` setelah semua import diupdate
-- [ ] **Verifikasi**: `bun x tsc --noEmit --skipLibCheck`
+- [x] Buat direktori `src/providers/antigravity/auth/`
+- [x] Move `src/auth/types.ts` → `src/providers/antigravity/auth/types.ts` (update internal imports)
+- [x] Move `src/auth/storage.ts` → `src/providers/antigravity/auth/storage.ts` (update imports)
+- [x] Move `src/auth/oauth.ts` → `src/providers/antigravity/auth/oauth.ts` (update imports)
+- [x] Move `src/auth/manager.ts` → `src/providers/antigravity/auth/manager.ts` (update imports)
+- [x] **Hapus** direktori `src/auth/` setelah semua import diupdate
+- [x] **Verifikasi**: `bun x tsc --noEmit --skipLibCheck`
 
 #### 1.4 — Migrasi Provider Antigravity: API & Upstream
 - [ ] Buat direktori `src/providers/antigravity/api/` dan `src/providers/antigravity/upstream/`

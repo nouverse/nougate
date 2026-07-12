@@ -1,6 +1,6 @@
 import { getGeminiCliHeaders } from "../utils/headers";
 import { transformToGoogleBody } from "../utils/transform";
-import { getAccounts, initManager } from "../auth/manager";
+import { getAccounts, initManager } from "../providers/antigravity/auth/manager";
 
 // Manual test to see if Claude works on CLI endpoint
 // Usage: bun run src/scripts/test-claude-cli.ts <email>
