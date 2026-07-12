@@ -1,13 +1,18 @@
 node_modules
 .DS_Store
-antigravity-accounts.json
-/config.json
 .env
 dist
 AGENTS.md
 data/
-antigravity.json
-posts/
 .planning
 .npmrc
 tmp/
+
+# Backend runtime state
+apps/backend/antigravity-accounts.json
+apps/backend/config.json
+
+# Frontend build output
+apps/frontend/dist/
+apps/frontend/node_modules/
+apps/frontend/src/routeTree.gen.ts

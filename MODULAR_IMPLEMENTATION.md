@@ -807,6 +807,38 @@ export function mapOpenAIToGoogle(
 
 ---
 
+## Phase 4: Frontend Rombak Total
+
+> **Scope**: Rombak total dashboard UI — TailwindCSS 4 + daisyUI 5, mobile-first, provider-isolated navigation.
+> **Dependencies**: Phase 1 HARUS selesai. Phase 2 & 3 direkomendasikan.
+
+> [!IMPORTANT]
+> Plan lengkap ada di file terpisah: [`FRONTEND_MODULAR_IMPLEMENTATION.md`](./FRONTEND_MODULAR_IMPLEMENTATION.md)
+>
+> Frontend plan berisi:
+> - 7 sub-phase (F1–F7)
+> - Struktur file target
+> - Layout wireframes (desktop & mobile)
+> - Hash-based routing
+> - daisyUI component mapping
+> - Theme config (dark/light)
+> - Backend API endpoints baru yang diperlukan
+> - Aturan untuk agent
+
+### Quick Summary
+
+| Sub-Phase | Scope |
+|---|---|
+| F1 | Setup build pipeline (Tailwind + daisyUI + Bun build) |
+| F2 | Layout components (sidebar, drawer, header, shell) |
+| F3 | Shared components (api client, SSE, store, health badge, etc.) |
+| F4 | Overview & Logs pages |
+| F5 | Provider pages (Antigravity: accounts, models, config, quota) |
+| F6 | Global config editor, theme, mobile polish, performance |
+| F7 | Cleanup — hapus frontend lama |
+
+---
+
 ## Reference: Interface Definitions
 
 ### `src/core/interfaces.ts`

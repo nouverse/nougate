@@ -1,0 +1,12 @@
+{
+  "name": "@nouverse/nougate-frontend",
+  "description": "Nougate dashboard — React + Vite + TanStack Router + TailwindCSS + daisyUI.",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview"
+  }
+}
