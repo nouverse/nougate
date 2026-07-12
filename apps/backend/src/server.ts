@@ -33,5 +33,5 @@ Bun.serve({
 });
 
 console.log(
-  `Antigravity Proxy v${pkg.version || "0.0.0"} running on port ${PORT}`,
+  `Nougate v${pkg.version || "0.0.0"} running on port ${PORT}`,
 );

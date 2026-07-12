@@ -25,7 +25,7 @@ function parseConfig(text: string) {
   return JSON.parse(cleaned);
 }
 
-describe("Antigravity Proxy Functional Tests", () => {
+describe("Nougate Functional Tests", () => {
   let config: any;
   let provider: any;
   let baseURL: string;
