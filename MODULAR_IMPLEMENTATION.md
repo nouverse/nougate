@@ -740,46 +740,46 @@ export function mapOpenAIToGoogle(
   - [x] **Tidak inject `project`** — itu tugas executor
 
 #### 2.2 — Anthropic Response Mapper (`mapper-out.ts`)
-- [ ] Buat `src/protocols/anthropic/mapper-out.ts` (lihat contoh kode lengkap di bawah)
-- [ ] Implement `createAnthropicStreamTransformer(model, messageId, sessionId)`:
-  - [ ] Send `message_start` di start
-  - [ ] Handle text parts → `content_block_start` (type: text) + `content_block_delta` (text_delta)
-  - [ ] Handle thought parts → `content_block_start` (type: thinking) + `content_block_delta` (thinking_delta)
-  - [ ] Handle functionCall parts → `content_block_start` (type: tool_use) + `content_block_delta` (input_json_delta)
-  - [ ] Send `content_block_stop` sebelum block baru
-  - [ ] Handle finishReason → `message_delta` (stop_reason, usage) + `message_stop`
-  - [ ] Non-streaming: aggregate semua SSE → single Anthropic response object
-  - [ ] Map Google finishReason ke Anthropic stop_reason:
+- [x] Buat `src/protocols/anthropic/mapper-out.ts` (lihat contoh kode lengkap di bawah)
+- [x] Implement `createAnthropicStreamTransformer(model, messageId, sessionId)`:
+  - [x] Send `message_start` di start
+  - [x] Handle text parts → `content_block_start` (type: text) + `content_block_delta` (text_delta)
+  - [x] Handle thought parts → `content_block_start` (type: thinking) + `content_block_delta` (thinking_delta)
+  - [x] Handle functionCall parts → `content_block_start` (type: tool_use) + `content_block_delta` (input_json_delta)
+  - [x] Send `content_block_stop` sebelum block baru
+  - [x] Handle finishReason → `message_delta` (stop_reason, usage) + `message_stop`
+  - [x] Non-streaming: aggregate semua SSE → single Anthropic response object
+  - [x] Map Google finishReason ke Anthropic stop_reason:
     - `STOP` → `end_turn`
     - `MAX_TOKENS` → `max_tokens`
     - `SAFETY` → `stop_sequence`
     - Lainnya → `end_turn`
 
 #### 2.3 — Anthropic Handler
-- [ ] Buat `src/protocols/anthropic/handler.ts`:
-  - [ ] Implement `AnthropicHandler` class dengan `IProtocolHandler`
-  - [ ] Call `requireProviderPrefix()` + `provider.getModelRegistry().getSpec()` (return 400 jika null)
-  - [ ] Call `mapAnthropicToGoogle(body, modelSpec, sessionId)` — pass `IModelSpec`
-  - [ ] Execute via `AntigravityExecutor` (executor inject `projectId` dan handle pool via `modelSpec.pool`)
-  - [ ] Streaming: pipe via `createAnthropicStreamTransformer()`
-  - [ ] Non-streaming: aggregate via `aggregateAnthropicResponse()`
-- [ ] Buat `src/protocols/anthropic/index.ts` — register handler
-- [ ] Import `src/protocols/anthropic` di `server.ts`
-- [ ] Update `src/scripts/test-request.ts` atau buat `src/scripts/test-anthropic.ts` untuk test Anthropic format
+- [x] Buat `src/protocols/anthropic/handler.ts`:
+  - [x] Implement `AnthropicHandler` class dengan `IProtocolHandler`
+  - [x] Call `requireProviderPrefix()` + `provider.getModelRegistry().getSpec()` (return 400 jika null)
+  - [x] Call `mapAnthropicToGoogle(body, modelSpec, sessionId)` — pass `IModelSpec`
+  - [x] Execute via `AntigravityExecutor` (executor inject `projectId` dan handle pool via `modelSpec.pool`)
+  - [x] Streaming: pipe via `createAnthropicStreamTransformer()`
+  - [x] Non-streaming: aggregate via `aggregateAnthropicResponse()`
+- [x] Buat `src/protocols/anthropic/index.ts` — register handler
+- [x] Import `src/protocols/anthropic` di `server.ts`
+- [x] Update `src/scripts/test-request.ts` atau buat `src/scripts/test-anthropic.ts` untuk test Anthropic format
 
 #### 2.4 — Router URL Pattern Update
-- [ ] Update `src/router/index.ts`:
-  - [ ] `POST /anthropic/v1/messages` → Anthropic handler
-  - [ ] `GET /anthropic/v1/models` → model list
-  - [ ] Tidak ada alias `/v1/messages` — hanya `/anthropic/v1/messages`
+- [x] Update `src/router/index.ts`:
+  - [x] `POST /anthropic/v1/messages` → Anthropic handler
+  - [x] `GET /anthropic/v1/models` → model list
+  - [x] Tidak ada alias `/v1/messages` — hanya `/anthropic/v1/messages`
 
 #### 2.5 — Testing Phase 2
-- [ ] Test: `POST /anthropic/v1/messages` dengan `stream: true` → streaming Anthropic SSE
-- [ ] Test: `POST /anthropic/v1/messages` tanpa stream → single Anthropic response
-- [ ] Test: tool_use flow dengan Anthropic format
-- [ ] Test: thinking blocks (extended thinking)
-- [ ] Test: Claude Code CLI → `ANTHROPIC_BASE_URL=http://localhost:3000/anthropic`
-- [ ] Verifikasi: `POST /v1/messages` → **404** (no legacy alias)
+- [x] Test: `POST /anthropic/v1/messages` dengan `stream: true` → streaming Anthropic SSE
+- [x] Test: `POST /anthropic/v1/messages` tanpa stream → single Anthropic response
+- [x] Test: tool_use flow dengan Anthropic format
+- [x] Test: thinking blocks (extended thinking)
+- [x] Test: Claude Code CLI → `ANTHROPIC_BASE_URL=http://localhost:3000/anthropic`
+- [x] Verifikasi: `POST /v1/messages` → **404** (no legacy alias)
 
 ---
 

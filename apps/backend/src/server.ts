@@ -4,6 +4,7 @@ import { loadProxyConfig } from "./config/manager";
 import { refreshAllQuotas } from "./providers/antigravity/api/quota";
 import { getAntigravityConfig, AntigravityProvider } from "./providers/antigravity";
 import { registerOpenAIProtocol } from "./protocols/openai";
+import { registerAnthropicProtocol } from "./protocols/anthropic";
 import { handleRequest } from "./router";
 import { setupLogCapture } from "./router/middleware";
 
@@ -14,6 +15,7 @@ const antigravityProvider = new AntigravityProvider();
 await antigravityProvider.init();
 registerProvider(antigravityProvider);
 registerOpenAIProtocol();
+registerAnthropicProtocol();
 
 const antigravityConfig = getAntigravityConfig();
 setInterval(refreshAllQuotas, antigravityConfig.quota.refreshIntervalMs);
