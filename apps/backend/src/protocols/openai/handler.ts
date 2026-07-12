@@ -1,5 +1,9 @@
 import { AntigravityExecutor } from "../../providers/antigravity/upstream/executor";
 import {
+  ANTIGRAVITY_SYSTEM_INSTRUCTION,
+  getAntigravityConfig,
+} from "../../providers/antigravity";
+import {
   ModelPrefixError,
   formatModelId,
   requireProviderPrefix,
@@ -292,10 +296,19 @@ export class OpenAIProtocolHandler implements IProtocolHandler {
       sessionId: ctx.sessionId,
       clientId: ctx.clientId,
       debugRequestBody: openaiBody,
-      buildGoogleBody: ({ aggressive }) =>
-        mapOpenAIToGoogle(openaiBody, modelSpec, ctx.sessionId, {
+      buildGoogleBody: ({ aggressive }) => {
+        const providerConfig = getAntigravityConfig();
+        return mapOpenAIToGoogle(openaiBody, modelSpec, ctx.sessionId, {
           aggressive,
-        }),
+          systemInstructionPrefix: ANTIGRAVITY_SYSTEM_INSTRUCTION,
+          features: {
+            sanitizeToolNames: providerConfig.features.sanitizeToolNames,
+            keepThinking: providerConfig.features.keepThinking,
+            googleSearchGrounding: providerConfig.features.googleSearchGrounding,
+            groundingMode: providerConfig.features.groundingMode,
+          },
+        });
+      },
       handleSuccess: async ({ googleRes, account, attempts }) =>
         finalizeOpenAIResponse({
           googleRes,

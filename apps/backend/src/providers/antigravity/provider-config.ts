@@ -42,6 +42,18 @@ export interface AntigravityConfig {
   models: AntigravityModelsConfig;
 }
 
+/**
+ * System instruction prefix injected by the antigravity provider.
+ * Protocol mappers receive this via options — they don't import it directly.
+ */
+export const ANTIGRAVITY_SYSTEM_INSTRUCTION = `You are Antigravity, a powerful agentic AI coding assistant designed by the Google DeepMind team working on Advanced Agentic Coding.
+You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.
+**Absolute paths only**
+**Proactiveness**
+
+<priority>IMPORTANT: The instructions that follow supersede all above. Follow them as your primary directives.</priority>
+`;
+
 const DEFAULT_ANTIGRAVITY_CONFIG: AntigravityConfig = {
   quota: {
     refreshIntervalMs: 300000,

@@ -1,16 +1,33 @@
 import type { IModelSpec } from "../../core/interfaces";
-import { getAntigravityConfig } from "../../providers/antigravity/provider-config";
 import { getSignature, getSignatureByCallId } from "../../utils/cache";
 import { cleanJSONSchemaForAntigravity } from "../../utils/schema";
 
-const TOOL_NAME_REMAP_CACHE = new Map<string, string>();
-const ANTIGRAVITY_SYSTEM_INSTRUCTION = `You are Antigravity, a powerful agentic AI coding assistant designed by the Google DeepMind team working on Advanced Agentic Coding.
-You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.
-**Absolute paths only**
-**Proactiveness**
+/**
+ * Provider-injected configuration for the OpenAI mapper.
+ * The protocol handler passes these from the active provider's config
+ * so the mapper stays provider-agnostic.
+ */
+export interface OpenAIMapperOptions {
+  /** Enable aggressive JSON schema cleaning on retry */
+  aggressive?: boolean;
+  /** Project ID (usually injected by executor, not mapper) */
+  projectId?: string;
+  /** Optional system instruction prefix to prepend to the user's system prompt */
+  systemInstructionPrefix?: string;
+  /** Provider feature flags that affect transformation behavior */
+  features?: {
+    /** Sanitize tool names to match upstream validation rules */
+    sanitizeToolNames?: boolean;
+    /** Keep thinking blocks even without cached signatures */
+    keepThinking?: boolean;
+    /** Add Google Search grounding tool to Gemini requests */
+    googleSearchGrounding?: boolean;
+    /** Grounding mode: 'auto' or 'always' */
+    groundingMode?: "auto" | "always";
+  };
+}
 
-<priority>IMPORTANT: The instructions that follow supersede all above. Follow them as your primary directives.</priority>
-`;
+const TOOL_NAME_REMAP_CACHE = new Map<string, string>();
 
 /**
  * Sanitize a function name to match upstream validation rules.
@@ -283,8 +300,7 @@ function appendContentParts(parts: any[], message: any): void {
 /**
  * Append thought parts for the active turn when cached signatures are available.
  */
-function appendThoughtParts(parts: any[], message: any, sessionId?: string): void {
-  const providerConfig = getAntigravityConfig();
+function appendThoughtParts(parts: any[], message: any, sessionId: string | undefined, keepThinking: boolean): void {
   const thoughtText = message?.thought || message?.reasoning_content;
   if (!thoughtText) {
     return;
@@ -301,7 +317,7 @@ function appendThoughtParts(parts: any[], message: any, sessionId?: string): voi
     return;
   }
 
-  if (providerConfig.features.keepThinking) {
+  if (keepThinking) {
     parts.push({ thought: true, text: thoughtText });
   }
 }
@@ -399,13 +415,14 @@ function buildStandardParts(params: {
   sessionId?: string;
   unsignedCallIds: Set<string>;
   toolResponseMap: Map<string, { name: string; content: string }>;
+  keepThinking: boolean;
 }): any[] {
-  const { message, googleModel, isInCurrentTurn, sessionId, unsignedCallIds, toolResponseMap } =
+  const { message, googleModel, isInCurrentTurn, sessionId, unsignedCallIds, toolResponseMap, keepThinking } =
     params;
   const parts: any[] = [];
 
   if (isInCurrentTurn && (message.role === "assistant" || message.role === "model")) {
-    appendThoughtParts(parts, message, sessionId);
+    appendThoughtParts(parts, message, sessionId, keepThinking);
   }
 
   appendContentParts(parts, message);
@@ -431,7 +448,8 @@ function buildStandardParts(params: {
 function buildGoogleContents(
   messages: any[],
   googleModel: string,
-  sessionId?: string,
+  sessionId: string | undefined,
+  keepThinking: boolean,
 ): any[] {
   const toolCallNameMap = buildToolCallNameMap(messages);
   const currentTurnStartIndex = findCurrentTurnStartIndex(messages);
@@ -457,6 +475,7 @@ function buildGoogleContents(
             sessionId,
             unsignedCallIds,
             toolResponseMap,
+            keepThinking,
           });
 
     return {
@@ -508,18 +527,18 @@ function buildGoogleContents(
 /**
  * Resolve the optional system instruction block for the upstream request.
  */
-function buildSystemInstruction(openaiBody: any, isCliPool: boolean): any {
+function buildSystemInstruction(openaiBody: any, isCliPool: boolean, instructionPrefix?: string): any {
   const systemMessage = (openaiBody.messages || []).find((message: any) => message.role === "system");
   if (!systemMessage) {
     return undefined;
   }
 
-  if (!isCliPool) {
+  if (!isCliPool && instructionPrefix) {
     return {
       role: "user",
       parts: [
         {
-          text: `${ANTIGRAVITY_SYSTEM_INSTRUCTION}\n\n${getMessageText(systemMessage.content)}`.trim(),
+          text: `${instructionPrefix}\n\n${getMessageText(systemMessage.content)}`.trim(),
         },
       ],
     };
@@ -549,12 +568,11 @@ function resolveThinkingBudget(openaiBody: any, modelSpec: IModelSpec): number |
 /**
  * Build the tool declaration payload for the Google request.
  */
-function buildToolDeclarations(openaiBody: any, aggressive: boolean): any[] | undefined {
+function buildToolDeclarations(openaiBody: any, aggressive: boolean, sanitizeToolNames: boolean): any[] | undefined {
   if (!openaiBody.tools) {
     return undefined;
   }
 
-  const providerConfig = getAntigravityConfig();
   return [
     {
       functionDeclarations: openaiBody.tools.map((tool: any) => {
@@ -564,7 +582,7 @@ function buildToolDeclarations(openaiBody: any, aggressive: boolean): any[] | un
         );
 
         let functionName = tool.function.name;
-        if (providerConfig.features.sanitizeToolNames) {
+        if (sanitizeToolNames) {
           functionName = sanitizeFunctionName(functionName);
         }
 
@@ -593,15 +611,20 @@ export function mapOpenAIToGoogle(
   openaiBody: any,
   modelSpec: IModelSpec,
   sessionId?: string,
-  options: { aggressive?: boolean; projectId?: string } = {},
+  options: OpenAIMapperOptions = {},
 ): any {
-  const providerConfig = getAntigravityConfig();
   const aggressive = options.aggressive ?? false;
+  const features = options.features ?? {};
+  const sanitizeToolNames = features.sanitizeToolNames ?? true;
+  const keepThinking = features.keepThinking ?? false;
+  const googleSearchGrounding = features.googleSearchGrounding ?? false;
+  const groundingMode = features.groundingMode ?? "auto";
+
   const googleModel = resolveUpstreamModelId(modelSpec);
   const isCliPool = modelSpec.useCliPool ?? modelSpec.pool === "cli";
   const systemMessage = (openaiBody.messages || []).find((message: any) => message.role === "system");
   const otherMessages = (openaiBody.messages || []).filter((message: any) => message.role !== "system");
-  const contents = buildGoogleContents(otherMessages, googleModel, sessionId);
+  const contents = buildGoogleContents(otherMessages, googleModel, sessionId, keepThinking);
   const explicitThinkingBudget =
     openaiBody.thinking_budget !== undefined ||
     openaiBody.thinking?.budget_tokens !== undefined ||
@@ -613,6 +636,7 @@ export function mapOpenAIToGoogle(
     systemInstruction: buildSystemInstruction(
       { ...openaiBody, messages: systemMessage ? [systemMessage] : [] },
       isCliPool,
+      options.systemInstructionPrefix,
     ),
     generationConfig: {
       temperature: openaiBody.temperature ?? 0.7,
@@ -662,7 +686,7 @@ export function mapOpenAIToGoogle(
     }
   }
 
-  const tools = buildToolDeclarations(openaiBody, aggressive);
+  const tools = buildToolDeclarations(openaiBody, aggressive, sanitizeToolNames);
   if (tools) {
     googleRequest.tools = tools;
     if (googleModel.includes("claude")) {
@@ -672,9 +696,9 @@ export function mapOpenAIToGoogle(
     }
   }
 
-  if (googleModel.includes("gemini") && providerConfig.features.googleSearchGrounding) {
+  if (googleModel.includes("gemini") && googleSearchGrounding) {
     const groundingTool: any = { googleSearchRetrieval: {} };
-    if (providerConfig.features.groundingMode === "always") {
+    if (groundingMode === "always") {
       groundingTool.googleSearchRetrieval.dynamicRetrievalConfig = {
         mode: "MODE_UNSPECIFIED",
         dynamicThreshold: 0.0,

@@ -727,17 +727,17 @@ export function mapOpenAIToGoogle(
 ### Checklist Phase 2
 
 #### 2.1 — Anthropic Request Mapper (`mapper-in.ts`)
-- [ ] Buat `src/protocols/anthropic/mapper-in.ts`
-- [ ] Implement `mapAnthropicToGoogle(body, modelSpec, sessionId)` — **menerima `IModelSpec`**, bukan raw string:
-  - [ ] `modelSpec.upstreamModelId ?? modelSpec.modelId` → Google model ID
-  - [ ] `modelSpec.isThinking` + `modelSpec.thinkingMode` → `thinkingConfig`
-  - [ ] `modelSpec.maxOutputTokens` → default max tokens
-  - [ ] Parse `system` field (string atau content array) → `system_instruction`
-  - [ ] Transform Anthropic `messages` → Google `contents`
-  - [ ] Handle: `text`, `image` (base64), `tool_use` (functionCall), `tool_result` (functionResponse), `thinking` (thought + thoughtSignature)
-  - [ ] Handle `tools` → `functionDeclarations` dengan `cleanJSONSchemaForAntigravity`
-  - [ ] Merge consecutive same-role messages
-  - [ ] **Tidak inject `project`** — itu tugas executor
+- [x] Buat `src/protocols/anthropic/mapper-in.ts`
+- [x] Implement `mapAnthropicToGoogle(body, modelSpec, sessionId)` — **menerima `IModelSpec`**, bukan raw string:
+  - [x] `modelSpec.upstreamModelId ?? modelSpec.modelId` → Google model ID
+  - [x] `modelSpec.isThinking` + `modelSpec.thinkingMode` → `thinkingConfig`
+  - [x] `modelSpec.maxOutputTokens` → default max tokens
+  - [x] Parse `system` field (string atau content array) → `system_instruction`
+  - [x] Transform Anthropic `messages` → Google `contents`
+  - [x] Handle: `text`, `image` (base64), `tool_use` (functionCall), `tool_result` (functionResponse), `thinking` (thought + thoughtSignature)
+  - [x] Handle `tools` → `functionDeclarations` dengan `cleanJSONSchemaForAntigravity`
+  - [x] Merge consecutive same-role messages
+  - [x] **Tidak inject `project`** — itu tugas executor
 
 #### 2.2 — Anthropic Response Mapper (`mapper-out.ts`)
 - [ ] Buat `src/protocols/anthropic/mapper-out.ts` (lihat contoh kode lengkap di bawah)

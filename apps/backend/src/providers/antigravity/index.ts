@@ -13,6 +13,7 @@ import {
 import type { AntigravityAccount } from './auth/types';
 import { antigravityModelRegistry, loadModelSpecOverrides } from './config/model-specs';
 import {
+  ANTIGRAVITY_SYSTEM_INSTRUCTION,
   getAntigravityConfig,
   loadAntigravityConfig,
   saveAntigravityConfig,
@@ -104,6 +105,7 @@ export class AntigravityProvider implements IProvider {
 }
 
 export {
+  ANTIGRAVITY_SYSTEM_INSTRUCTION,
   getAntigravityConfig,
   loadAntigravityConfig,
   saveAntigravityConfig,
