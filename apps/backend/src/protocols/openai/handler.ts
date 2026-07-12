@@ -244,7 +244,7 @@ export class OpenAIProtocolHandler implements IProtocolHandler {
             error: {
               message: error.message,
               type: "invalid_request_error",
-              code: "missing_provider_prefix",
+              code: "model_prefix_required",
             },
           },
           error.status,

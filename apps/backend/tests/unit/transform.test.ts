@@ -1,23 +1,28 @@
-
 import { describe, expect, test, beforeAll } from "bun:test";
-import {
-  mapOpenAIToGoogle,
-  transformGoogleEventToOpenAI,
-} from "../../src/protocols/openai";
+import { mapOpenAIToGoogle } from "../../src/protocols/openai/mapper-in";
+import { transformGoogleEventToOpenAI } from "../../src/protocols/openai/mapper-out";
 import { loadProxyConfig } from "../../src/config/manager";
-import { getModelSpec } from "../../src/providers/antigravity/config/model-specs";
+import { loadAntigravityConfig } from "../../src/providers/antigravity";
+import type { IModelSpec } from "../../src/core/interfaces";
+import { resolveModel } from "../../src/core/model-resolver";
+import { OpenAIProtocolHandler } from "../../src/protocols/openai/handler";
 
 beforeAll(async () => {
   await loadProxyConfig();
+  await loadAntigravityConfig();
 });
 
 /**
- * Read a model spec and fail loudly when the fixture model does not exist.
+ * Build a compact model spec fixture for mapper tests.
  */
-function requireModelSpec(modelId: string) {
-  const modelSpec = getModelSpec(modelId);
-  expect(modelSpec).not.toBeNull();
-  return modelSpec!;
+function buildModelSpec(overrides: Partial<IModelSpec>): IModelSpec {
+  return {
+    modelId: "fixture-model",
+    pool: "sandbox",
+    isThinking: false,
+    maxOutputTokens: 4096,
+    ...overrides,
+  };
 }
 
 describe("Unit Tests: mapOpenAIToGoogle", () => {
@@ -32,7 +37,10 @@ describe("Unit Tests: mapOpenAIToGoogle", () => {
 
     const result = mapOpenAIToGoogle(
       openaiBody,
-      requireModelSpec("gpt-oss-120b"),
+      buildModelSpec({
+        modelId: "gpt-oss-120b",
+        pool: "cli",
+      }),
       "session-1",
     );
 
@@ -52,7 +60,13 @@ describe("Unit Tests: mapOpenAIToGoogle", () => {
 
     const result = mapOpenAIToGoogle(
       openaiBody,
-      requireModelSpec("gemini-3-pro-high"),
+      buildModelSpec({
+        modelId: "gemini-3-pro-high",
+        isThinking: true,
+        thinkingMode: "level",
+        thinkingLevel: "high",
+        maxOutputTokens: 64000,
+      }),
       "session-2",
     );
     expect(result.model).toBe("gemini-3-pro-high");
@@ -72,7 +86,13 @@ describe("Unit Tests: mapOpenAIToGoogle", () => {
 
     const result = mapOpenAIToGoogle(
       openaiBody,
-      requireModelSpec("gemini-3-pro"),
+      buildModelSpec({
+        modelId: "gemini-3-pro",
+        isThinking: true,
+        thinkingMode: "level",
+        thinkingLevel: "low",
+        maxOutputTokens: 64000,
+      }),
       "session-3",
     );
     expect(result.request.contents).toHaveLength(3);
@@ -105,7 +125,13 @@ describe("Unit Tests: mapOpenAIToGoogle", () => {
 
     const result = mapOpenAIToGoogle(
       openaiBody,
-      requireModelSpec("gemini-3-pro"),
+      buildModelSpec({
+        modelId: "gemini-3-pro",
+        isThinking: true,
+        thinkingMode: "level",
+        thinkingLevel: "low",
+        maxOutputTokens: 64000,
+      }),
       "session-4",
     );
     expect(result.request.tools).toBeDefined();
@@ -122,7 +148,11 @@ describe("Unit Tests: mapOpenAIToGoogle", () => {
 
     const result = mapOpenAIToGoogle(
       openaiBody,
-      requireModelSpec("claude-opus-4-6"),
+      buildModelSpec({
+        modelId: "claude-opus-4-6",
+        upstreamModelId: "claude-opus-4-6-thinking",
+        maxOutputTokens: 8192,
+      }),
       "session-5",
     );
     expect(result.model).toBe("claude-opus-4-6-thinking");
@@ -141,7 +171,13 @@ describe("Unit Tests: mapOpenAIToGoogle", () => {
 
     const result = mapOpenAIToGoogle(
       openaiBody,
-      requireModelSpec("claude-opus-4-6-thinking"),
+      buildModelSpec({
+        modelId: "claude-opus-4-6-thinking",
+        isThinking: true,
+        thinkingMode: "budget",
+        thinkingBudget: 32768,
+        maxOutputTokens: 64000,
+      }),
       "session-6",
     );
     expect(result.request.generationConfig.thinkingConfig.thinkingBudget).toBe(8192);
@@ -167,7 +203,13 @@ describe("Unit Tests: mapOpenAIToGoogle", () => {
 
     const result = mapOpenAIToGoogle(
       openaiBody,
-      requireModelSpec("claude-opus-4-6-thinking"),
+      buildModelSpec({
+        modelId: "claude-opus-4-6-thinking",
+        isThinking: true,
+        thinkingMode: "budget",
+        thinkingBudget: 32768,
+        maxOutputTokens: 64000,
+      }),
       "session-7",
     );
     const funcCallPart = result.request.contents[0].parts.find((p: any) => p.functionCall);
@@ -190,7 +232,13 @@ describe("Unit Tests: mapOpenAIToGoogle", () => {
 
     const result = mapOpenAIToGoogle(
       openaiBody,
-      requireModelSpec("claude-opus-4-6-thinking"),
+      buildModelSpec({
+        modelId: "claude-opus-4-6-thinking",
+        isThinking: true,
+        thinkingMode: "budget",
+        thinkingBudget: 32768,
+        maxOutputTokens: 64000,
+      }),
       "session-8",
     );
     const funcRespPart = result.request.contents[0].parts.find((p: any) => p.functionResponse);
@@ -240,5 +288,47 @@ describe("Unit Tests: transformGoogleEventToOpenAI", () => {
     const googleData = { candidates: [] };
     const result = transformGoogleEventToOpenAI(googleData, "model");
     expect(result).toBeNull();
+  });
+});
+
+describe("Unit Tests: OpenAIProtocolHandler", () => {
+  test("Rejects requests without provider prefix", async () => {
+    const handler = new OpenAIProtocolHandler();
+    const req = new Request("http://localhost:3000/openai/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "gemini-3-flash",
+        messages: [{ role: "user", content: "Hello" }],
+      }),
+    });
+
+    const response = await handler.handle({
+      req,
+      url: new URL(req.url),
+      protocol: "openai",
+      resolvedModel: resolveModel("gemini-3-flash"),
+      provider: {
+        id: "antigravity",
+        displayName: "Antigravity",
+        init: async () => {},
+        getBestAccount: async () => null,
+        updateAccountUsage: async () => {},
+        getAccounts: () => [],
+        getModelRegistry: () => ({
+          getSpec: () => null,
+          listModelIds: () => [],
+        }),
+      },
+      sessionId: "session-handler-test",
+      clientId: "client-handler-test",
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: {
+        code: "model_prefix_required",
+      },
+    });
   });
 });

@@ -5,6 +5,21 @@ import { homedir } from "os";
 
 const CONFIG_PATH = join(homedir(), ".config/opencode/opencode.json");
 
+/**
+ * Normalize legacy provider-prefixed model IDs to the new `provider:model` format.
+ */
+function normalizeModelId(modelId: string) {
+  if (modelId.startsWith("antigravity:")) {
+    return modelId;
+  }
+
+  if (modelId.startsWith("antigravity-")) {
+    return `antigravity:${modelId.slice("antigravity-".length)}`;
+  }
+
+  return modelId;
+}
+
 function parseConfig(text: string) {
   const cleaned = text.replace(/,(\s*[\]}])/g, "$1");
   return JSON.parse(cleaned);
@@ -37,10 +52,10 @@ describe("Antigravity Proxy Functional Tests", () => {
       }
 
       headers = provider.options?.headers || {};
-      modelIds = Object.keys(provider.models || {});
+      modelIds = Object.keys(provider.models || {}).map(normalizeModelId);
 
-      if (!modelIds.includes("antigravity-claude-opus-4-6-thinking-high")) {
-        modelIds.push("antigravity-claude-opus-4-6-thinking-high");
+      if (!modelIds.includes("antigravity:claude-opus-4-6-thinking")) {
+        modelIds.push("antigravity:claude-opus-4-6-thinking");
       }
     } catch (e: any) {
       throw new Error(`Failed to initialize test: ${e.message}`);

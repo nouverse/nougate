@@ -1,11 +1,10 @@
-import type { IProvider } from "../../core/interfaces";
 import { registerHandler } from "../../core/registry";
 import { OpenAIProtocolHandler } from "./handler";
 
 /**
  * Register the OpenAI-compatible protocol routes.
  */
-export function registerOpenAIProtocol(_provider: IProvider): void {
+export function registerOpenAIProtocol(): void {
   registerHandler(new OpenAIProtocolHandler());
 }
 

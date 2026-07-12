@@ -41,7 +41,7 @@ for (const test of testCases) {
     const result = mapOpenAIToGoogle(
         test.input,
         requireModelSpec(test.modelId),
-        undefined,
+        "routing-test-session",
         { projectId: test.projectId },
     );
     console.log(`Final Google Model: ${result.model}`);

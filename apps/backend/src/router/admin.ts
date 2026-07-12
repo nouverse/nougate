@@ -1,0 +1,366 @@
+import { getProxyConfig, updateProxyConfig } from "../config/manager";
+import {
+  addAccount,
+  eventBus,
+  getAccounts,
+  getCooldowns,
+  getStrategy,
+  markCooldown,
+  removeAccount,
+  resetAccount,
+  resetAllCooldowns,
+  saveAccounts,
+  setStrategy,
+  updateAccountProject,
+} from "../providers/antigravity/auth/manager";
+import { exchangeCode, generateAuthUrl, getProjectId, getUserEmail } from "../providers/antigravity/auth/oauth";
+import type { AntigravityAccount, SelectionStrategy } from "../providers/antigravity/auth/types";
+import { fetchQuota, supportedModelsCache } from "../providers/antigravity/api/quota";
+import { getAntigravityConfig, updateAntigravityConfig } from "../providers/antigravity";
+import { getCapturedLogs } from "./middleware";
+
+const pkg = await Bun.file("package.json").json();
+const APP_VERSION = pkg.version || "0.0.0";
+
+/**
+ * Build a JSON response with the shared admin payload format.
+ */
+function createJsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+}
+
+/**
+ * Combine global proxy config with provider-local config for the admin API.
+ */
+function buildCombinedConfig() {
+  const proxyConfig = getProxyConfig();
+  const antigravityConfig = getAntigravityConfig();
+
+  return {
+    ...proxyConfig,
+    models: antigravityConfig.models,
+    quota: antigravityConfig.quota,
+    endpoints: antigravityConfig.endpoints,
+    features: antigravityConfig.features,
+    scheduling: antigravityConfig.scheduling,
+  };
+}
+
+/**
+ * Split admin config updates into global and provider-local payloads.
+ */
+function splitConfigUpdates(updates: any) {
+  const proxyUpdates: any = {};
+  const providerUpdates: any = {};
+
+  for (const key of ["rotation", "scoring", "retry", "tokens", "logging"]) {
+    if (key in updates) {
+      proxyUpdates[key] = updates[key];
+    }
+  }
+
+  for (const key of ["quota", "endpoints", "features", "scheduling"]) {
+    if (key in updates) {
+      providerUpdates[key] = updates[key];
+    }
+  }
+
+  if (updates.models?.blacklist) {
+    providerUpdates.models = { blacklist: updates.models.blacklist };
+  }
+
+  return { proxyUpdates, providerUpdates };
+}
+
+/**
+ * Create the admin SSE stream used by the dashboard.
+ */
+function createAdminEventStream(): Response {
+  let onUpdate: ((data: any) => void) | undefined;
+  let onFlash: ((data: { email: string; status: "success" | "error" }) => void) | undefined;
+  let onLog: ((message: string) => void) | undefined;
+  let onCooldown: ((data: any) => void) | undefined;
+
+  const stream = new ReadableStream({
+    start(controller) {
+      const encoder = new TextEncoder();
+      const send = (event: string, data: any) => {
+        try {
+          controller.enqueue(
+            encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
+          );
+        } catch {
+        }
+      };
+
+      send("init", {
+        version: APP_VERSION,
+        accounts: getAccounts(),
+        strategy: getStrategy(),
+        supportedModels: Array.from(supportedModelsCache).sort(),
+        cooldowns: getCooldowns(),
+        logs: getCapturedLogs(),
+      });
+
+      onUpdate = (data: any) =>
+        send("update", {
+          ...data,
+          supportedModels: Array.from(supportedModelsCache).sort(),
+        });
+      onFlash = (data: { email: string; status: "success" | "error" }) =>
+        send("flash", data);
+      onLog = (message: string) => send("log", { message });
+      onCooldown = (data: any) => send("cooldown", data);
+
+      eventBus.on("update", onUpdate);
+      eventBus.on("flash", onFlash);
+      eventBus.on("log", onLog);
+      eventBus.on("cooldown", onCooldown);
+    },
+    cancel() {
+      if (onUpdate) {
+        eventBus.off("update", onUpdate);
+      }
+      if (onFlash) {
+        eventBus.off("flash", onFlash);
+      }
+      if (onLog) {
+        eventBus.off("log", onLog);
+      }
+      if (onCooldown) {
+        eventBus.off("cooldown", onCooldown);
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    },
+  });
+}
+
+/**
+ * Read and serve a frontend asset from the embedded dashboard bundle.
+ */
+function serveFrontendAsset(pathname: string): Response {
+  const relativePath = pathname.replace("/frontend/", "");
+  const file = Bun.file(`${import.meta.dir}/../frontend/${relativePath}`);
+  return new Response(file);
+}
+
+/**
+ * Handle provider OAuth callback and persist the authenticated account.
+ */
+async function handleOAuthCallback(url: URL): Promise<Response> {
+  const code = url.searchParams.get("code");
+  if (!code) {
+    return new Response("Missing code", { status: 400 });
+  }
+
+  try {
+    const tokenRes = await exchangeCode(code);
+    const email = await getUserEmail(tokenRes.access_token);
+    const projectId = await getProjectId(tokenRes.access_token);
+    const newAccount: AntigravityAccount = {
+      email,
+      refreshToken: tokenRes.refresh_token!,
+      accessToken: tokenRes.access_token,
+      expiresAt: Date.now() + tokenRes.expires_in * 1000,
+      projectId,
+      healthScore: 100,
+      lastUsed: 0,
+      tokenUsage: 0,
+    };
+
+    if (!newAccount.refreshToken) {
+      return new Response(
+        "No refresh token received. Revoke access and try again.",
+        { status: 400 },
+      );
+    }
+
+    if (newAccount.projectId) {
+      const quota = await fetchQuota(newAccount);
+      if (quota) {
+        newAccount.quota = quota;
+      }
+    }
+
+    await addAccount(newAccount);
+    return Response.redirect("http://localhost:3000/frontend/index.html");
+  } catch (error) {
+    return new Response(`Auth error: ${error}`, { status: 500 });
+  }
+}
+
+/**
+ * Handle the non-protocol admin, OAuth, and frontend routes.
+ */
+export async function handleAdminRoute(req: Request, url: URL): Promise<Response | null> {
+  if (url.pathname === "/oauth/start") {
+    return Response.redirect(generateAuthUrl());
+  }
+
+  if (url.pathname === "/oauth-callback") {
+    return handleOAuthCallback(url);
+  }
+
+  if (url.pathname === "/api/sse") {
+    return createAdminEventStream();
+  }
+
+  if (url.pathname === "/api/status") {
+    return createJsonResponse({
+      version: APP_VERSION,
+      accounts: getAccounts(),
+      strategy: getStrategy(),
+      supportedModels: Array.from(supportedModelsCache).sort(),
+    });
+  }
+
+  if (url.pathname === "/api/strategy" && req.method === "POST") {
+    const body = await req.json() as { strategy?: SelectionStrategy };
+    if (!body.strategy) {
+      return new Response("Missing strategy", { status: 400 });
+    }
+
+    setStrategy(body.strategy);
+    await updateProxyConfig({
+      rotation: {
+        ...getProxyConfig().rotation,
+        strategy: body.strategy,
+      },
+    });
+    return new Response("OK", { status: 200 });
+  }
+
+  if (url.pathname === "/api/config" && req.method === "GET") {
+    return createJsonResponse(buildCombinedConfig());
+  }
+
+  if (url.pathname === "/api/config" && req.method === "POST") {
+    const body = await req.json();
+    try {
+      const { proxyUpdates, providerUpdates } = splitConfigUpdates(body);
+      if (Object.keys(proxyUpdates).length > 0) {
+        await updateProxyConfig(proxyUpdates);
+      }
+      if (Object.keys(providerUpdates).length > 0) {
+        await updateAntigravityConfig(providerUpdates);
+      }
+      return createJsonResponse(buildCombinedConfig());
+    } catch (error: any) {
+      return createJsonResponse({ error: error.message }, 400);
+    }
+  }
+
+  if (url.pathname === "/api/accounts/reset-all" && req.method === "POST") {
+    const accounts = getAccounts();
+    for (const account of accounts) {
+      account.healthScore = 100;
+      account.consecutiveFailures = 0;
+      account.cooldowns = {};
+      account.modelScores = {};
+      account.history = [];
+      account.quota = [];
+      delete account.challenge;
+    }
+
+    resetAllCooldowns();
+    await saveAccounts(accounts);
+    console.log(`[Manager] Reset state for all ${accounts.length} accounts via API`);
+    return new Response("OK", { status: 200 });
+  }
+
+  if (url.pathname.startsWith("/api/accounts/") && req.method === "DELETE") {
+    const email = url.pathname.replace("/api/accounts/", "");
+    if (!email) {
+      return new Response("Bad Request", { status: 400 });
+    }
+
+    await removeAccount(email);
+    return new Response("OK", { status: 200 });
+  }
+
+  if (
+    url.pathname.startsWith("/api/accounts/") &&
+    url.pathname.endsWith("/reset") &&
+    req.method === "POST"
+  ) {
+    const email = url.pathname.split("/")[3];
+    await resetAccount(email);
+    return new Response("OK", { status: 200 });
+  }
+
+  if (
+    url.pathname.startsWith("/api/accounts/") &&
+    url.pathname.endsWith("/project/rediscover") &&
+    req.method === "POST"
+  ) {
+    const email = url.pathname.split("/")[3];
+    const account = getAccounts().find((item) => item.email === email);
+    if (!account?.accessToken) {
+      return new Response("Account not found or no token", { status: 400 });
+    }
+
+    try {
+      const projectId = await getProjectId(account.accessToken);
+      if (!projectId) {
+        return new Response("No project found via discovery", { status: 404 });
+      }
+
+      await updateAccountProject(email, projectId);
+      return createJsonResponse({ projectId });
+    } catch (error: any) {
+      return new Response(error.message, { status: 500 });
+    }
+  }
+
+  if (
+    url.pathname.startsWith("/api/accounts/") &&
+    url.pathname.endsWith("/project") &&
+    req.method === "POST"
+  ) {
+    const email = url.pathname.split("/")[3];
+    const body = await req.json() as { projectId?: string };
+    if (!body.projectId) {
+      return new Response("Missing projectId", { status: 400 });
+    }
+
+    await updateAccountProject(email, body.projectId);
+    return new Response("OK", { status: 200 });
+  }
+
+  if (
+    url.pathname.startsWith("/api/accounts/") &&
+    url.pathname.endsWith("/cooldown") &&
+    req.method === "POST"
+  ) {
+    const email = url.pathname.split("/")[3];
+    const body = await req.json() as { pool?: "cli" | "sandbox" };
+    markCooldown(email, body.pool || "cli", "3600s");
+    return new Response("OK", { status: 200 });
+  }
+
+  if (url.pathname.startsWith("/frontend/")) {
+    try {
+      return serveFrontendAsset(url.pathname);
+    } catch {
+      return new Response("Not Found", { status: 404 });
+    }
+  }
+
+  if (url.pathname === "/") {
+    return Response.redirect("/frontend/index.html");
+  }
+
+  return null;
+}

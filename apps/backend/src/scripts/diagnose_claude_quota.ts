@@ -60,7 +60,7 @@ const openaiBody = {
 const googleBody = mapOpenAIToGoogle(
     openaiBody,
     requireModelSpec("claude-opus-4-6-thinking"),
-    undefined,
+    "diagnose-claude-session",
     { projectId: account.projectId || "rising-fact-p41fc" },
 );
 

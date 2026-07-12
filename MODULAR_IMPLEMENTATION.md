@@ -670,15 +670,15 @@ export function mapOpenAIToGoogle(
 - [x] Register provider ke registry
 
 #### 1.8 — Buat Router & Slim Down `server.ts`
-- [ ] Buat `src/router/middleware.ts` — cors + request logger + log capture (pindah dari `server.ts`)
-- [ ] Buat `src/router/admin.ts` — pindahkan semua admin routes dari `server.ts` (baris 535–762)
-- [ ] Buat `src/router/index.ts` — central dispatcher
-- [ ] Refactor `src/server.ts` → hanya init + register + start (< 80 baris)
-- [ ] Update **semua script** di `src/scripts/` untuk pakai path dan model format baru:
+- [x] Buat `src/router/middleware.ts` — cors + request logger + log capture (pindah dari `server.ts`)
+- [x] Buat `src/router/admin.ts` — pindahkan semua admin routes dari `server.ts` (baris 535–762)
+- [x] Buat `src/router/index.ts` — central dispatcher
+- [x] Refactor `src/server.ts` → hanya init + register + start (< 80 baris)
+- [x] Update **semua script** di `src/scripts/` untuk pakai path dan model format baru:
   - `test-request.ts`: url `/v1/chat/completions` → `/openai/v1/chat/completions`, model `gemini-2.5-flash-thinking` → `antigravity:gemini-2.5-flash-thinking`
   - Script lain yang import dari `src/auth/*`, `src/api/*`, `src/utils/*`: update imports
-- [ ] **Rewrite unit tests** (`tests/unit/`):
-  - [ ] `transform.test.ts` → rewrite total:
+- [x] **Rewrite unit tests** (`tests/unit/`):
+  - [x] `transform.test.ts` → rewrite total:
     - Import path berubah: `src/utils/transform` → `src/protocols/openai/mapper-in` dan `mapper-out`
     - Signature berubah: `transformToGoogleBody(body, projectId, isCli, location)` → `mapOpenAIToGoogle(body, modelSpec, sessionId)`
     - Test harus pakai `IModelSpec` object bukan raw model string
@@ -686,21 +686,21 @@ export function mapOpenAIToGoogle(
     - Hapus test "Thinking level extraction for CLI" (pool/tier sekarang dari `IModelSpec`, bukan dari model string suffix)
     - Update test "Claude Opus 4.6 Thinking mapping" — pakai `IModelSpec` dengan `upstreamModelId`
     - Tambah test: model tanpa prefix → reject (di handler, bukan di mapper)
-  - [ ] `manager.test.ts` → rewrite:
+  - [x] `manager.test.ts` → rewrite:
     - Import path berubah: `src/auth/manager` → `src/providers/antigravity/auth/manager`
     - `getFamilyName()` sekarang terima bare `modelId` (bukan string dengan `antigravity-` prefix)
     - Update test expectations sesuai model-model yang ada di registry
-  - [ ] **Tambah test baru** `tests/unit/model-resolver.test.ts`:
+  - [x] **Tambah test baru** `tests/unit/model-resolver.test.ts`:
     - Test `resolveModel("antigravity:gemini-3.5-flash-low")` → `{ providerId: "antigravity", modelId: "gemini-3.5-flash-low" }`
     - Test `resolveModel("gemini-3.5-flash-low")` → `{ providerId: null, modelId: "gemini-3.5-flash-low" }`
     - Test `requireProviderPrefix()` throw `ModelPrefixError` untuk model tanpa prefix
     - Test `requireProviderPrefix()` pass untuk model dengan prefix
-  - [ ] **Tambah test baru** `tests/unit/model-registry.test.ts`:
+  - [x] **Tambah test baru** `tests/unit/model-registry.test.ts`:
     - Test `antigravityModelRegistry.getSpec("gemini-3.5-flash-low")` → return IModelSpec
     - Test `antigravityModelRegistry.getSpec("nonexistent-model")` → return null
     - Test `antigravityModelRegistry.listModelIds()` → return string[]
-- [ ] **Rewrite functional tests** (`tests/functional/`):
-  - [ ] `gemini-functional.test.ts`:
+- [x] **Rewrite functional tests** (`tests/functional/`):
+  - [x] `gemini-functional.test.ts`:
     - URL: `/v1/chat/completions` → `/openai/v1/chat/completions`
     - Model: `gemini-2.0-flash` → `antigravity:gemini-3-flash` (atau model valid lain)
     - Tambah test: request tanpa prefix → expect 400
@@ -715,7 +715,7 @@ export function mapOpenAIToGoogle(
   - OAuth: `GET /oauth/start` → redirect ✅
   - `POST /v1/chat/completions` → **404** ✅ (intentional break)
   - `GET /v1/models` → **404** ✅ (intentional break)
-  - `bun test tests/unit` → all pass ✅
+  - [x] `bun test tests/unit` → all pass ✅
   - `bun test tests/functional` → all pass ✅ (jika server running)
 ---
 

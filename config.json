@@ -1,0 +1,40 @@
+{
+  "rotation": {
+    "strategy": "hybrid",
+    "cooldown": {
+      "defaultDurationMs": 60000,
+      "maxDurationMs": 3600000
+    }
+  },
+  "scoring": {
+    "healthRange": {
+      "min": 0,
+      "max": 100,
+      "initial": 100
+    },
+    "penalties": {
+      "apiError": -10,
+      "refreshError": -20,
+      "fatalError": -50,
+      "systemicError": -5
+    },
+    "rewards": {
+      "success": 1
+    },
+    "weights": {
+      "health": 2,
+      "lru": 0.1
+    }
+  },
+  "retry": {
+    "maxAttempts": 5,
+    "transientRetryThresholdSeconds": 5
+  },
+  "tokens": {
+    "expiryBufferMs": 60000
+  },
+  "logging": {
+    "maxBufferSize": 200,
+    "enableConsoleCapture": true
+  }
+}

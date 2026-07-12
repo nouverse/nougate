@@ -120,6 +120,10 @@ function mergeKnownKeys(target: any, source: any): any {
     const sourceValue = source[key];
     const targetValue = target[key];
 
+    if (sourceValue === undefined) {
+      continue;
+    }
+
     if (
       sourceValue !== null &&
       typeof sourceValue === 'object' &&

@@ -36,7 +36,7 @@ if (!account) {
 console.log(`Testing Claude on CLI endpoint with account: ${account.email}`);
 
 const openaiBody = {
-    model: "claude-opus-4-6-thinking",
+    model: "antigravity:claude-opus-4-6-thinking",
     messages: [
         { role: "user", content: "Hello, explain quantum physics in one sentence." }
     ],
@@ -48,7 +48,7 @@ const openaiBody = {
 const googleBody = mapOpenAIToGoogle(
     openaiBody,
     requireModelSpec("claude-opus-4-6-thinking"),
-    undefined,
+    "claude-cli-session",
     { projectId: account.projectId || "rising-fact-p41fc" },
 );
 console.log("Transformed Body:", JSON.stringify(googleBody, null, 2));

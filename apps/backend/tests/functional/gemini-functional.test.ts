@@ -119,4 +119,27 @@ describe("Functional Tests: Gemini Chat (Real/Simulated)", () => {
     } catch (e) {
     }
   });
+
+  test("Request without provider prefix should return 400", async () => {
+    try {
+      const response = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "gemini-3-flash",
+          messages: [{ role: "user", content: "Hello" }],
+          stream: false,
+        }),
+      });
+
+      if (!response.ok && response.status !== 400) {
+        return;
+      }
+
+      const data = await response.json() as any;
+      expect(response.status).toBe(400);
+      expect(data.error?.code).toBe("model_prefix_required");
+    } catch (e) {
+    }
+  });
 });
