@@ -39,6 +39,7 @@ export interface ProviderDetail extends Provider {
 }
 
 export interface ProxyConfig {
+  bypassModelValidation?: boolean;
   rotation: {
     strategy: string;
     [key: string]: any;

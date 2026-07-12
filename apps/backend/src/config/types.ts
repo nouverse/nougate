@@ -1,5 +1,6 @@
 export interface ProxyConfig {
   baseUrl?: string;
+  bypassModelValidation?: boolean;
   rotation: RotationConfig;
   scoring: ScoringConfig;
   retry: RetryConfig;

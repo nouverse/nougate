@@ -1,6 +1,7 @@
 import { existsSync } from 'fs';
 import { join } from 'path';
 import type { IModelRegistry, IModelSpec } from '@/core/interfaces';
+import { getProxyConfig } from '@/config/manager';
 
 
 const MODEL_REGISTRY: Record<string, IModelSpec> = {
@@ -31,6 +32,7 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
     thinkingMode: 'level',
     thinkingLevel: 'high',
     maxOutputTokens: 64000,
+    upstreamModelId: 'gemini-3.1-pro',
     timeoutMs: 45000,
   },
   // ─── Gemini 2.5 ─────────────────────────────────────────────────────────────
@@ -132,7 +134,28 @@ export async function loadModelSpecOverrides(): Promise<void> {
 export function getModelSpec(modelId: string): IModelSpec | null {
   const normalized = normalizeModelId(modelId);
   const modelSpec = MODEL_REGISTRY[normalized];
-  return modelSpec ? cloneModelSpec(modelSpec) : null;
+  if (modelSpec) {
+    return cloneModelSpec(modelSpec);
+  }
+
+  // Check if we should bypass validation
+  try {
+    const proxyConfig = getProxyConfig();
+    if (proxyConfig && proxyConfig.bypassModelValidation) {
+      // Dynamic fallback for unknown models to search/test raw upstream model names
+      console.log(`[AntigravityModelRegistry] Unknown model "${modelId}" requested, generating dynamic spec fallback.`);
+      return createDefaultModelSpec(modelId, {
+        isThinking: modelId.toLowerCase().includes("thinking"),
+        thinkingMode: modelId.toLowerCase().includes("thinking") ? "budget" : undefined,
+        thinkingBudget: modelId.toLowerCase().includes("thinking") ? 32768 : undefined,
+        maxOutputTokens: 64000,
+      });
+    }
+  } catch (error) {
+    // If config is not loaded (e.g. during specific standalone script runs), default to non-bypass
+  }
+
+  return null;
 }
 
 

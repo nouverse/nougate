@@ -14,6 +14,7 @@ let config: ProxyConfig;
 
 const DEFAULT_CONFIG: ProxyConfig = {
   baseUrl: 'http://localhost:3000',
+  bypassModelValidation: false,
   rotation: {
     strategy: 'hybrid',
     cooldown: {
