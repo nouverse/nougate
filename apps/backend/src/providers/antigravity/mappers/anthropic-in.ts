@@ -1,7 +1,7 @@
-import type { IModelSpec } from "../../core/interfaces";
-import { getSignature, getSignatureByCallId, getSignatureFamily } from "../../utils/cache";
-import { cleanJSONSchemaForAntigravity } from "../../utils/schema";
-import { getFamilyName } from "../../providers/antigravity/auth/manager";
+import type { IModelSpec } from "../../../core/interfaces";
+import { getSignature, getSignatureByCallId, getSignatureFamily } from "../utils/signature-cache";
+import { cleanJSONSchemaForAntigravity } from "../utils/schema";
+import { getFamilyName } from "../auth/manager";
 
 // ─── Anthropic Request Types ──────────────────────────────────────────────────
 

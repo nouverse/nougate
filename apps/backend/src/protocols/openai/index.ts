@@ -9,8 +9,8 @@ export function registerOpenAIProtocol(): void {
 }
 
 export { OpenAIProtocolHandler } from "./handler";
-export { mapOpenAIToGoogle } from "./mapper-in";
+export { mapOpenAIToGoogle } from "../../providers/antigravity/mappers/openai-in";
 export {
   createOpenAIStreamTransformer,
   transformGoogleEventToOpenAI,
-} from "./mapper-out";
+} from "../../providers/antigravity/mappers/openai-out";

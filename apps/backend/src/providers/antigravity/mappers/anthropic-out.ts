@@ -1,5 +1,5 @@
-import { cacheSignature, cacheSignatureByCallId, cacheSessionSignature, cacheThinkingFamily, cacheSessionReasoning } from "../../utils/cache";
-import { getFamilyName } from "../../providers/antigravity/auth/manager";
+import { cacheSignature, cacheSignatureByCallId, cacheSessionSignature, cacheThinkingFamily, cacheSessionReasoning } from "../utils/signature-cache";
+import { getFamilyName } from "../auth/manager";
 
 /**
  * Google SSE → Anthropic SSE transform.

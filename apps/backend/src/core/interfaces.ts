@@ -83,7 +83,17 @@ export interface IProvider {
   getAccounts(): IAccount[];
   getModelRegistry(): IModelRegistry;
   getSupportedModels(): string[];
+  execute(params: ProviderExecuteParams): Promise<Response>;
 }
+
+export interface ProviderExecuteParams {
+  protocol: 'openai' | 'anthropic';
+  body: any;
+  resolvedModel: ResolvedModel;
+  modelSpec: IModelSpec;
+  ctx: RequestContext;
+}
+
 
 /**
  * Protocol handler contract for a single client-facing API format.

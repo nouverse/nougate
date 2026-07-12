@@ -1,6 +1,6 @@
 import { describe, expect, test, beforeAll } from "bun:test";
-import { mapOpenAIToGoogle } from "../../src/protocols/openai/mapper-in";
-import { transformGoogleEventToOpenAI } from "../../src/protocols/openai/mapper-out";
+import { mapOpenAIToGoogle } from "../../src/providers/antigravity/mappers/openai-in";
+import { transformGoogleEventToOpenAI } from "../../src/providers/antigravity/mappers/openai-out";
 import { loadProxyConfig } from "../../src/config/manager";
 import { loadAntigravityConfig } from "../../src/providers/antigravity";
 import type { IModelSpec } from "../../src/core/interfaces";

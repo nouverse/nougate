@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseRetryDelay } from "../../src/utils/retry";
+import { parseRetryDelay } from "../../src/providers/antigravity/utils/retry";
 import {
   cacheSessionSignature,
   getSessionSignature,
@@ -10,7 +10,7 @@ import {
   getSignatureFamily,
   cacheSessionReasoning,
   getSessionReasoning,
-} from "../../src/utils/cache";
+} from "../../src/providers/antigravity/utils/signature-cache";
 
 describe("Grace Retry & Rewind Cache Unit Tests", () => {
 

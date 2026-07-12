@@ -16,7 +16,7 @@ import {
 import type { AntigravityAccount } from "../auth/types";
 import { parseGoogleError } from "./errors";
 import { getGeminiCliHeaders, getImpersonationHeaders } from "./headers";
-import { parseRetryDelay } from "../../../utils/retry";
+import { parseRetryDelay } from "../utils/retry";
 
 /**
  * Parameters used to rebuild a Google request body for the current attempt.

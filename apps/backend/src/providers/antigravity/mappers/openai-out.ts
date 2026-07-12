@@ -4,9 +4,9 @@ import {
   cacheSessionSignature,
   cacheThinkingFamily,
   cacheSessionReasoning,
-} from "../../utils/cache";
-import { getFamilyName } from "../../providers/antigravity/auth/manager";
-import { getOriginalToolName } from "./mapper-in";
+} from "../utils/signature-cache";
+import { getFamilyName } from "../auth/manager";
+import { getOriginalToolName } from "./openai-in";
 
 /**
  * Transform a single Google SSE event into the OpenAI chunk format.

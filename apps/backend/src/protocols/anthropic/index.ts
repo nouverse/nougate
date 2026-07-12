@@ -9,8 +9,8 @@ export function registerAnthropicProtocol(): void {
 }
 
 export { AnthropicProtocolHandler } from "./handler";
-export { mapAnthropicToGoogle } from "./mapper-in";
+export { mapAnthropicToGoogle } from "../../providers/antigravity/mappers/anthropic-in";
 export {
   createAnthropicStreamTransformer,
   aggregateAnthropicResponse,
-} from "./mapper-out";
+} from "../../providers/antigravity/mappers/anthropic-out";
