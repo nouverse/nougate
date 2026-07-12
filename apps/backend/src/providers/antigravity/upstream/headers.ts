@@ -1,5 +1,4 @@
 import { type DeviceFingerprint } from "../auth/types";
-import { getProxyConfig } from "../../../config/manager";
 
 export const OAUTH_CONFIG = {
   clientId: "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com",
@@ -14,9 +13,7 @@ export const OAUTH_CONFIG = {
     "https://www.googleapis.com/auth/experimentsandconfigs",
   ],
   get redirectUri(): string {
-    const config = getProxyConfig();
-    const baseUrl = config?.baseUrl || "http://localhost:3000";
-    return `${baseUrl.replace(/\/$/, "")}/oauth-callback`;
+    return "http://localhost:3000/oauth-callback";
   },
 };
 
