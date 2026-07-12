@@ -319,6 +319,7 @@ describe("Unit Tests: OpenAIProtocolHandler", () => {
           getSpec: () => null,
           listModelIds: () => [],
         }),
+        getSupportedModels: () => [],
       },
       sessionId: "session-handler-test",
       clientId: "client-handler-test",
@@ -331,4 +332,47 @@ describe("Unit Tests: OpenAIProtocolHandler", () => {
       },
     });
   });
+
+  test("Lists models with legacy_id, provider, sorted by ID", async () => {
+    const handler = new OpenAIProtocolHandler();
+    const req = new Request("http://localhost:3000/openai/v1/models", {
+      method: "GET",
+    });
+
+    const response = await handler.handle({
+      req,
+      url: new URL(req.url),
+      protocol: "openai",
+      resolvedModel: resolveModel(""),
+      provider: {
+        id: "antigravity",
+        displayName: "Antigravity",
+        init: async () => {},
+        getBestAccount: async () => null,
+        updateAccountUsage: async () => {},
+        getAccounts: () => [],
+        getModelRegistry: () => ({
+          getSpec: () => null,
+          listModelIds: () => ["gemini-3.5-flash-low", "claude-sonnet-4-6"],
+        }),
+        getSupportedModels: () => [],
+      },
+      sessionId: "session-handler-test",
+      clientId: "client-handler-test",
+    });
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.object).toBe("list");
+    expect(body.data).toHaveLength(2);
+    // Sorted by ID: "antigravity:claude-sonnet-4-6" comes before "antigravity:gemini-3.5-flash-low"
+    expect(body.data[0].id).toBe("antigravity:claude-sonnet-4-6");
+    expect(body.data[0].legacy_id).toBe("antigravity-claude-sonnet-4-6");
+    expect(body.data[0].provider).toBe("antigravity");
+    
+    expect(body.data[1].id).toBe("antigravity:gemini-3.5-flash-low");
+    expect(body.data[1].legacy_id).toBe("antigravity-gemini-3.5-flash-low");
+    expect(body.data[1].provider).toBe("antigravity");
+  });
 });
+

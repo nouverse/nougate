@@ -12,6 +12,7 @@ import {
 } from './auth/manager';
 import type { AntigravityAccount } from './auth/types';
 import { antigravityModelRegistry, loadModelSpecOverrides } from './config/model-specs';
+import { supportedModelsCache } from './api/quota';
 import {
   ANTIGRAVITY_SYSTEM_INSTRUCTION,
   getAntigravityConfig,
@@ -88,6 +89,13 @@ export class AntigravityProvider implements IProvider {
    */
   getModelRegistry(): IModelRegistry {
     return antigravityModelRegistry;
+  }
+
+  /**
+   * Return the supported model IDs from quota cache.
+   */
+  getSupportedModels(): string[] {
+    return Array.from(supportedModelsCache);
   }
 
   /**

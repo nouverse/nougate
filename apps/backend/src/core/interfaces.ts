@@ -82,6 +82,7 @@ export interface IProvider {
   ): Promise<void>;
   getAccounts(): IAccount[];
   getModelRegistry(): IModelRegistry;
+  getSupportedModels(): string[];
 }
 
 /**

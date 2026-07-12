@@ -804,12 +804,12 @@ export function mapOpenAIToGoogle(
 - [x] **Verifikasi**: request dengan model yang ada di registry → cooldown/quota update pakai bare modelId
 
 #### 3.3 — `/v1/models` Enhancement
-- [ ] Update `handleModelsList()` di `src/router/index.ts`:
+- [x] Update `handleModelsList()` di `src/router/index.ts` (updated `handleListModels()` in `openai/handler.ts` and `anthropic/handler.ts`):
   - Return model IDs dalam format `"antigravity:gemini-3.5-flash"` (prefixed)
   - Juga include `legacy_id` field untuk backward compat
   - Tambah `provider` field di setiap model object
   - Sort by `id`
-- [ ] Update `src/providers/antigravity/index.ts`: implement `getSupportedModels()` yang return model IDs dari `supportedModelsCache`
+- [x] Update `src/providers/antigravity/index.ts`: implement `getSupportedModels()` yang return model IDs dari `supportedModelsCache`
 
 #### 3.4 — Model Specs Update
 - [ ] Update `config/model-specs.json`:

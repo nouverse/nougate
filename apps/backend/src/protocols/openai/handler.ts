@@ -209,10 +209,13 @@ function handleListModels(ctx: RequestContext): Response {
     .listModelIds()
     .map((modelId) => ({
       id: formatModelId(ctx.provider.id, modelId),
+      legacy_id: `${ctx.provider.id}-${modelId}`,
       object: "model",
       created: Math.floor(Date.now() / 1000),
       owned_by: ctx.provider.id,
-    }));
+      provider: ctx.provider.id,
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id));
 
   return createJsonResponse(
     {

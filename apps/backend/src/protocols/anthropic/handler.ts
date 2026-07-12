@@ -124,10 +124,13 @@ function handleListModels(ctx: RequestContext): Response {
       return {
         type: "model",
         id: prefixedId,
+        legacy_id: `${ctx.provider.id}-${modelId}`,
         display_name: spec?.displayName || prefixedId,
         created_at: "2026-01-01T00:00:00Z",
+        provider: ctx.provider.id,
       };
-    });
+    })
+    .sort((a, b) => a.id.localeCompare(b.id));
 
   return createJsonResponse(
     {
