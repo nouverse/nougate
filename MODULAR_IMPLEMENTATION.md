@@ -657,6 +657,33 @@ export function mapOpenAIToGoogle(
 - [ ] Update **semua script** di `src/scripts/` untuk pakai path dan model format baru:
   - `test-request.ts`: url `/v1/chat/completions` → `/openai/v1/chat/completions`, model `gemini-2.5-flash-thinking` → `antigravity:gemini-2.5-flash-thinking`
   - Script lain yang import dari `src/auth/*`, `src/api/*`, `src/utils/*`: update imports
+- [ ] **Rewrite unit tests** (`tests/unit/`):
+  - [ ] `transform.test.ts` → rewrite total:
+    - Import path berubah: `src/utils/transform` → `src/protocols/openai/mapper-in` dan `mapper-out`
+    - Signature berubah: `transformToGoogleBody(body, projectId, isCli, location)` → `mapOpenAIToGoogle(body, modelSpec, sessionId)`
+    - Test harus pakai `IModelSpec` object bukan raw model string
+    - Hapus test "Antigravity model prefix removal" (concept ini tidak ada lagi)
+    - Hapus test "Thinking level extraction for CLI" (pool/tier sekarang dari `IModelSpec`, bukan dari model string suffix)
+    - Update test "Claude Opus 4.6 Thinking mapping" — pakai `IModelSpec` dengan `upstreamModelId`
+    - Tambah test: model tanpa prefix → reject (di handler, bukan di mapper)
+  - [ ] `manager.test.ts` → rewrite:
+    - Import path berubah: `src/auth/manager` → `src/providers/antigravity/auth/manager`
+    - `getFamilyName()` sekarang terima bare `modelId` (bukan string dengan `antigravity-` prefix)
+    - Update test expectations sesuai model-model yang ada di registry
+  - [ ] **Tambah test baru** `tests/unit/model-resolver.test.ts`:
+    - Test `resolveModel("antigravity:gemini-3.5-flash-low")` → `{ providerId: "antigravity", modelId: "gemini-3.5-flash-low" }`
+    - Test `resolveModel("gemini-3.5-flash-low")` → `{ providerId: null, modelId: "gemini-3.5-flash-low" }`
+    - Test `requireProviderPrefix()` throw `ModelPrefixError` untuk model tanpa prefix
+    - Test `requireProviderPrefix()` pass untuk model dengan prefix
+  - [ ] **Tambah test baru** `tests/unit/model-registry.test.ts`:
+    - Test `antigravityModelRegistry.getSpec("gemini-3.5-flash-low")` → return IModelSpec
+    - Test `antigravityModelRegistry.getSpec("nonexistent-model")` → return null
+    - Test `antigravityModelRegistry.listModelIds()` → return string[]
+- [ ] **Rewrite functional tests** (`tests/functional/`):
+  - [ ] `gemini-functional.test.ts`:
+    - URL: `/v1/chat/completions` → `/openai/v1/chat/completions`
+    - Model: `gemini-2.0-flash` → `antigravity:gemini-3-flash` (atau model valid lain)
+    - Tambah test: request tanpa prefix → expect 400
 - [ ] **Verifikasi FINAL Phase 1**:
   - `GET /openai/v1/models` → 200 ✅ (return prefixed model IDs `antigravity:*`)
   - `POST /openai/v1/chat/completions` dengan `antigravity:gemini-3.5-flash-low` streaming → 200 ✅
@@ -668,7 +695,8 @@ export function mapOpenAIToGoogle(
   - OAuth: `GET /oauth/start` → redirect ✅
   - `POST /v1/chat/completions` → **404** ✅ (intentional break)
   - `GET /v1/models` → **404** ✅ (intentional break)
-  - `bun test tests/unit`
+  - `bun test tests/unit` → all pass ✅
+  - `bun test tests/functional` → all pass ✅ (jika server running)
 ---
 
 ## Phase 2: Multi-Protocol API Routing

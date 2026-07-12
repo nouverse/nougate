@@ -1,7 +1,7 @@
 {
-  "name": "nougate",
+  "name": "@nouverse/nougate",
+  "description": "Modular LLM router with multi-provider auth isolation and multi-protocol support.",
   "version": "0.7.0",
-  "description": "Modular LLM router with multi-provider auth isolation and multi-protocol support (OpenAI, Anthropic).",
   "module": "src/server.ts",
   "bin": {
     "nougate": "./src/server.ts"
