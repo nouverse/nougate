@@ -818,12 +818,12 @@ export function mapOpenAIToGoogle(
 - [x] Update `resolveModelId()` di `mapper-in.ts` (OpenAI): strip provider prefix sebelum resolve ke Google model
 
 #### 3.5 — Testing Phase 3
-- [ ] Test: `antigravity:gemini-3.5-flash-low` → route ke provider antigravity, model gemini-3.5-flash-low
-- [ ] Test: `antigravity:claude-sonnet-4-6` via `/openai/v1/chat/completions` → works
-- [ ] Test: `antigravity:claude-sonnet-4-6` via `/anthropic/v1/messages` → works
-- [ ] Test: `GET /openai/v1/models` → return prefixed IDs (`antigravity:*`)
-- [ ] **Tidak ada test untuk model tanpa prefix** — format `gemini-3.5-flash-low` (tanpa prefix) tidak didukung lagi
-- [ ] Update `src/scripts/test-request.ts` untuk pakai format baru
+- [x] Test: `antigravity:gemini-3.5-flash-low` → route ke provider antigravity, model gemini-3.5-flash-low
+- [x] Test: `antigravity:claude-sonnet-4-6` via `/openai/v1/chat/completions` → works
+- [x] Test: `antigravity:claude-sonnet-4-6` via `/anthropic/v1/messages` → works
+- [x] Test: `GET /openai/v1/models` → return prefixed IDs (`antigravity:*`)
+- [x] **Tidak ada test untuk model tanpa prefix** — format `gemini-3.5-flash-low` (tanpa prefix) tidak didukung lagi
+- [x] Update `src/scripts/test-request.ts` untuk pakai format baru
 
 ---
 
