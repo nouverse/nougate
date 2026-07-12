@@ -468,7 +468,48 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
     if (parts.length === 6 && parts[4] === "accounts" && parts[5] === "add") {
       const id = parts[3];
       if (id === "antigravity") {
-        return createJsonResponse({ redirectUrl: "/oauth/start" });
+        let body: any = {};
+        try {
+          body = await req.json();
+        } catch {
+          // Empty body
+        }
+
+        if (body.code) {
+          try {
+            const tokenRes = await exchangeCode(body.code);
+            const email = await getUserEmail(tokenRes.access_token);
+            const projectId = await getProjectId(tokenRes.access_token);
+            const newAccount: AntigravityAccount = {
+              email,
+              refreshToken: tokenRes.refresh_token!,
+              accessToken: tokenRes.access_token,
+              expiresAt: Date.now() + tokenRes.expires_in * 1000,
+              projectId,
+              healthScore: 100,
+              lastUsed: 0,
+              tokenUsage: 0,
+            };
+
+            if (!newAccount.refreshToken) {
+              return createJsonResponse({ error: "No refresh token received. Revoke access and try again." }, 400);
+            }
+
+            if (newAccount.projectId) {
+              const quota = await fetchQuota(newAccount);
+              if (quota) {
+                newAccount.quota = quota;
+              }
+            }
+
+            await addAccount(newAccount);
+            return createJsonResponse({ success: true, email });
+          } catch (error: any) {
+            return createJsonResponse({ error: `Auth error: ${error.message || error}` }, 500);
+          }
+        } else {
+          return createJsonResponse({ redirectUrl: "/oauth/start" });
+        }
       }
       return new Response("Not Supported", { status: 400 });
     }
