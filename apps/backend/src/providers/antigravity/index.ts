@@ -468,6 +468,14 @@ export class AntigravityProvider implements IProvider {
       healthScore: account.healthScore,
       lastUsed: account.lastUsed,
       capabilities: account.capabilities,
+      email: account.email,
+      projectId: account.projectId,
+      quota: account.quota,
+      cooldowns: account.cooldowns,
+      tokenUsage: account.tokenUsage,
+      challenge: account.challenge,
+      consecutiveFailures: account.consecutiveFailures,
+      modelScores: account.modelScores,
     };
   }
 

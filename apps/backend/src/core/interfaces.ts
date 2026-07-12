@@ -14,6 +14,14 @@ export interface IAccount {
   healthScore: number;
   lastUsed: number;
   capabilities?: Record<string, boolean>;
+  email?: string;
+  projectId?: string;
+  quota?: any[];
+  cooldowns?: Record<string, number | string>;
+  tokenUsage?: number;
+  challenge?: any;
+  consecutiveFailures?: number;
+  modelScores?: Record<string, number>;
 }
 
 /**
