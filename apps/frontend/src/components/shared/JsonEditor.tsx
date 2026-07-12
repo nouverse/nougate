@@ -41,7 +41,7 @@ export function JsonEditor({ value, onSave, isSaving = false }: Props) {
     <div className="flex flex-col gap-2">
       <div className="relative">
         <textarea
-          className={`textarea textarea-bordered font-mono text-xs w-full h-96 bg-neutral text-neutral-content leading-relaxed focus:outline-none ${
+          className={`textarea textarea-bordered font-mono text-xs w-full h-96 bg-base-300 text-base-content leading-relaxed focus:outline-none ${
             error ? 'textarea-error border-error' : 'border-base-300'
           }`}
           value={text}
