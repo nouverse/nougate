@@ -636,7 +636,7 @@ export function mapOpenAIToGoogle(
   - [x] `options.modelSpec.timeoutMs ?? 60000` menggantikan `config.models.timeouts.*`
 - [x] Inject `project: account.projectId` ke googleBody di dalam executor setelah account dipilih
 - [x] `server.ts` call executor, bukan inline retry logic
-- [ ] **Verifikasi**: curl test dengan `antigravity:gemini-3.5-flash-low` jalan
+- [x] **Verifikasi**: curl test dengan `antigravity:gemini-3.5-flash-low` → 200 ✅ streaming OK
 
 #### 1.6 — Migrasi Protocol OpenAI
 - [x] Buat direktori `src/protocols/openai/`
@@ -654,7 +654,7 @@ export function mapOpenAIToGoogle(
   - [x] Handler call `requireProviderPrefix()` + `provider.getModelRegistry().getSpec()` (return 400 jika null)
 - [x] Buat `src/protocols/openai/index.ts` — register handler ke registry
 - [x] **Hapus** `src/utils/transform.ts`
-- [ ] **Verifikasi**: `POST /openai/v1/chat/completions` streaming dan non-streaming jalan, `POST /v1/chat/completions` **404**
+- [x] **Verifikasi**: `POST /openai/v1/chat/completions` streaming → 200 ✅, non-streaming → 200 ✅, `POST /v1/chat/completions` → **404** ✅
 
 #### 1.7 — Buat Provider Registration + Config Migration
 - [x] Buat `src/providers/antigravity/index.ts` — `AntigravityProvider` class:
@@ -704,19 +704,19 @@ export function mapOpenAIToGoogle(
     - URL: `/v1/chat/completions` → `/openai/v1/chat/completions`
     - Model: `gemini-2.0-flash` → `antigravity:gemini-3-flash` (atau model valid lain)
     - Tambah test: request tanpa prefix → expect 400
-- [ ] **Verifikasi FINAL Phase 1**:
-  - `GET /openai/v1/models` → 200 ✅ (return prefixed model IDs `antigravity:*`)
-  - `POST /openai/v1/chat/completions` dengan `antigravity:gemini-3.5-flash-low` streaming → 200 ✅
-  - `POST /openai/v1/chat/completions` non-streaming → 200 ✅
-  - `POST /openai/v1/chat/completions` dengan model tanpa prefix → **400** ✅
-  - `POST /openai/v1/chat/completions` dengan model tidak dikenal → **400** ✅
-  - `GET /api/status` → 200 ✅
-  - `GET /frontend/index.html` → 200 ✅
-  - OAuth: `GET /oauth/start` → redirect ✅
-  - `POST /v1/chat/completions` → **404** ✅ (intentional break)
-  - `GET /v1/models` → **404** ✅ (intentional break)
-  - [x] `bun test tests/unit` → all pass ✅
-  - `bun test tests/functional` → all pass ✅ (jika server running)
+- [x] **Verifikasi FINAL Phase 1**:
+  - [x] `GET /openai/v1/models` → 200 ✅ (return prefixed model IDs `antigravity:*`)
+  - [x] `POST /openai/v1/chat/completions` dengan `antigravity:gemini-3.5-flash-low` streaming → 200 ✅
+  - [x] `POST /openai/v1/chat/completions` non-streaming → 200 ✅
+  - [x] `POST /openai/v1/chat/completions` dengan model tanpa prefix → **400** ✅
+  - [x] `POST /openai/v1/chat/completions` dengan model tidak dikenal → **400** ✅
+  - [x] `GET /api/status` → 200 ✅
+  - [x] `GET /frontend/index.html` → 200 ✅
+  - [x] OAuth: `GET /oauth/start` → redirect 302 ✅
+  - [x] `POST /v1/chat/completions` → **404** ✅ (intentional break)
+  - [x] `GET /v1/models` → **404** ✅ (intentional break)
+  - [x] `bun test tests/unit` → 20/20 pass ✅
+  - [x] `bun test tests/functional` → 1 pass (prefix test), 5 skip (no accounts / env-specific) ✅
 ---
 
 ## Phase 2: Multi-Protocol API Routing
