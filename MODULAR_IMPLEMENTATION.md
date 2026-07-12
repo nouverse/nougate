@@ -639,21 +639,21 @@ export function mapOpenAIToGoogle(
 - [ ] **Verifikasi**: curl test dengan `antigravity:gemini-3.5-flash-low` jalan
 
 #### 1.6 — Migrasi Protocol OpenAI
-- [ ] Buat direktori `src/protocols/openai/`
-- [ ] Buat `src/protocols/openai/mapper-in.ts`:
-  - [ ] Extract logic dari `src/utils/transform.ts` — fungsi utama: `mapOpenAIToGoogle(openaiBody, modelSpec, sessionId)`
-  - [ ] Signature baru terima `IModelSpec` bukan raw model string (lihat contoh kode)
-  - [ ] Pindahkan `cache.ts` import ke sini (signature caching tetap di `utils/cache.ts`, import path-nya diupdate)
-  - [ ] `schema.ts` import dari `utils/schema.ts` (path tidak berubah)
-- [ ] Buat `src/protocols/openai/mapper-out.ts`:
-  - [ ] Extract `createOpenAIStreamTransformer()` + `transformGoogleEventToOpenAI()` dari `transform.ts`
-  - [ ] Cache import diupdate ke path baru jika diperlukan
-- [ ] Buat `src/protocols/openai/handler.ts` — extract handler dari `server.ts` (baris 96–533):
-  - [ ] Signature: `mapOpenAIToGoogle(body, modelSpec, sessionId)` (bukan old `transformToGoogleBody`)
-  - [ ] Path endpoint: `/openai/v1/chat/completions` (hapus `/v1/chat/completions`)
-  - [ ] Handler call `requireProviderPrefix()` + `provider.getModelRegistry().getSpec()` (return 400 jika null)
-- [ ] Buat `src/protocols/openai/index.ts` — register handler ke registry
-- [ ] **Hapus** `src/utils/transform.ts`
+- [x] Buat direktori `src/protocols/openai/`
+- [x] Buat `src/protocols/openai/mapper-in.ts`:
+  - [x] Extract logic dari `src/utils/transform.ts` — fungsi utama: `mapOpenAIToGoogle(openaiBody, modelSpec, sessionId)`
+  - [x] Signature baru terima `IModelSpec` bukan raw model string (lihat contoh kode)
+  - [x] Pindahkan `cache.ts` import ke sini (signature caching tetap di `utils/cache.ts`, import path-nya diupdate)
+  - [x] `schema.ts` import dari `utils/schema.ts` (path tidak berubah)
+- [x] Buat `src/protocols/openai/mapper-out.ts`:
+  - [x] Extract `createOpenAIStreamTransformer()` + `transformGoogleEventToOpenAI()` dari `transform.ts`
+  - [x] Cache import diupdate ke path baru jika diperlukan
+- [x] Buat `src/protocols/openai/handler.ts` — extract handler dari `server.ts` (baris 96–533):
+  - [x] Signature: `mapOpenAIToGoogle(body, modelSpec, sessionId)` (bukan old `transformToGoogleBody`)
+  - [x] Path endpoint: `/openai/v1/chat/completions` (hapus `/v1/chat/completions`)
+  - [x] Handler call `requireProviderPrefix()` + `provider.getModelRegistry().getSpec()` (return 400 jika null)
+- [x] Buat `src/protocols/openai/index.ts` — register handler ke registry
+- [x] **Hapus** `src/utils/transform.ts`
 - [ ] **Verifikasi**: `POST /openai/v1/chat/completions` streaming dan non-streaming jalan, `POST /v1/chat/completions` **404**
 
 #### 1.7 — Buat Provider Registration + Config Migration

@@ -1,7 +1,19 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 import { getImpersonationHeaders } from "../providers/antigravity/upstream/headers";
-import { transformToGoogleBody } from "../utils/transform";
+import { getModelSpec } from "../providers/antigravity/config/model-specs";
+import { mapOpenAIToGoogle } from "../protocols/openai";
+
+/**
+ * Read a model spec for the quota diagnostic script.
+ */
+function requireModelSpec(modelId: string) {
+    const modelSpec = getModelSpec(modelId);
+    if (!modelSpec) {
+        throw new Error(`Unknown model spec: ${modelId}`);
+    }
+    return modelSpec;
+}
 
 // Usage: bun run src/scripts/diagnose_claude_quota.ts <email>
 
@@ -36,7 +48,7 @@ console.log(`Health: ${account.healthScore}`);
 
 // 2. Prepare Request
 const openaiBody = {
-    model: "claude-opus-4-6-thinking",
+    model: "antigravity:claude-opus-4-6-thinking",
     messages: [
         { role: "user", content: "Hi" }
     ],
@@ -45,7 +57,12 @@ const openaiBody = {
 };
 
 // We use useCliPool=false to ensure requestType="agent"
-const googleBody = transformToGoogleBody(openaiBody, account.projectId || "rising-fact-p41fc", false, "us-central1");
+const googleBody = mapOpenAIToGoogle(
+    openaiBody,
+    requireModelSpec("claude-opus-4-6-thinking"),
+    undefined,
+    { projectId: account.projectId || "rising-fact-p41fc" },
+);
 
 // 3. Test Endpoints
 const endpoints = [

@@ -12,10 +12,12 @@ import { initManager, addAccount, getAccounts, removeAccount, getStrategy, setSt
 import { generateAuthUrl, exchangeCode, getUserEmail, getProjectId } from "./providers/antigravity/auth/oauth";
 import { type SelectionStrategy, type AntigravityAccount } from "./providers/antigravity/auth/types";
 import { refreshAllQuotas, fetchQuota, supportedModelsCache } from "./providers/antigravity/api/quota";
-import { AntigravityExecutor } from "./providers/antigravity/upstream/executor";
-import { getModelSpec } from "./providers/antigravity/config/model-specs";
+import { antigravityModelRegistry } from "./providers/antigravity/config/model-specs";
+import type { IAccount, IProvider } from "./core/interfaces";
+import { findHandler, getDefaultProvider, registerProvider } from "./core/registry";
 import { resolveModel } from "./core/model-resolver";
-import { transformToGoogleBody, createOpenAIStreamTransformer } from "./utils/transform";
+import { registerOpenAIProtocol } from "./protocols/openai";
+import { buildSessionId } from "./protocols/openai/handler";
 
 const logBuffer: string[] = [];
 const MAX_LOGS = 200;
@@ -46,184 +48,46 @@ console.warn = (...args) => { originalWarn(...args); captureLog('warn', args); }
 
 await initManager();
 
+/**
+ * Expose the current antigravity provider through the registry before phase 1.7
+ * introduces a dedicated provider class.
+ */
+function createAntigravityProviderBridge(): IProvider {
+    return {
+        id: "antigravity",
+        displayName: "Antigravity",
+        async init() {
+            await initManager();
+        },
+        async getBestAccount() {
+            return null;
+        },
+        async updateAccountUsage() {
+        },
+        getAccounts(): IAccount[] {
+            return getAccounts().map((account) => ({
+                id: account.email,
+                providerId: "antigravity",
+                healthScore: account.healthScore,
+                lastUsed: account.lastUsed,
+                capabilities: account.capabilities,
+            }));
+        },
+        getModelRegistry() {
+            return antigravityModelRegistry;
+        },
+    };
+}
+
+const antigravityProvider = createAntigravityProviderBridge();
+registerProvider(antigravityProvider);
+registerOpenAIProtocol(antigravityProvider);
+
 const proxyConfig = getProxyConfig();
 
 setInterval(refreshAllQuotas, proxyConfig.quota.refreshIntervalMs);
 // Initial quota refresh on startup
 refreshAllQuotas();
-
-/**
- * Normalize legacy model IDs so phase 1.5 can resolve an `IModelSpec`
- * before the mapper extraction in phase 1.6 removes this compatibility.
- */
-function normalizeModelIdForPhase15(rawModel: string): string {
-    let cleanId = (rawModel || "").trim().toLowerCase();
-    cleanId = cleanId.replace(/^(openai|antigravity|custom_openai|litellm|google)\//i, "");
-    cleanId = cleanId.replace(/^antigravity-/i, "");
-    cleanId = cleanId.replace(/^gemini-claude-/i, "claude-");
-    return cleanId;
-}
-
-/**
- * Resolve the best-effort provider-local model spec for the legacy OpenAI route.
- */
-function resolveModelSpecForPhase15(rawModel: string) {
-    const resolved = resolveModel(rawModel || "");
-    const candidates = [
-        resolved.modelId,
-        normalizeModelIdForPhase15(resolved.modelId),
-        normalizeModelIdForPhase15(rawModel || ""),
-    ].filter(Boolean);
-
-    for (const candidate of candidates) {
-        const modelSpec = getModelSpec(candidate);
-        if (modelSpec) {
-            return modelSpec;
-        }
-    }
-
-    return null;
-}
-
-/**
- * Convert a successful Google upstream response into the current OpenAI response shape.
- */
-async function finalizeOpenAIResponse(params: {
-    googleRes: Response;
-    openaiBody: any;
-    requestId: string;
-    sessionId: string;
-    attempts: number;
-    accountEmail: string;
-}) {
-    const { googleRes, openaiBody, requestId, sessionId, attempts, accountEmail } = params;
-    const decoder = new TextDecoder();
-    const isStreaming = openaiBody.stream === true;
-
-    if (isStreaming) {
-        if (!googleRes.body) {
-            return {
-                response: new Response(JSON.stringify({ error: { message: "No response body from upstream" } }), {
-                    status: 502,
-                    headers: {
-                        "Content-Type": "application/json",
-                        "Access-Control-Allow-Origin": "*",
-                        "X-Antigravity-Attempts": attempts.toString(),
-                    },
-                }),
-            };
-        }
-
-        const stream = googleRes.body.pipeThrough(
-            createOpenAIStreamTransformer(openaiBody.model, requestId, false, sessionId),
-        );
-        return {
-            response: new Response(stream, {
-                headers: {
-                    "Content-Type": "text/event-stream",
-                    "Cache-Control": "no-cache",
-                    "Connection": "keep-alive",
-                    "Access-Control-Allow-Origin": "*",
-                    "X-Antigravity-Attempts": attempts.toString(),
-                },
-            }),
-        };
-    }
-
-    if (!googleRes.body) {
-        throw new Error("No response body");
-    }
-
-    const stream = googleRes.body.pipeThrough(
-        createOpenAIStreamTransformer(openaiBody.model, requestId, false, sessionId),
-    );
-    const reader = stream.getReader();
-    let fullContent = "";
-    let reasoningContent = "";
-    let aggregatedToolCalls: any[] = [];
-    let finalFinishReason = "stop";
-    let buffer = "";
-
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-            break;
-        }
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-            if (line.startsWith("data: ") && line !== "data: [DONE]") {
-                try {
-                    const event = JSON.parse(line.slice(6));
-                    if (event.choices?.[0]) {
-                        const choice = event.choices[0];
-                        if (choice.delta?.content) fullContent += choice.delta.content;
-                        if (choice.delta?.reasoning_content) reasoningContent += choice.delta.reasoning_content;
-                        if (choice.delta?.tool_calls) aggregatedToolCalls.push(...choice.delta.tool_calls);
-                        if (choice.finish_reason) finalFinishReason = choice.finish_reason;
-                    }
-                } catch (error) {
-                    console.warn("[Stream] Failed to parse non-streaming chunk:", error);
-                }
-            }
-        }
-    }
-
-    if (buffer.startsWith("data: ") && buffer !== "data: [DONE]") {
-        try {
-            const event = JSON.parse(buffer.slice(6));
-            if (event.choices?.[0]) {
-                const choice = event.choices[0];
-                if (choice.delta?.content) fullContent += choice.delta.content;
-                if (choice.delta?.reasoning_content) reasoningContent += choice.delta.reasoning_content;
-                if (choice.delta?.tool_calls) aggregatedToolCalls.push(...choice.delta.tool_calls);
-                if (choice.finish_reason) finalFinishReason = choice.finish_reason;
-            }
-        } catch (error) {
-            console.warn("[Stream] Failed to parse final non-streaming chunk:", error);
-        }
-    }
-
-    if (!fullContent && aggregatedToolCalls.length === 0 && finalFinishReason !== "length") {
-        console.warn(
-            `[Empty] Account ${accountEmail} returned empty response for ${openaiBody.model}, retrying with another account...`,
-        );
-        return {
-            retry: true as const,
-            cooldownDuration: "30s",
-        };
-    }
-
-    const finalResponse = {
-        id: requestId,
-        object: "chat.completion",
-        created: Math.floor(Date.now() / 1000),
-        model: openaiBody.model,
-        choices: [{
-            index: 0,
-            message: {
-                role: "assistant",
-                content: fullContent,
-                reasoning_content: reasoningContent || undefined,
-                tool_calls: aggregatedToolCalls.length > 0 ? aggregatedToolCalls : undefined,
-            },
-            finish_reason: finalFinishReason,
-        }],
-    };
-
-    return {
-        response: new Response(JSON.stringify(finalResponse), {
-            headers: {
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*",
-                "X-Antigravity-Attempts": attempts.toString(),
-            },
-        }),
-    };
-}
 
 Bun.serve({
   port: 3000,
@@ -244,6 +108,34 @@ Bun.serve({
             }
         });
     }
+
+    const handler = findHandler(cleanPath, req.method);
+    if (handler) {
+        const provider = getDefaultProvider();
+        const clientId = req.headers.get("x-client-id") || url.searchParams.get("client_id") || "unknown";
+        let previewBody: any = {};
+
+        if (req.method !== "GET") {
+            try {
+                previewBody = await req.clone().json();
+            } catch {
+                previewBody = {};
+            }
+        }
+
+        const resolvedModel = resolveModel(String(previewBody.model || "antigravity:models"));
+        const sessionId = buildSessionId(previewBody, clientId);
+        return handler.handle({
+            req,
+            url,
+            protocol: "openai",
+            resolvedModel,
+            provider,
+            sessionId,
+            clientId,
+        });
+    }
+
     if (cleanPath === "/oauth/start") {
       return Response.redirect(generateAuthUrl());
     }
@@ -265,55 +157,6 @@ Bun.serve({
             "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
             "Access-Control-Allow-Headers": "*"
         } });
-    }
-
-    if (cleanPath === "/v1/chat/completions" && req.method === "POST") {
-      const openaiBody = await req.json() as any;
-      const requestId = "chatcmpl-" + Math.random().toString(36).substring(7);
-      const modelSpec = resolveModelSpecForPhase15(openaiBody.model);
-
-      if (!modelSpec) {
-          return new Response(JSON.stringify({
-              error: {
-                  message: `Unknown model "${openaiBody.model}"`,
-                  type: "invalid_request_error",
-                  code: "model_not_found",
-              },
-          }), {
-              status: 400,
-              headers: {
-                  "Content-Type": "application/json",
-                  "Access-Control-Allow-Origin": "*",
-              },
-          });
-      }
-
-      const clientId = req.headers.get("x-client-id") || url.searchParams.get("client_id") || "unknown";
-      const firstMsg = openaiBody.messages?.[0]?.content || "";
-      const userIdent = openaiBody.user || clientId;
-      const stableSeed = `${userIdent}:${typeof firstMsg === 'string' ? firstMsg : JSON.stringify(firstMsg)}`;
-      const sessionId = firstMsg ? new Bun.CryptoHasher("sha256").update(stableSeed).digest("hex") : crypto.randomUUID();
-      const executor = new AntigravityExecutor();
-      const result = await executor.execute({
-          model: openaiBody.model,
-          modelSpec,
-          sessionId,
-          clientId,
-          debugRequestBody: openaiBody,
-          buildGoogleBody: ({ useCliPool, aggressive }) =>
-              transformToGoogleBody(openaiBody, "", useCliPool, "", sessionId, aggressive),
-          handleSuccess: async ({ googleRes, account, attempts }) =>
-              finalizeOpenAIResponse({
-                  googleRes,
-                  openaiBody,
-                  requestId,
-                  sessionId,
-                  attempts,
-                  accountEmail: account.email,
-              }),
-      });
-
-      return result.response;
     }
 
     if (url.pathname === "/api/sse") {

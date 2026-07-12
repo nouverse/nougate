@@ -4,7 +4,7 @@ async function performRequest(label: string, body: any) {
   console.log("🚀 Sending request...");
   
   try {
-    const response = await fetch("http://127.0.0.1:3000/v1/chat/completions", {
+    const response = await fetch("http://127.0.0.1:3000/openai/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -68,7 +68,7 @@ async function runTests() {
   console.log("🧪 STARTING PHASE 5 INTEGRATION TESTS");
 
   const thinkingResult = await performRequest("THINKING TEST", {
-    model: "gemini-2.5-flash-thinking",
+    model: "antigravity:gemini-2.5-flash-thinking",
     messages: [{ role: "user", content: "Explain quantum entanglement in one sentence. Think deeply first." }],
     stream: true,
     thinking_budget: 2000
@@ -82,7 +82,7 @@ async function runTests() {
   }
 
   const toolResult = await performRequest("TOOL HARDENING TEST", {
-    model: "gemini-2.5-flash",
+    model: "antigravity:gemini-2.5-flash",
     messages: [{ role: "user", content: "What time is it in Tokyo? Use the get_time tool." }],
     tools: [{
       type: "function",
@@ -104,7 +104,7 @@ async function runTests() {
   console.log("\n--- MULTI-TURN TEST ---");
   console.log("Step 1: Get thinking response...");
   const turn1 = await performRequest("Multi-turn Part 1", {
-    model: "gemini-2.5-flash-thinking",
+    model: "antigravity:gemini-2.5-flash-thinking",
     messages: [{ role: "user", content: "Write a short poem about space. Think first." }],
     stream: true,
     thinking_budget: 2000
@@ -113,7 +113,7 @@ async function runTests() {
   if (turn1.ok && turn1.reasoningContent) {
     console.log("Step 2: Sending follow-up with thinking context...");
     const turn2 = await performRequest("Multi-turn Part 2", {
-      model: "gemini-2.5-flash-thinking",
+      model: "antigravity:gemini-2.5-flash-thinking",
       messages: [
         { role: "user", content: "Write a short poem about space. Think first." },
         { role: "assistant", reasoning_content: turn1.reasoningContent, content: turn1.fullContent },

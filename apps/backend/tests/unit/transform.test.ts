@@ -1,58 +1,68 @@
 
 import { describe, expect, test, beforeAll } from "bun:test";
-import { transformToGoogleBody, transformGoogleEventToOpenAI } from "../../src/utils/transform";
+import {
+  mapOpenAIToGoogle,
+  transformGoogleEventToOpenAI,
+} from "../../src/protocols/openai";
 import { loadProxyConfig } from "../../src/config/manager";
+import { getModelSpec } from "../../src/providers/antigravity/config/model-specs";
 
 beforeAll(async () => {
   await loadProxyConfig();
 });
 
-describe("Unit Tests: transformToGoogleBody", () => {
+/**
+ * Read a model spec and fail loudly when the fixture model does not exist.
+ */
+function requireModelSpec(modelId: string) {
+  const modelSpec = getModelSpec(modelId);
+  expect(modelSpec).not.toBeNull();
+  return modelSpec!;
+}
+
+describe("Unit Tests: mapOpenAIToGoogle", () => {
   test("Basic message transformation", () => {
     const openaiBody = {
-      model: "gpt-4o",
+      model: "antigravity:gpt-oss-120b",
       messages: [
         { role: "user", content: "Hello Gemini" }
       ],
       temperature: 0.5
     };
 
-    const result = transformToGoogleBody(openaiBody, "test-project", false, "us-central1");
+    const result = mapOpenAIToGoogle(
+      openaiBody,
+      requireModelSpec("gpt-oss-120b"),
+      "session-1",
+    );
 
-    expect(result.project).toBe("test-project");
-    expect(result.model).toBe("gpt-4o"); // It passes through if no antigravity prefix
+    expect(result.project).toBe("");
+    expect(result.model).toBe("gpt-oss-120b");
     expect(result.request.contents).toHaveLength(1);
     expect(result.request.contents[0].role).toBe("user");
     expect(result.request.contents[0].parts[0].text).toBe("Hello Gemini");
     expect(result.request.generationConfig.temperature).toBe(0.5);
   });
 
-  test("Antigravity model prefix removal", () => {
+  test("Thinking level comes from model spec", () => {
     const openaiBody = {
-      model: "antigravity-gemini-2.0-flash",
+      model: "antigravity:gemini-3-pro-high",
       messages: [{ role: "user", content: "Hi" }]
     };
 
-    const result = transformToGoogleBody(openaiBody, "p", false, "us-central1");
-    expect(result.model).toBe("gemini-2.0-flash");
-  });
-
-  test("Thinking level extraction for CLI", () => {
-    const openaiBody = {
-      model: "gemini-3-flash-thinking-medium",
-      messages: [{ role: "user", content: "Hi" }]
-    };
-
-    const result = transformToGoogleBody(openaiBody, "p", true, "us-central1"); // isCli = true
-    expect(result.model).toBe("gemini-3-flash-preview");
-    // Flash Thinking models use thinkingBudget (not thinkingLevel which is Pro-only)
+    const result = mapOpenAIToGoogle(
+      openaiBody,
+      requireModelSpec("gemini-3-pro-high"),
+      "session-2",
+    );
+    expect(result.model).toBe("gemini-3-pro-high");
     expect(result.request.generationConfig.thinkingConfig.includeThoughts).toBe(true);
-    expect(result.request.generationConfig.thinkingConfig.thinkingBudget).toBe(16000);
+    expect(result.request.generationConfig.thinkingConfig.thinkingLevel).toBe("high");
   });
 
   test("Multi-turn conversation", () => {
     const openaiBody = {
-      model: "gemini-1.5-pro",
+      model: "antigravity:gemini-3-pro",
       messages: [
         { role: "user", content: "Hello" },
         { role: "assistant", content: "Hi there!" },
@@ -60,7 +70,11 @@ describe("Unit Tests: transformToGoogleBody", () => {
       ]
     };
 
-    const result = transformToGoogleBody(openaiBody, "p", false, "us-central1");
+    const result = mapOpenAIToGoogle(
+      openaiBody,
+      requireModelSpec("gemini-3-pro"),
+      "session-3",
+    );
     expect(result.request.contents).toHaveLength(3);
     expect(result.request.contents[0].role).toBe("user");
     expect(result.request.contents[1].role).toBe("model"); // OpenAI assistant -> Google model
@@ -69,7 +83,7 @@ describe("Unit Tests: transformToGoogleBody", () => {
 
   test("Tool transformation", () => {
     const openaiBody = {
-      model: "gemini-1.5-pro",
+      model: "antigravity:gemini-3-pro",
       messages: [{ role: "user", content: "Check weather" }],
       tools: [
         {
@@ -89,7 +103,11 @@ describe("Unit Tests: transformToGoogleBody", () => {
       ]
     };
 
-    const result = transformToGoogleBody(openaiBody, "p", false, "us-central1");
+    const result = mapOpenAIToGoogle(
+      openaiBody,
+      requireModelSpec("gemini-3-pro"),
+      "session-4",
+    );
     expect(result.request.tools).toBeDefined();
     expect(result.request.tools[0].functionDeclarations).toHaveLength(1);
     expect(result.request.tools[0].functionDeclarations[0].name).toBe("get_weather");
@@ -98,29 +116,40 @@ describe("Unit Tests: transformToGoogleBody", () => {
 
   test("Claude Opus 4.6 Thinking mapping and budget", () => {
     const openaiBody = {
-      model: "antigravity-claude-opus-4-6-thinking-high",
+      model: "antigravity:claude-opus-4-6",
       messages: [{ role: "user", content: "Hi" }]
     };
 
-    const result = transformToGoogleBody(openaiBody, "p", false, "us-central1");
+    const result = mapOpenAIToGoogle(
+      openaiBody,
+      requireModelSpec("claude-opus-4-6"),
+      "session-5",
+    );
     expect(result.model).toBe("claude-opus-4-6-thinking");
-    expect(result.request.generationConfig.thinkingConfig.includeThoughts).toBe(true);
-    expect(result.request.generationConfig.thinkingConfig.thinkingBudget).toBe(32768);
+    expect(result.request.generationConfig.thinkingConfig).toBeUndefined();
   });
 
-  test("Claude Opus 4.6 Thinking Low budget", () => {
+  test("Claude Opus 4.6 explicit thinking budget", () => {
     const openaiBody = {
-      model: "antigravity-claude-opus-4-6-thinking-low",
-      messages: [{ role: "user", content: "Hi" }]
+      model: "antigravity:claude-opus-4-6-thinking",
+      messages: [{ role: "user", content: "Hi" }],
+      thinking: {
+        type: "enabled",
+        budget_tokens: 8192,
+      },
     };
 
-    const result = transformToGoogleBody(openaiBody, "p", false, "us-central1");
+    const result = mapOpenAIToGoogle(
+      openaiBody,
+      requireModelSpec("claude-opus-4-6-thinking"),
+      "session-6",
+    );
     expect(result.request.generationConfig.thinkingConfig.thinkingBudget).toBe(8192);
   });
 
   test("Claude tool call transformation with ID", () => {
     const openaiBody = {
-      model: "antigravity-claude-opus-4-6-thinking-high",
+      model: "antigravity:claude-opus-4-6-thinking",
       messages: [
         {
           role: "assistant",
@@ -136,7 +165,11 @@ describe("Unit Tests: transformToGoogleBody", () => {
       ]
     };
 
-    const result = transformToGoogleBody(openaiBody, "p", false, "us-central1");
+    const result = mapOpenAIToGoogle(
+      openaiBody,
+      requireModelSpec("claude-opus-4-6-thinking"),
+      "session-7",
+    );
     const funcCallPart = result.request.contents[0].parts.find((p: any) => p.functionCall);
     expect(funcCallPart).toBeDefined();
     expect(funcCallPart.functionCall.id).toBe("call_abc123");
@@ -144,7 +177,7 @@ describe("Unit Tests: transformToGoogleBody", () => {
 
   test("Claude tool response transformation with ID", () => {
     const openaiBody = {
-      model: "antigravity-claude-opus-4-6-thinking-high",
+      model: "antigravity:claude-opus-4-6-thinking",
       messages: [
         {
           role: "tool",
@@ -155,7 +188,11 @@ describe("Unit Tests: transformToGoogleBody", () => {
       ]
     };
 
-    const result = transformToGoogleBody(openaiBody, "p", false, "us-central1");
+    const result = mapOpenAIToGoogle(
+      openaiBody,
+      requireModelSpec("claude-opus-4-6-thinking"),
+      "session-8",
+    );
     const funcRespPart = result.request.contents[0].parts.find((p: any) => p.functionResponse);
     expect(funcRespPart).toBeDefined();
     expect(funcRespPart.functionResponse.id).toBe("call_abc123");

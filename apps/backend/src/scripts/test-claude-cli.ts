@@ -1,6 +1,18 @@
 import { getGeminiCliHeaders } from "../providers/antigravity/upstream/headers";
-import { transformToGoogleBody } from "../utils/transform";
+import { getModelSpec } from "../providers/antigravity/config/model-specs";
+import { mapOpenAIToGoogle } from "../protocols/openai";
 import { getAccounts, initManager } from "../providers/antigravity/auth/manager";
+
+/**
+ * Read a model spec for the manual test script.
+ */
+function requireModelSpec(modelId: string) {
+    const modelSpec = getModelSpec(modelId);
+    if (!modelSpec) {
+        throw new Error(`Unknown model spec: ${modelId}`);
+    }
+    return modelSpec;
+}
 
 // Manual test to see if Claude works on CLI endpoint
 // Usage: bun run src/scripts/test-claude-cli.ts <email>
@@ -33,7 +45,12 @@ const openaiBody = {
 };
 
 // Transform for CLI
-const googleBody = transformToGoogleBody(openaiBody, account.projectId || "rising-fact-p41fc", true, "us-central1");
+const googleBody = mapOpenAIToGoogle(
+    openaiBody,
+    requireModelSpec("claude-opus-4-6-thinking"),
+    undefined,
+    { projectId: account.projectId || "rising-fact-p41fc" },
+);
 console.log("Transformed Body:", JSON.stringify(googleBody, null, 2));
 
 const GOOGLE_URL = `https://cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse`;

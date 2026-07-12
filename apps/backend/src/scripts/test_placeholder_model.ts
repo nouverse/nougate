@@ -1,7 +1,19 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 import { getImpersonationHeaders } from "../providers/antigravity/upstream/headers";
-import { transformToGoogleBody } from "../utils/transform";
+import { getModelSpec } from "../providers/antigravity/config/model-specs";
+import { mapOpenAIToGoogle } from "../protocols/openai";
+
+/**
+ * Read a model spec for the placeholder model script.
+ */
+function requireModelSpec(modelId: string) {
+    const modelSpec = getModelSpec(modelId);
+    if (!modelSpec) {
+        throw new Error(`Unknown model spec: ${modelId}`);
+    }
+    return modelSpec;
+}
 
 // Usage: bun run src/scripts/test_placeholder_model.ts <email>
 
@@ -42,7 +54,12 @@ const openaiBody = {
 
 // Manually construct the body
 const effectiveProjectId = account.projectId || "rising-fact-p41fc";
-const googleBody = transformToGoogleBody(openaiBody, effectiveProjectId, false, "us-central1"); // requestType=agent
+const googleBody = mapOpenAIToGoogle(
+    openaiBody,
+    requireModelSpec("claude-opus-4-6-thinking"),
+    undefined,
+    { projectId: effectiveProjectId },
+); // requestType=agent
 
 // OVERRIDE MODEL NAME with what the plugin uses
 googleBody.model = "antigravity-claude-opus-4-6-thinking-high"; 

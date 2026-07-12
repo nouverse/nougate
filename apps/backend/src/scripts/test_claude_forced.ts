@@ -1,13 +1,13 @@
 
 async function testClaude() {
-  const modelName = "antigravity-claude-opus-4-6-thinking-high";
+  const modelName = "antigravity:claude-opus-4-6-thinking";
   const email = "frieserpaldi@gmail.com";
   
   console.log(`\n🚀 Testing ${modelName} with forced account: ${email}`);
   
   while (true) {
       try {
-        const response = await fetch("http://127.0.0.1:3000/v1/chat/completions", {
+        const response = await fetch("http://127.0.0.1:3000/openai/v1/chat/completions", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
