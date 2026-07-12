@@ -18,18 +18,10 @@ export function AccountsTable({
   onReset,
   onDelete,
 }: Props) {
-  const [expandedEmails, setExpandedEmails] = useState<Set<string>>(new Set());
+  const [expandedEmail, setExpandedEmail] = useState<string | null>(null);
 
   const toggleRow = (email: string) => {
-    setExpandedEmails((prev) => {
-      const next = new Set(prev);
-      if (next.has(email)) {
-        next.delete(email);
-      } else {
-        next.add(email);
-      }
-      return next;
-    });
+    setExpandedEmail((prev) => (prev === email ? null : email));
   };
 
   return (
@@ -47,7 +39,7 @@ export function AccountsTable({
         </thead>
         <tbody>
           {accounts.map((acc) => {
-            const isExpanded = expandedEmails.has(acc.email);
+            const isExpanded = expandedEmail === acc.email;
             return (
               <React.Fragment key={acc.email}>
                 <tr className="hover:bg-base-200/40 transition-colors border-b border-base-300/40">

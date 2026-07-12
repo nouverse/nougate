@@ -9,6 +9,7 @@ export function AccountDetail({ account }: Props) {
   const hasCapabilities = account.capabilities && Object.keys(account.capabilities).length > 0;
   const hasCooldowns = account.cooldowns && Object.keys(account.cooldowns).length > 0;
   const hasModelScores = account.modelScores && Object.keys(account.modelScores).length > 0;
+  const hasQuotas = account.quota && account.quota.length > 0;
 
   return (
     <div className="p-4 bg-base-300/40 rounded-lg space-y-4 text-xs">
@@ -83,6 +84,45 @@ export function AccountDetail({ account }: Props) {
           )}
         </div>
       </div>
+
+      {hasQuotas && (
+        <div className="pt-4 border-t border-base-300 space-y-2">
+          <span className="block text-base-content/40 font-semibold uppercase">Quota Availability</span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {account.quota?.map((q) => {
+              const percent = Math.round((q.remainingFraction ?? 1) * 100);
+              let progressColor = "progress-primary";
+              if (percent < 20) {
+                progressColor = "progress-error";
+              } else if (percent < 50) {
+                progressColor = "progress-warning";
+              }
+
+              return (
+                <div key={q.limitName} className="p-3 bg-base-100 border border-base-300 rounded-xl space-y-2 shadow-sm">
+                  <div className="flex justify-between items-center font-semibold text-[11px] text-base-content/95">
+                    <span className="truncate pr-2">{q.groupName}</span>
+                    <span className="shrink-0 font-mono text-[10px] text-base-content/75">{q.quotaLeft} left</span>
+                  </div>
+                  
+                  <div className="relative w-full">
+                    <progress 
+                      className={`progress ${progressColor} w-full h-2 rounded-full`}
+                      value={percent} 
+                      max="100"
+                    />
+                  </div>
+
+                  <div className="flex justify-between text-[10px] text-base-content/50 font-mono">
+                    <span>Usage: {q.usage} / {q.limit}</span>
+                    {q.resetIn && <span>Resets: {q.resetIn}</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
