@@ -87,7 +87,7 @@ export function AppShell({ children }: Props) {
         </div>
         <div>
           <span className="font-extrabold text-base-content text-lg tracking-wider">NOUGATE</span>
-          <span className="block text-[10px] text-base-content/40 font-mono tracking-widest mt-0.5">ROUTER GATEWAY</span>
+          <span className="block text-[10px] text-base-content/40 font-mono tracking-widest mt-0.5">NOUVERSE AI GATEWAY</span>
         </div>
       </div>
 

@@ -1,4 +1,5 @@
 export interface ProxyConfig {
+  baseUrl?: string;
   rotation: RotationConfig;
   scoring: ScoringConfig;
   retry: RetryConfig;

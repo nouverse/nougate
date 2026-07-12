@@ -23,13 +23,15 @@ refreshAllQuotas();
 
 const pkg = await Bun.file("package.json").json();
 
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+
 Bun.serve({
-  port: 3000,
+  port: PORT,
   hostname: "0.0.0.0",
   idleTimeout: 0,
   fetch: handleRequest,
 });
 
 console.log(
-  `Antigravity Proxy v${pkg.version || "0.0.0"} running on http://127.0.0.1:3000`,
+  `Antigravity Proxy v${pkg.version || "0.0.0"} running on port ${PORT}`,
 );

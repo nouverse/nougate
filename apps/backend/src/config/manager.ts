@@ -13,6 +13,7 @@ export const configEventBus = new EventEmitter();
 let config: ProxyConfig;
 
 const DEFAULT_CONFIG: ProxyConfig = {
+  baseUrl: 'http://localhost:3000',
   rotation: {
     strategy: 'hybrid',
     cooldown: {
@@ -61,20 +62,23 @@ export async function loadProxyConfig(): Promise<ProxyConfig> {
     if (!exists) {
       console.log('[Config] config.json not found, creating with defaults...');
       await saveProxyConfig(DEFAULT_CONFIG);
-      config = DEFAULT_CONFIG;
-      return config;
+      config = { ...DEFAULT_CONFIG };
+    } else {
+      const text = await file.text();
+      const loadedConfig = JSON.parse(text);
+      config = mergeKnownKeys(DEFAULT_CONFIG, loadedConfig) as ProxyConfig;
     }
-
-    const text = await file.text();
-    const loadedConfig = JSON.parse(text);
-    config = mergeKnownKeys(DEFAULT_CONFIG, loadedConfig) as ProxyConfig;
-    console.log(`[Config] Loaded configuration: strategy=${config.rotation.strategy}`);
-    return config;
   } catch (e) {
     console.error('[Config] Failed to load config.json, using defaults:', e);
-    config = DEFAULT_CONFIG;
-    return config;
+    config = { ...DEFAULT_CONFIG };
   }
+
+  if (process.env.BASE_URL) {
+    config.baseUrl = process.env.BASE_URL;
+  }
+
+  console.log(`[Config] Loaded configuration: strategy=${config.rotation.strategy}`);
+  return config;
 }
 
 export async function saveProxyConfig(newConfig: ProxyConfig): Promise<void> {

@@ -1,4 +1,5 @@
 import { join } from "path";
+import { existsSync } from "fs";
 import { getProxyConfig, updateProxyConfig } from "../config/manager";
 import {
   addAccount,
@@ -157,11 +158,17 @@ function serveFrontendAsset(pathname: string): Response {
   const lastSegment = relativePath.split("/").pop() || "";
   const isFile = lastSegment.includes(".");
   
+  const distDir = [
+    join(import.meta.dir, "../../../frontend/dist"),
+    join(process.cwd(), "apps/frontend/dist"),
+    join(process.cwd(), "frontend/dist"),
+  ].find((dir) => existsSync(dir)) || join(import.meta.dir, "../../../frontend/dist");
+  
   if (!isFile) {
-    return new Response(Bun.file(join(process.cwd(), "apps/frontend/dist/index.html")));
+    return new Response(Bun.file(join(distDir, "index.html")));
   }
   
-  return new Response(Bun.file(join(process.cwd(), "apps/frontend/dist", relativePath)));
+  return new Response(Bun.file(join(distDir, relativePath)));
 }
 
 /**
@@ -203,7 +210,9 @@ async function handleOAuthCallback(url: URL): Promise<Response> {
     }
 
     await addAccount(newAccount);
-    return Response.redirect("http://localhost:3000/frontend/index.html");
+    const config = getProxyConfig();
+    const baseUrl = config?.baseUrl || "http://localhost:3000";
+    return Response.redirect(`${baseUrl.replace(/\/$/, "")}/frontend/`);
   } catch (error) {
     return new Response(`Auth error: ${error}`, { status: 500 });
   }
@@ -465,6 +474,10 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
     }
   }
 
+  if (url.pathname === "/frontend/index.html") {
+    return Response.redirect("/frontend/");
+  }
+
   if (url.pathname.startsWith("/frontend/")) {
     try {
       return serveFrontendAsset(url.pathname);
@@ -474,7 +487,7 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
   }
 
   if (url.pathname === "/") {
-    return Response.redirect("/frontend/index.html");
+    return Response.redirect("/frontend/");
   }
 
   return null;

@@ -163,6 +163,21 @@ function ProviderPage() {
             <Cpu className="w-3.5 h-3.5 text-secondary" />
             {detail.models.length} models
           </div>
+          <button
+            type="button"
+            className="btn btn-sm btn-primary rounded-xl font-semibold gap-1.5 shadow-md shadow-primary/10 hover:scale-105 transition-transform"
+            onClick={() => addAccountMutation.mutate()}
+            disabled={addAccountMutation.isPending}
+          >
+            {addAccountMutation.isPending ? (
+              <span className="loading loading-spinner loading-xs" />
+            ) : (
+              <>
+                <Plus className="w-4 h-4" />
+                Add Account
+              </>
+            )}
+          </button>
         </div>
       </div>
 
