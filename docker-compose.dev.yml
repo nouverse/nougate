@@ -1,0 +1,70 @@
+name: nougate-dev
+
+services:
+  nougate:
+    container_name: nougate-dev
+    image: oven/bun:alpine
+    working_dir: /app
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        # Install inotify-tools for efficient file watching
+        apk add --no-cache inotify-tools >/dev/null 2>&1
+
+        echo "══════════════════════════════════════════"
+        echo "  🚀 Nougate Dev — Building frontend..."
+        echo "══════════════════════════════════════════"
+
+        # Install frontend deps & initial build
+        cd /app/apps/frontend && bun install --frozen-lockfile 2>/dev/null || bun install
+        bun run build
+        echo "✅ Frontend built → /app/apps/frontend/dist"
+
+        # Start frontend watcher in background
+        (
+          echo "👀 Watching frontend for changes..."
+          while true; do
+            inotifywait -r -q \
+              -e modify,create,delete,move \
+              --exclude '(node_modules|dist|\.tanstack|routeTree\.gen)' \
+              /app/apps/frontend/src /app/apps/frontend/index.html 2>/dev/null
+            echo ""
+            echo "🔄 Frontend change detected, rebuilding..."
+            cd /app/apps/frontend && bun run build 2>&1 | tail -5
+            echo "✅ Frontend rebuilt at $$(date '+%H:%M:%S')"
+          done
+        ) &
+
+        # Start backend with watch mode (auto-restarts on source changes)
+        echo "══════════════════════════════════════════"
+        echo "  🟢 Starting backend (watch mode)..."
+        echo "  📡 http://localhost:$${PORT:-3000}"
+        echo "  📊 http://localhost:$${PORT:-3000}/frontend/"
+        echo "══════════════════════════════════════════"
+        cd /app && bun run --watch apps/backend/src/server.ts
+    ports:
+      - "${PORT:-3000}:${PORT:-3000}"
+    environment:
+      - PORT=${PORT:-3000}
+      - BASE_URL=${BASE_URL:-http://localhost:3000}
+      - NODE_ENV=development
+    volumes:
+      # ── Backend ──
+      - ./apps/backend/src:/app/apps/backend/src
+      - ./apps/backend/package.json:/app/apps/backend/package.json:ro
+      - ./apps/backend/tsconfig.json:/app/apps/backend/tsconfig.json:ro
+      - ./apps/backend/node_modules:/app/apps/backend/node_modules
+      # ── Frontend (source watched → builds to dist inside container) ──
+      - ./apps/frontend/src:/app/apps/frontend/src
+      - ./apps/frontend/index.html:/app/apps/frontend/index.html:ro
+      - ./apps/frontend/package.json:/app/apps/frontend/package.json:ro
+      - ./apps/frontend/tsconfig.json:/app/apps/frontend/tsconfig.json:ro
+      - ./apps/frontend/vite.config.ts:/app/apps/frontend/vite.config.ts:ro
+      - ./apps/frontend/bun.lock:/app/apps/frontend/bun.lock:ro
+      # ── Shared config ──
+      - ./config.json:/app/config.json:ro
+      - ./providers:/app/providers:ro
+      - ./package.json:/app/package.json:ro
+      # ── Persistent data ──
+      - ./data:/app/data:z
+    restart: unless-stopped
