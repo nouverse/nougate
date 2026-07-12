@@ -1,5 +1,8 @@
+name: nougate
+
 services:
   nougate:
+    container_name: nougate
     build: .
     ports:
       - "3000:3000"
