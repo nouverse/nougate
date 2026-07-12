@@ -16,7 +16,7 @@ graph TD
     Client[Client Apps / IDEs] -->|OpenAI / Anthropic Protocol| Ingress[Proxy Ingress / Bun Server]
 
     %% Data Plane Routing
-    subgraph Data Plane (Agnostic Core)
+    subgraph "Data Plane (Agnostic Core)"
         Ingress --> Router[Core Router]
         Router --> Resolver[Model Resolver]
         Resolver -->|Parse provider:model| Registry[Provider Registry]
@@ -24,7 +24,7 @@ graph TD
     end
 
     %% Provider Implementations
-    subgraph Providers Plane (Decoupled Plugins)
+    subgraph "Providers Plane (Decoupled Plugins)"
         Handler -->|execute| AntigravityProvider[Antigravity Provider]
         Handler -->|execute| CursorProvider[Cursor Provider]
         Handler -->|execute| OtherProvider[Other Provider]
@@ -35,7 +35,7 @@ graph TD
     CursorProvider -->|Fetch| CursorUpstream[Cursor Backend API]
 
     %% Control Plane
-    subgraph Control Plane
+    subgraph "Control Plane"
         Dashboard[Admin Dashboard / SSE] <--> AdminAPI[Admin Router]
         AdminAPI -->|Query/Command| Registry
         LogCapture[Log Capture Middleware] -->|Emit logs| EventBus[Core Event Bus]
