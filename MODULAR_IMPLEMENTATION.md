@@ -797,11 +797,11 @@ export function mapOpenAIToGoogle(
 - [x] **Verifikasi**: request `antigravity:gemini-3.5-flash-low` → resolve ke `{ providerId: 'antigravity', modelId: 'gemini-3.5-flash-low' }` → `IModelSpec` ditemukan → 200
 
 #### 3.2 — Provider-Aware Account Selection (Clean Up)
-- [ ] Verifikasi key di `accounts.json` sudah pure `modelId|pool` (migration di `initManager()` dari Phase 1.7)
-- [ ] Update `getFamilyName()` di `manager.ts`: parameter adalah `resolvedModelId` (tanpa prefix), bukan raw string
-- [ ] Update `markCooldown()`, `flagAccountChallenge()`, `updateAccountUsage()`: konsisten gunakan `resolvedModelId`
-- [ ] **Hapus** keyword-based pool routing dari executor jika masih ada — pool sudah dari `modelSpec.pool`
-- [ ] **Verifikasi**: request dengan model yang ada di registry → cooldown/quota update pakai bare modelId
+- [x] Verifikasi key di `accounts.json` sudah pure `modelId|pool` (migration di `initManager()` dari Phase 1.7)
+- [x] Update `getFamilyName()` di `manager.ts`: parameter adalah `resolvedModelId` (tanpa prefix), bukan raw string
+- [x] Update `markCooldown()`, `flagAccountChallenge()`, `updateAccountUsage()`: konsisten gunakan `resolvedModelId`
+- [x] **Hapus** keyword-based pool routing dari executor jika masih ada — pool sudah dari `modelSpec.pool`
+- [x] **Verifikasi**: request dengan model yang ada di registry → cooldown/quota update pakai bare modelId
 
 #### 3.3 — `/v1/models` Enhancement
 - [ ] Update `handleModelsList()` di `src/router/index.ts`:
