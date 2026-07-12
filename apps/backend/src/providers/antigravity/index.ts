@@ -10,10 +10,20 @@ import {
   getBestAccount as getBestAntigravityAccount,
   initManager,
   updateAccountUsage as updateAntigravityAccountUsage,
+  getStrategy,
+  setStrategy,
+  resetAllCooldowns,
+  saveAccounts,
+  removeAccount,
+  resetAccount,
+  updateAccountProject,
+  markCooldown,
+  addAccount,
+  getCooldowns,
 } from '@/providers/antigravity/auth/manager';
 import type { AntigravityAccount } from '@/providers/antigravity/auth/types';
 import { antigravityModelRegistry, loadModelSpecOverrides } from '@/providers/antigravity/config/model-specs';
-import { supportedModelsCache, refreshAllQuotas } from '@/providers/antigravity/api/quota';
+import { supportedModelsCache, refreshAllQuotas, fetchQuota } from '@/providers/antigravity/api/quota';
 import {
   ANTIGRAVITY_SYSTEM_INSTRUCTION,
   getAntigravityConfig,
@@ -21,6 +31,7 @@ import {
   saveAntigravityConfig,
   updateAntigravityConfig,
 } from '@/providers/antigravity/provider-config';
+import { exchangeCode, getProjectId, getUserEmail } from '@/providers/antigravity/auth/oauth';
 
 import { AntigravityExecutor } from '@/providers/antigravity/upstream/executor';
 import { mapOpenAIToGoogle } from '@/providers/antigravity/mappers/openai-in';
@@ -458,6 +469,105 @@ export class AntigravityProvider implements IProvider {
       lastUsed: account.lastUsed,
       capabilities: account.capabilities,
     };
+  }
+
+  getStrategy(): string {
+    return getStrategy();
+  }
+
+  async setStrategy(strategy: any): Promise<void> {
+    setStrategy(strategy);
+  }
+
+  getConfig(): any {
+    return getAntigravityConfig();
+  }
+
+  async updateConfig(updates: any): Promise<any> {
+    await updateAntigravityConfig(updates);
+    return getAntigravityConfig();
+  }
+
+  async resetAllAccounts(): Promise<void> {
+    const accounts = getAccounts();
+    for (const account of accounts) {
+      account.healthScore = 100;
+      account.consecutiveFailures = 0;
+      account.cooldowns = {};
+      account.modelScores = {};
+      account.history = [];
+      account.quota = [];
+      delete account.challenge;
+    }
+    resetAllCooldowns();
+    await saveAccounts(accounts);
+  }
+
+  async removeAccount(accountId: string): Promise<void> {
+    await removeAccount(accountId);
+  }
+
+  async resetAccount(accountId: string): Promise<void> {
+    await resetAccount(accountId);
+  }
+
+  async updateAccountProject(accountId: string, projectId: string): Promise<void> {
+    await updateAccountProject(accountId, projectId);
+  }
+
+  async rediscoverAccountProject(accountId: string): Promise<any> {
+    const account = getAccounts().find((item) => item.email === accountId);
+    if (!account?.accessToken) {
+      throw new Error("Account not found or no token");
+    }
+    const projectId = await getProjectId(account.accessToken);
+    if (!projectId) {
+      throw new Error("No project found via discovery");
+    }
+    await updateAccountProject(accountId, projectId);
+    return { projectId };
+  }
+
+  async markAccountCooldown(accountId: string, pool: string, duration?: string): Promise<void> {
+    markCooldown(accountId, (pool || "cli") as "cli" | "sandbox", duration || "3600s");
+  }
+
+  getCooldowns(): Record<string, number> {
+    return getCooldowns();
+  }
+
+  async addAccount(body: any): Promise<any> {
+    if (body.code) {
+      const tokenRes = await exchangeCode(body.code);
+      const email = await getUserEmail(tokenRes.access_token);
+      const projectId = await getProjectId(tokenRes.access_token);
+      const newAccount: AntigravityAccount = {
+        email,
+        refreshToken: tokenRes.refresh_token!,
+        accessToken: tokenRes.access_token,
+        expiresAt: Date.now() + tokenRes.expires_in * 1000,
+        projectId,
+        healthScore: 100,
+        lastUsed: 0,
+        tokenUsage: 0,
+      };
+
+      if (!newAccount.refreshToken) {
+        throw new Error("No refresh token received. Revoke access and try again.");
+      }
+
+      if (newAccount.projectId) {
+        const quota = await fetchQuota(newAccount);
+        if (quota) {
+          newAccount.quota = quota;
+        }
+      }
+
+      await addAccount(newAccount);
+      return { success: true, email };
+    } else {
+      return { redirectUrl: "/oauth/start" };
+    }
   }
 }
 

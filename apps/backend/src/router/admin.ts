@@ -2,25 +2,12 @@ import { join } from "path";
 import { existsSync } from "fs";
 import { getProxyConfig, updateProxyConfig } from "@/config/manager";
 import { adminEventBus } from "@/core/events";
-import {
-  addAccount,
-  getAccounts,
-  getCooldowns,
-  getStrategy,
-  markCooldown,
-  removeAccount,
-  resetAccount,
-  resetAllCooldowns,
-  saveAccounts,
-  setStrategy,
-  updateAccountProject,
-} from "@/providers/antigravity/auth/manager";
+import { addAccount } from "@/providers/antigravity/auth/manager";
 import { exchangeCode, generateAuthUrl, getProjectId, getUserEmail } from "@/providers/antigravity/auth/oauth";
-import type { AntigravityAccount, SelectionStrategy } from "@/providers/antigravity/auth/types";
-import { fetchQuota, supportedModelsCache } from "@/providers/antigravity/api/quota";
-import { getAntigravityConfig, updateAntigravityConfig } from "@/providers/antigravity";
+import type { AntigravityAccount } from "@/providers/antigravity/auth/types";
+import { fetchQuota } from "@/providers/antigravity/api/quota";
 import { getCapturedLogs } from "@/router/middleware";
-import { getAllProviders, getProvider } from "@/core/registry";
+import { getAllProviders, getProvider, getDefaultProvider } from "@/core/registry";
 
 const pkg = await Bun.file("package.json").json();
 const APP_VERSION = pkg.version || "0.0.0";
@@ -42,15 +29,16 @@ function createJsonResponse(body: unknown, status = 200): Response {
  */
 function buildCombinedConfig() {
   const proxyConfig = getProxyConfig();
-  const antigravityConfig = getAntigravityConfig();
+  const defaultProvider = getDefaultProvider();
+  const providerConfig = defaultProvider.getConfig?.() || {};
 
   return {
     ...proxyConfig,
-    models: antigravityConfig.models,
-    quota: antigravityConfig.quota,
-    endpoints: antigravityConfig.endpoints,
-    features: antigravityConfig.features,
-    scheduling: antigravityConfig.scheduling,
+    models: providerConfig.models,
+    quota: providerConfig.quota,
+    endpoints: providerConfig.endpoints,
+    features: providerConfig.features,
+    scheduling: providerConfig.scheduling,
   };
 }
 
@@ -101,20 +89,28 @@ function createAdminEventStream(): Response {
         }
       };
 
+      const defaultProvider = getDefaultProvider();
+      const allAccounts = getAllProviders().flatMap((p) => p.getAccounts());
+      const strategy = defaultProvider.getStrategy?.() || "hybrid";
+      const allModels = Array.from(new Set(getAllProviders().flatMap((p) => p.getSupportedModels()))).sort();
+      const cooldowns = defaultProvider.getCooldowns?.() || {};
+
       send("init", {
         version: APP_VERSION,
-        accounts: getAccounts(),
-        strategy: getStrategy(),
-        supportedModels: Array.from(supportedModelsCache).sort(),
-        cooldowns: getCooldowns(),
+        accounts: allAccounts,
+        strategy,
+        supportedModels: allModels,
+        cooldowns,
         logs: getCapturedLogs(),
       });
 
-      onUpdate = (data: any) =>
+      onUpdate = (data: any) => {
+        const models = Array.from(new Set(getAllProviders().flatMap((p) => p.getSupportedModels()))).sort();
         send("update", {
           ...data,
-          supportedModels: Array.from(supportedModelsCache).sort(),
+          supportedModels: models,
         });
+      };
       onFlash = (data: { email: string; status: "success" | "error" }) =>
         send("flash", data);
       onLog = (message: string) => send("log", { message });
@@ -235,21 +231,28 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
   }
 
   if (url.pathname === "/api/status") {
+    const defaultProvider = getDefaultProvider();
+    const allAccounts = getAllProviders().flatMap((p) => p.getAccounts());
+    const strategy = defaultProvider.getStrategy?.() || "hybrid";
+    const allModels = Array.from(new Set(getAllProviders().flatMap((p) => p.getSupportedModels()))).sort();
     return createJsonResponse({
       version: APP_VERSION,
-      accounts: getAccounts(),
-      strategy: getStrategy(),
-      supportedModels: Array.from(supportedModelsCache).sort(),
+      accounts: allAccounts,
+      strategy,
+      supportedModels: allModels,
     });
   }
 
   if (url.pathname === "/api/strategy" && req.method === "POST") {
-    const body = await req.json() as { strategy?: SelectionStrategy };
+    const body = await req.json() as { strategy?: 'hybrid' | 'sticky' | 'round-robin' | 'random' | 'least-used' };
     if (!body.strategy) {
       return new Response("Missing strategy", { status: 400 });
     }
 
-    setStrategy(body.strategy);
+    const defaultProvider = getDefaultProvider();
+    if (defaultProvider.setStrategy) {
+      await defaultProvider.setStrategy(body.strategy);
+    }
     await updateProxyConfig({
       rotation: {
         ...getProxyConfig().rotation,
@@ -270,8 +273,9 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
       if (Object.keys(proxyUpdates).length > 0) {
         await updateProxyConfig(proxyUpdates);
       }
-      if (Object.keys(providerUpdates).length > 0) {
-        await updateAntigravityConfig(providerUpdates);
+      const defaultProvider = getDefaultProvider();
+      if (defaultProvider.updateConfig && Object.keys(providerUpdates).length > 0) {
+        await defaultProvider.updateConfig(providerUpdates);
       }
       return createJsonResponse(buildCombinedConfig());
     } catch (error: any) {
@@ -280,31 +284,29 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
   }
 
   if (url.pathname === "/api/accounts/reset-all" && req.method === "POST") {
-    const accounts = getAccounts();
-    for (const account of accounts) {
-      account.healthScore = 100;
-      account.consecutiveFailures = 0;
-      account.cooldowns = {};
-      account.modelScores = {};
-      account.history = [];
-      account.quota = [];
-      delete account.challenge;
+    let count = 0;
+    for (const p of getAllProviders()) {
+      if (p.resetAllAccounts) {
+        await p.resetAllAccounts();
+        count += p.getAccounts().length;
+      }
     }
-
-    resetAllCooldowns();
-    await saveAccounts(accounts);
-    console.log(`[Manager] Reset state for all ${accounts.length} accounts via API`);
+    console.log(`[Manager] Reset state for all ${count} accounts via API`);
     return new Response("OK", { status: 200 });
   }
 
   if (url.pathname.startsWith("/api/accounts/") && req.method === "DELETE") {
-    const email = url.pathname.replace("/api/accounts/", "");
-    if (!email) {
+    const id = url.pathname.replace("/api/accounts/", "");
+    if (!id) {
       return new Response("Bad Request", { status: 400 });
     }
 
-    await removeAccount(email);
-    return new Response("OK", { status: 200 });
+    const p = getAllProviders().find((p) => p.getAccounts().some((a) => a.id === id));
+    if (p && p.removeAccount) {
+      await p.removeAccount(id);
+      return new Response("OK", { status: 200 });
+    }
+    return new Response("Account not found or action not supported", { status: 404 });
   }
 
   if (
@@ -312,9 +314,13 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
     url.pathname.endsWith("/reset") &&
     req.method === "POST"
   ) {
-    const email = url.pathname.split("/")[3];
-    await resetAccount(email);
-    return new Response("OK", { status: 200 });
+    const id = url.pathname.split("/")[3];
+    const p = getAllProviders().find((p) => p.getAccounts().some((a) => a.id === id));
+    if (p && p.resetAccount) {
+      await p.resetAccount(id);
+      return new Response("OK", { status: 200 });
+    }
+    return new Response("Account not found or action not supported", { status: 404 });
   }
 
   if (
@@ -322,23 +328,17 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
     url.pathname.endsWith("/project/rediscover") &&
     req.method === "POST"
   ) {
-    const email = url.pathname.split("/")[3];
-    const account = getAccounts().find((item) => item.email === email);
-    if (!account?.accessToken) {
-      return new Response("Account not found or no token", { status: 400 });
-    }
-
-    try {
-      const projectId = await getProjectId(account.accessToken);
-      if (!projectId) {
-        return new Response("No project found via discovery", { status: 404 });
+    const id = url.pathname.split("/")[3];
+    const p = getAllProviders().find((p) => p.getAccounts().some((a) => a.id === id));
+    if (p && p.rediscoverAccountProject) {
+      try {
+        const result = await p.rediscoverAccountProject(id);
+        return createJsonResponse(result);
+      } catch (error: any) {
+        return new Response(error.message, { status: 500 });
       }
-
-      await updateAccountProject(email, projectId);
-      return createJsonResponse({ projectId });
-    } catch (error: any) {
-      return new Response(error.message, { status: 500 });
     }
+    return new Response("Account not found or action not supported", { status: 404 });
   }
 
   if (
@@ -346,14 +346,18 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
     url.pathname.endsWith("/project") &&
     req.method === "POST"
   ) {
-    const email = url.pathname.split("/")[3];
+    const id = url.pathname.split("/")[3];
     const body = await req.json() as { projectId?: string };
     if (!body.projectId) {
       return new Response("Missing projectId", { status: 400 });
     }
 
-    await updateAccountProject(email, body.projectId);
-    return new Response("OK", { status: 200 });
+    const p = getAllProviders().find((p) => p.getAccounts().some((a) => a.id === id));
+    if (p && p.updateAccountProject) {
+      await p.updateAccountProject(id, body.projectId);
+      return new Response("OK", { status: 200 });
+    }
+    return new Response("Account not found or action not supported", { status: 404 });
   }
 
   if (
@@ -361,10 +365,14 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
     url.pathname.endsWith("/cooldown") &&
     req.method === "POST"
   ) {
-    const email = url.pathname.split("/")[3];
-    const body = await req.json() as { pool?: "cli" | "sandbox" };
-    markCooldown(email, body.pool || "cli", "3600s");
-    return new Response("OK", { status: 200 });
+    const id = url.pathname.split("/")[3];
+    const body = await req.json() as { pool?: string };
+    const p = getAllProviders().find((p) => p.getAccounts().some((a) => a.id === id));
+    if (p && p.markAccountCooldown) {
+      await p.markAccountCooldown(id, body.pool || "cli", "3600s");
+      return new Response("OK", { status: 200 });
+    }
+    return new Response("Account not found or action not supported", { status: 404 });
   }
 
   // ─── Provider endpoints ───────────────────────────────────────────────────
@@ -394,7 +402,7 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
       if (!p) {
         return new Response("Provider not found", { status: 404 });
       }
-      const config = id === "antigravity" ? getAntigravityConfig() : {};
+      const config = p.getConfig ? p.getConfig() : {};
       return createJsonResponse(config);
     }
     // GET /api/providers/:id/models
@@ -415,9 +423,6 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
       if (!p) {
         return new Response("Provider not found", { status: 404 });
       }
-      if (id === "antigravity") {
-        return createJsonResponse(getAccounts());
-      }
       return createJsonResponse(p.getAccounts());
     }
     // GET /api/providers/:id
@@ -429,11 +434,11 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
       }
       let accounts: any[] = [];
       try {
-        accounts = id === "antigravity" ? getAccounts() : p.getAccounts();
+        accounts = p.getAccounts();
       } catch {}
       const modelIds = p.getModelRegistry().listModelIds();
       const models = modelIds.map((mid) => p.getModelRegistry().getSpec(mid));
-      const config = id === "antigravity" ? getAntigravityConfig() : {};
+      const config = p.getConfig ? p.getConfig() : {};
       return createJsonResponse({
         id: p.id,
         displayName: p.displayName,
@@ -454,10 +459,10 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
         return new Response("Provider not found", { status: 404 });
       }
       const body = await req.json();
-      if (id === "antigravity") {
+      if (p.updateConfig) {
         try {
-          await updateAntigravityConfig(body);
-          return createJsonResponse(getAntigravityConfig());
+          const config = await p.updateConfig(body);
+          return createJsonResponse(config);
         } catch (error: any) {
           return createJsonResponse({ error: error.message }, 400);
         }
@@ -467,48 +472,22 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
     // POST /api/providers/:id/accounts/add
     if (parts.length === 6 && parts[4] === "accounts" && parts[5] === "add") {
       const id = parts[3];
-      if (id === "antigravity") {
+      const p = getProvider(id);
+      if (!p) {
+        return new Response("Provider not found", { status: 404 });
+      }
+      if (p.addAccount) {
         let body: any = {};
         try {
           body = await req.json();
         } catch {
           // Empty body
         }
-
-        if (body.code) {
-          try {
-            const tokenRes = await exchangeCode(body.code);
-            const email = await getUserEmail(tokenRes.access_token);
-            const projectId = await getProjectId(tokenRes.access_token);
-            const newAccount: AntigravityAccount = {
-              email,
-              refreshToken: tokenRes.refresh_token!,
-              accessToken: tokenRes.access_token,
-              expiresAt: Date.now() + tokenRes.expires_in * 1000,
-              projectId,
-              healthScore: 100,
-              lastUsed: 0,
-              tokenUsage: 0,
-            };
-
-            if (!newAccount.refreshToken) {
-              return createJsonResponse({ error: "No refresh token received. Revoke access and try again." }, 400);
-            }
-
-            if (newAccount.projectId) {
-              const quota = await fetchQuota(newAccount);
-              if (quota) {
-                newAccount.quota = quota;
-              }
-            }
-
-            await addAccount(newAccount);
-            return createJsonResponse({ success: true, email });
-          } catch (error: any) {
-            return createJsonResponse({ error: `Auth error: ${error.message || error}` }, 500);
-          }
-        } else {
-          return createJsonResponse({ redirectUrl: "/oauth/start" });
+        try {
+          const result = await p.addAccount(body);
+          return createJsonResponse(result);
+        } catch (error: any) {
+          return createJsonResponse({ error: error.message || error }, 400);
         }
       }
       return new Response("Not Supported", { status: 400 });

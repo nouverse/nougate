@@ -84,6 +84,20 @@ export interface IProvider {
   getModelRegistry(): IModelRegistry;
   getSupportedModels(): string[];
   execute(params: ProviderExecuteParams): Promise<Response>;
+
+  // Optional administrative methods
+  getStrategy?(): string;
+  setStrategy?(strategy: string): Promise<void>;
+  getConfig?(): any;
+  updateConfig?(updates: any): Promise<any>;
+  resetAllAccounts?(): Promise<void>;
+  removeAccount?(accountId: string): Promise<void>;
+  resetAccount?(accountId: string): Promise<void>;
+  updateAccountProject?(accountId: string, projectId: string): Promise<void>;
+  rediscoverAccountProject?(accountId: string): Promise<any>;
+  markAccountCooldown?(accountId: string, pool: string, duration?: string): Promise<void>;
+  getCooldowns?(): Record<string, number>;
+  addAccount?(body: any): Promise<any>;
 }
 
 export interface ProviderExecuteParams {
