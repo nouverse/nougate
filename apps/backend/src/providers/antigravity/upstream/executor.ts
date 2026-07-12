@@ -200,6 +200,7 @@ export class AntigravityExecutor {
 
     let account: AntigravityAccount | null = null;
     let inPlaceRetry = false;
+    let pool: "cli" | "sandbox" = useCliPool ? "cli" : "sandbox";
 
     while (attempts < maxAttempts) {
       if (!inPlaceRetry) {
@@ -213,7 +214,7 @@ export class AntigravityExecutor {
           );
         }
 
-        const pool = useCliPool ? "cli" : "sandbox";
+        pool = useCliPool ? "cli" : "sandbox";
         account = await getBestAccount(pool, modelId, options.clientId, triedEmails, true);
 
         if (!account) {

@@ -18,6 +18,8 @@ import {
   ANTIGRAVITY_SYSTEM_INSTRUCTION,
   getAntigravityConfig,
   loadAntigravityConfig,
+  saveAntigravityConfig,
+  updateAntigravityConfig,
 } from './provider-config';
 
 import { AntigravityExecutor } from './upstream/executor';
@@ -458,4 +460,6 @@ export {
   ANTIGRAVITY_SYSTEM_INSTRUCTION,
   getAntigravityConfig,
   loadAntigravityConfig,
+  saveAntigravityConfig,
+  updateAntigravityConfig,
 };
