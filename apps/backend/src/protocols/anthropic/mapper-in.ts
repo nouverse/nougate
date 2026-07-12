@@ -1,6 +1,7 @@
 import type { IModelSpec } from "../../core/interfaces";
-import { getSignature, getSignatureByCallId } from "../../utils/cache";
+import { getSignature, getSignatureByCallId, getSignatureFamily } from "../../utils/cache";
 import { cleanJSONSchemaForAntigravity } from "../../utils/schema";
+import { getFamilyName } from "../../providers/antigravity/auth/manager";
 
 // ─── Anthropic Request Types ──────────────────────────────────────────────────
 
@@ -408,9 +409,18 @@ function transformContentBlock(
 
     case "thinking": {
       if (isInCurrentTurn) {
-        const signature =
+        let signature =
           block.signature ||
           (sessionId ? getSignature(sessionId, block.thinking) : undefined);
+
+        if (signature) {
+          const sigFamily = getSignatureFamily(signature);
+          const reqFamily = getFamilyName(googleModel);
+          if (sigFamily && sigFamily !== reqFamily) {
+            console.log(`[Signature] Skipped signature from different model family: ${sigFamily} vs requested ${reqFamily}`);
+            signature = undefined;
+          }
+        }
 
         if (signature) {
           parts.push({

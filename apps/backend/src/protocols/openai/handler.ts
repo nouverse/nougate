@@ -12,6 +12,7 @@ import type { IProtocolHandler } from "../../core/interfaces";
 import type { RequestContext } from "../../core/request-context";
 import { mapOpenAIToGoogle } from "./mapper-in";
 import { createOpenAIStreamTransformer } from "./mapper-out";
+import { checkSessionSignatureRewind } from "../../utils/cache";
 
 /**
  * Build a JSON response with the shared OpenAI proxy headers.
@@ -57,8 +58,10 @@ async function finalizeOpenAIResponse(params: {
   sessionId: string;
   attempts: number;
   accountEmail: string;
+  messageCount: number;
+  assistantTurnIndex: number;
 }) {
-  const { googleRes, openaiBody, requestId, sessionId, attempts, accountEmail } = params;
+  const { googleRes, openaiBody, requestId, sessionId, attempts, accountEmail, messageCount, assistantTurnIndex } = params;
   const decoder = new TextDecoder();
   const isStreaming = openaiBody.stream === true;
 
@@ -74,7 +77,7 @@ async function finalizeOpenAIResponse(params: {
     }
 
     const stream = googleRes.body.pipeThrough(
-      createOpenAIStreamTransformer(openaiBody.model, requestId, false, sessionId),
+      createOpenAIStreamTransformer(openaiBody.model, requestId, false, sessionId, messageCount, assistantTurnIndex),
     );
     return {
       response: new Response(stream, {
@@ -94,7 +97,7 @@ async function finalizeOpenAIResponse(params: {
   }
 
   const stream = googleRes.body.pipeThrough(
-    createOpenAIStreamTransformer(openaiBody.model, requestId, false, sessionId),
+    createOpenAIStreamTransformer(openaiBody.model, requestId, false, sessionId, messageCount, assistantTurnIndex),
   );
   const reader = stream.getReader();
   let fullContent = "";
@@ -277,6 +280,10 @@ export class OpenAIProtocolHandler implements IProtocolHandler {
       );
     }
 
+    const currentMessageCount = openaiBody.messages?.length || 0;
+    const assistantTurnIndex = openaiBody.messages?.filter((m: any) => m.role === "assistant").length || 0;
+    checkSessionSignatureRewind(ctx.sessionId, currentMessageCount);
+
     const modelSpec = ctx.provider.getModelRegistry().getSpec(ctx.resolvedModel.modelId);
     if (!modelSpec) {
       return createJsonResponse(
@@ -320,6 +327,8 @@ export class OpenAIProtocolHandler implements IProtocolHandler {
           sessionId: ctx.sessionId,
           attempts,
           accountEmail: account.email,
+          messageCount: currentMessageCount,
+          assistantTurnIndex,
         }),
     });
 

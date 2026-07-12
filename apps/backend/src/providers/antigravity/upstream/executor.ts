@@ -16,6 +16,7 @@ import {
 import type { AntigravityAccount } from "../auth/types";
 import { parseGoogleError } from "./errors";
 import { getGeminiCliHeaders, getImpersonationHeaders } from "./headers";
+import { parseRetryDelay } from "../../../utils/retry";
 
 /**
  * Parameters used to rebuild a Google request body for the current attempt.
@@ -85,33 +86,7 @@ function selectGoogleUrl(
   return endpoints.sandbox[index];
 }
 
-/**
- * Parse quota reset information from a Google error payload when present.
- */
-function parseQuotaResetSeconds(errorText: string): number {
-  try {
-    const errorJson = JSON.parse(errorText);
-    const details = errorJson.error?.details || [];
-
-    for (const detail of details) {
-      if (detail.metadata?.quotaResetDelay) {
-        return parseFloat(detail.metadata.quotaResetDelay);
-      }
-      if (detail.retryDelay) {
-        return parseFloat(detail.retryDelay);
-      }
-    }
-
-    if (errorJson.error?.message?.includes("reset after")) {
-      const match = errorJson.error.message.match(/reset after\s+([0-9.]+)s/);
-      if (match) {
-        return parseFloat(match[1]);
-      }
-    }
-  } catch {}
-
-  return 0;
-}
+// parseQuotaResetSeconds removed in favor of utils/retry's parseRetryDelay
 
 /**
  * Check whether a Google 400 response is the known schema-cleaning retry case.
@@ -223,23 +198,30 @@ export class AntigravityExecutor {
     const triedEmails: string[] = [];
     const attemptLogs: Array<{ email: string; status: number; reason: string }> = [];
 
+    let account: AntigravityAccount | null = null;
+    let inPlaceRetry = false;
+
     while (attempts < maxAttempts) {
-      attempts++;
+      if (!inPlaceRetry) {
+        attempts++;
 
-      if (attempts > 1) {
-        const delayMs = Math.min(500 * attempts, 3000);
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-        console.log(
-          `[Switch] Skipping pool switch for ${useCliPool ? "CLI-only" : "sandbox-only"} model (attempt ${attempts})`,
-        );
+        if (attempts > 1) {
+          const delayMs = Math.min(500 * attempts, 3000);
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          console.log(
+            `[Switch] Skipping pool switch for ${useCliPool ? "CLI-only" : "sandbox-only"} model (attempt ${attempts})`,
+          );
+        }
+
+        const pool = useCliPool ? "cli" : "sandbox";
+        account = await getBestAccount(pool, modelId, options.clientId, triedEmails, true);
+
+        if (!account) {
+          account = await getBestAccount(pool, modelId, options.clientId, triedEmails, false);
+        }
       }
 
-      const pool = useCliPool ? "cli" : "sandbox";
-      let account = await getBestAccount(pool, modelId, options.clientId, triedEmails, true);
-
-      if (!account) {
-        account = await getBestAccount(pool, modelId, options.clientId, triedEmails, false);
-      }
+      inPlaceRetry = false;
 
       if (!account || !account.accessToken) {
         if (attempts < maxAttempts) {
@@ -381,21 +363,34 @@ export class AntigravityExecutor {
             }
           }
 
-          const resetSeconds = parseQuotaResetSeconds(errText);
-          if (
-            status === 429 &&
-            resetSeconds > 0 &&
-            resetSeconds <= proxyConfig.retry.transientRetryThresholdSeconds
-          ) {
-            console.log(
-              `[Skip] Account ${account.email} transiently limited (${resetSeconds}s), rotating...`,
-            );
-            account.consecutiveFailures = (account.consecutiveFailures || 0) + 1;
-            if ((account.consecutiveFailures || 0) >= 2) {
-              await updateAccountUsage(account.email, false, modelId, pool, options.clientId, 429);
+          const resetMs = parseRetryDelay(errText);
+          const resetSeconds = resetMs / 1000;
+
+          if (status === 429) {
+            if (resetMs > 0 && resetMs <= 2000) {
+              const sleepMs = resetMs + 1500;
+              console.log(
+                `[GraceRetry] Account ${account.email} transiently limited. Sleeping for ${sleepMs}ms and retrying in-place...`,
+              );
+              await new Promise((resolve) => setTimeout(resolve, sleepMs));
+              inPlaceRetry = true;
+              continue;
             }
-            triedEmails.push(account.email);
-            continue;
+
+            if (
+              resetSeconds > 0 &&
+              resetSeconds <= proxyConfig.retry.transientRetryThresholdSeconds
+            ) {
+              console.log(
+                `[Skip] Account ${account.email} transiently limited (${resetSeconds}s), rotating...`,
+              );
+              account.consecutiveFailures = (account.consecutiveFailures || 0) + 1;
+              if ((account.consecutiveFailures || 0) >= 2) {
+                await updateAccountUsage(account.email, false, modelId, pool, options.clientId, 429);
+              }
+              triedEmails.push(account.email);
+              continue;
+            }
           }
 
           if (status === 400 && errText.includes("thought_signature")) {

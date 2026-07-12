@@ -1,11 +1,12 @@
-import { cacheSignature, cacheSignatureByCallId } from "../../utils/cache";
+import { cacheSignature, cacheSignatureByCallId, cacheSessionSignature, cacheThinkingFamily, cacheSessionReasoning } from "../../utils/cache";
+import { getFamilyName } from "../../providers/antigravity/auth/manager";
 
 /**
  * Google SSE → Anthropic SSE transform.
  * Anthropic event sequence:
  *   message_start → content_block_start → content_block_delta(s) → content_block_stop → message_delta → message_stop
  */
-export function createAnthropicStreamTransformer(model: string, messageId: string, sessionId?: string) {
+export function createAnthropicStreamTransformer(model: string, messageId: string, sessionId?: string, messageCount?: number, assistantTurnIndex?: number) {
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
   let buffer = "";
@@ -235,6 +236,13 @@ export function createAnthropicStreamTransformer(model: string, messageId: strin
 
             if (sessionId && activeSignature && activeThought) {
               cacheSignature(sessionId, activeThought, activeSignature);
+              cacheThinkingFamily(activeSignature, getFamilyName(model));
+              if (messageCount !== undefined) {
+                cacheSessionSignature(sessionId, activeSignature, messageCount);
+              }
+              if (assistantTurnIndex !== undefined) {
+                cacheSessionReasoning(sessionId, activeThought, assistantTurnIndex);
+              }
             }
 
             if (finishReason) {
@@ -274,6 +282,8 @@ export async function aggregateAnthropicResponse(
   model: string,
   messageId: string,
   sessionId?: string,
+  messageCount?: number,
+  assistantTurnIndex?: number,
 ): Promise<any> {
   const decoder = new TextDecoder();
   let text = "";
@@ -343,6 +353,13 @@ export async function aggregateAnthropicResponse(
 
   if (sessionId && activeSignature && thinking) {
     cacheSignature(sessionId, thinking, activeSignature);
+    cacheThinkingFamily(activeSignature, getFamilyName(model));
+    if (messageCount !== undefined) {
+      cacheSessionSignature(sessionId, activeSignature, messageCount);
+    }
+    if (assistantTurnIndex !== undefined) {
+      cacheSessionReasoning(sessionId, thinking, assistantTurnIndex);
+    }
   }
 
   const content: any[] = [];

@@ -12,6 +12,7 @@ import type { IProtocolHandler } from "../../core/interfaces";
 import type { RequestContext } from "../../core/request-context";
 import { mapAnthropicToGoogle } from "./mapper-in";
 import { createAnthropicStreamTransformer, aggregateAnthropicResponse } from "./mapper-out";
+import { checkSessionSignatureRewind } from "../../utils/cache";
 
 /**
  * Build a JSON response with the shared CORS and proxy headers.
@@ -55,8 +56,10 @@ async function finalizeAnthropicResponse(params: {
   sessionId: string;
   attempts: number;
   accountEmail: string;
+  messageCount: number;
+  assistantTurnIndex: number;
 }) {
-  const { googleRes, anthropicBody, messageId, sessionId, attempts, accountEmail } = params;
+  const { googleRes, anthropicBody, messageId, sessionId, attempts, accountEmail, messageCount, assistantTurnIndex } = params;
   const isStreaming = anthropicBody.stream === true;
 
   if (isStreaming) {
@@ -67,7 +70,7 @@ async function finalizeAnthropicResponse(params: {
     }
 
     const stream = googleRes.body.pipeThrough(
-      createAnthropicStreamTransformer(anthropicBody.model, messageId, sessionId),
+      createAnthropicStreamTransformer(anthropicBody.model, messageId, sessionId, messageCount, assistantTurnIndex),
     );
     return {
       response: new Response(stream, {
@@ -91,6 +94,8 @@ async function finalizeAnthropicResponse(params: {
     anthropicBody.model,
     messageId,
     sessionId,
+    messageCount,
+    assistantTurnIndex,
   );
 
   // If the content is empty, trigger a retry
@@ -175,6 +180,10 @@ export class AnthropicProtocolHandler implements IProtocolHandler {
       return createErrorResponse(error?.message || "Invalid JSON body", "invalid_request_error", 400);
     }
 
+    const currentMessageCount = anthropicBody.messages?.length || 0;
+    const assistantTurnIndex = anthropicBody.messages?.filter((m: any) => m.role === "assistant").length || 0;
+    checkSessionSignatureRewind(ctx.sessionId, currentMessageCount);
+
     const modelSpec = ctx.provider.getModelRegistry().getSpec(ctx.resolvedModel.modelId);
     if (!modelSpec) {
       return createErrorResponse(`Unknown model "${anthropicBody.model}"`, "invalid_request_error", 400);
@@ -209,6 +218,8 @@ export class AnthropicProtocolHandler implements IProtocolHandler {
           sessionId: ctx.sessionId,
           attempts,
           accountEmail: account.email,
+          messageCount: currentMessageCount,
+          assistantTurnIndex,
         }),
     });
 

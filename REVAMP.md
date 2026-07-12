@@ -16,12 +16,12 @@ Dokumen ini merangkum fitur-fitur inti dari [Antigravity-Manager](https://github
 |-------|:----------:|:-------------------:|:-----------:|:--------:|:-------:|
 | OpenAI-compatible endpoint | ✅ | ✅ | ✅ | — | — |
 | Anthropic native `/v1/messages` | ✅ | ✅ | ✅ | 🔴 High | [§2.1](#21--native-anthropic-endpoint-v1messages) |
-| Multi-layer signature cache | 🟡 Basic (2-layer) | ✅ (4-layer: tool, family, session, reasoning) | 🟡 Basic | 🔴 High | [§2.2](#22--multi-layer-signature-cache) |
+| Multi-layer signature cache | ✅ (4-layer: tool, family, session, reasoning) | ✅ (4-layer: tool, family, session, reasoning) | ✅ | 🔴 High | [§2.2](#22--multi-layer-signature-cache) |
 | Tiered account sorting (Ultra/Pro/Free) | ❌ | ✅ | ❌ | 🔴 High | [§2.3](#23--tiered-account-sorting) |
 | Model-level rate limiting | 🟡 Basic (family-level) | ✅ (account + model level) | 🟡 Basic | 🔴 High | [§2.4](#24--model-level-rate-limiting) |
 | Rate limit tracker with exponential backoff | ✅ (with backoff) | ✅ (per-account failure counter + backoff) | ✅ | 🔴 High | [§2.4](#24--model-level-rate-limiting) |
 | **JSON Schema cleaning for Gemini** | ✅ | ✅ ($ref flatten, anyOf, constraint→desc) | ✅ | 🔴 **High** | [§2.5](#25--json-schema-cleaning-for-gemini) |
-| **Smart retry delay parsing + grace retry** | ❌ | ✅ (recursive JSON parse + 1.5s grace window) | ❌ | 🔴 **High** | [§2.6](#26--smart-retry-delay-parsing--grace-retry) |
+| **Smart retry delay parsing + grace retry** | ✅ | ✅ (recursive JSON parse + 1.5s grace window) | ✅ | 🔴 **High** | [§2.6](#26--smart-retry-delay-parsing--grace-retry) |
 | Model routing / wildcard mapping | ❌ (hardcoded) | ✅ (exact + wildcard + specificity scoring) | ❌ | 🟡 Medium | [§3.1](#31--dynamic-model-routing) |
 | Tool result compression | ❌ | ✅ (browser snapshot, HTML cleanup) | ❌ | 🟡 Medium | [§3.2](#32--tool-result-compression) |
 | Context purification (thinking strip) | 🟡 Basic (strips previous thinking) | ✅ (soft/aggressive + token estimation) | 🟡 Basic | 🟡 Medium | [§3.3](#33--context-purification) |
@@ -1040,8 +1040,8 @@ graph TD
 Perkuat fondasi yang sudah ada tanpa mengubah API surface.
 
 - [x] **JSON Schema Cleaning** — Strip `$ref`, `anyOf`, `additionalProperties`, constraint→description
-- [ ] **4-Layer Signature Cache** — Upgrade `cache.ts` dengan session tracking + rewind detection
-- [ ] **Smart Retry Delay Parsing** — Deep parse 429 errors + grace retry ≤2s
+- [x] **4-Layer Signature Cache** — Upgrade `cache.ts` dengan session tracking + rewind detection
+- [x] **Smart Retry Delay Parsing** — Deep parse 429 errors + grace retry ≤2s
 - [ ] **Tiered Account Sorting** — Upgrade `manager.ts` dengan multi-dimension sorting
 - [ ] **Model-Level Rate Limiting** — Upgrade rate limit dari account-level ke account:model level
 - [x] **Rate Limit Exponential Backoff** — Per-account failure counter + grace window

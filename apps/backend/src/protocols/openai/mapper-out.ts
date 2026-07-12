@@ -1,7 +1,11 @@
 import {
   cacheSignature,
   cacheSignatureByCallId,
+  cacheSessionSignature,
+  cacheThinkingFamily,
+  cacheSessionReasoning,
 } from "../../utils/cache";
+import { getFamilyName } from "../../providers/antigravity/auth/manager";
 import { getOriginalToolName } from "./mapper-in";
 
 /**
@@ -155,6 +159,8 @@ export function createOpenAIStreamTransformer(
   requestId: string,
   hasPriorToolCalls: boolean,
   sessionId?: string,
+  messageCount?: number,
+  assistantTurnIndex?: number,
 ) {
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
@@ -200,6 +206,13 @@ export function createOpenAIStreamTransformer(
 
           if (sessionId && openAIEvent._signature && openAIEvent._thought) {
             cacheSignature(sessionId, openAIEvent._thought, openAIEvent._signature);
+            cacheThinkingFamily(openAIEvent._signature, getFamilyName(model));
+            if (messageCount !== undefined) {
+              cacheSessionSignature(sessionId, openAIEvent._signature, messageCount);
+            }
+            if (assistantTurnIndex !== undefined) {
+              cacheSessionReasoning(sessionId, openAIEvent._thought, assistantTurnIndex);
+            }
             console.log(`[Cache] Signature cached for conversation ${sessionId}`);
           }
 

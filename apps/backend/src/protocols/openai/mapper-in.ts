@@ -1,6 +1,7 @@
 import type { IModelSpec } from "../../core/interfaces";
-import { getSignature, getSignatureByCallId } from "../../utils/cache";
+import { getSignature, getSignatureByCallId, getSignatureFamily } from "../../utils/cache";
 import { cleanJSONSchemaForAntigravity } from "../../utils/schema";
+import { getFamilyName } from "../../providers/antigravity/auth/manager";
 
 /**
  * Provider-injected configuration for the OpenAI mapper.
@@ -300,13 +301,22 @@ function appendContentParts(parts: any[], message: any): void {
 /**
  * Append thought parts for the active turn when cached signatures are available.
  */
-function appendThoughtParts(parts: any[], message: any, sessionId: string | undefined, keepThinking: boolean): void {
+function appendThoughtParts(parts: any[], message: any, sessionId: string | undefined, keepThinking: boolean, googleModel: string): void {
   const thoughtText = message?.thought || message?.reasoning_content;
   if (!thoughtText) {
     return;
   }
 
-  const signature = sessionId ? getSignature(sessionId, thoughtText) : undefined;
+  let signature = sessionId ? getSignature(sessionId, thoughtText) : undefined;
+  if (signature) {
+    const sigFamily = getSignatureFamily(signature);
+    const reqFamily = getFamilyName(googleModel);
+    if (sigFamily && sigFamily !== reqFamily) {
+      console.log(`[Signature] Skipped signature from different model family: ${sigFamily} vs requested ${reqFamily}`);
+      signature = undefined;
+    }
+  }
+
   if (signature) {
     parts.push({
       thought: true,
@@ -422,7 +432,7 @@ function buildStandardParts(params: {
   const parts: any[] = [];
 
   if (isInCurrentTurn && (message.role === "assistant" || message.role === "model")) {
-    appendThoughtParts(parts, message, sessionId, keepThinking);
+    appendThoughtParts(parts, message, sessionId, keepThinking, googleModel);
   }
 
   appendContentParts(parts, message);
