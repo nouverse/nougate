@@ -1,5 +1,5 @@
 import { getProxyConfig } from "@/config/manager";
-import { eventBus } from "@/providers/antigravity/auth/manager";
+import { adminEventBus } from "@/core/events";
 
 const logBuffer: string[] = [];
 const originalConsole = {
@@ -28,7 +28,7 @@ function captureLog(level: "info" | "warn" | "error", args: unknown[]): void {
       logBuffer.shift();
     }
 
-    eventBus.emit("log", line);
+    adminEventBus.emit("log", line);
   } catch {
   }
 }

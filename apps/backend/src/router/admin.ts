@@ -1,9 +1,9 @@
 import { join } from "path";
 import { existsSync } from "fs";
 import { getProxyConfig, updateProxyConfig } from "@/config/manager";
+import { adminEventBus } from "@/core/events";
 import {
   addAccount,
-  eventBus,
   getAccounts,
   getCooldowns,
   getStrategy,
@@ -120,23 +120,23 @@ function createAdminEventStream(): Response {
       onLog = (message: string) => send("log", { message });
       onCooldown = (data: any) => send("cooldown", data);
 
-      eventBus.on("update", onUpdate);
-      eventBus.on("flash", onFlash);
-      eventBus.on("log", onLog);
-      eventBus.on("cooldown", onCooldown);
+      adminEventBus.on("update", onUpdate);
+      adminEventBus.on("flash", onFlash);
+      adminEventBus.on("log", onLog);
+      adminEventBus.on("cooldown", onCooldown);
     },
     cancel() {
       if (onUpdate) {
-        eventBus.off("update", onUpdate);
+        adminEventBus.off("update", onUpdate);
       }
       if (onFlash) {
-        eventBus.off("flash", onFlash);
+        adminEventBus.off("flash", onFlash);
       }
       if (onLog) {
-        eventBus.off("log", onLog);
+        adminEventBus.off("log", onLog);
       }
       if (onCooldown) {
-        eventBus.off("cooldown", onCooldown);
+        adminEventBus.off("cooldown", onCooldown);
       }
     },
   });

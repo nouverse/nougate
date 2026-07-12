@@ -1,6 +1,5 @@
-import { EventEmitter } from 'events';
-
 import { getProxyConfig as getGlobalProxyConfig } from '@/config/manager';
+import { adminEventBus } from '@/core/events';
 import { getAntigravityConfig, loadAntigravityConfig } from '@/providers/antigravity/provider-config';
 import { generateFingerprint } from '@/providers/antigravity/upstream/headers';
 import { getProjectId, refreshAccessToken } from '@/providers/antigravity/auth/oauth';
@@ -11,8 +10,6 @@ let accounts: AntigravityAccount[] = [];
 let currentStrategy: SelectionStrategy = 'hybrid';
 const clientStickyMap = new Map<string, string>();
 const cooldownMap = new Map<string, number>();
-
-export const eventBus = new EventEmitter();
 
 const MODEL_FAMILIES = {
   'Gemini 3 Flash': (n: string) =>
@@ -151,7 +148,7 @@ export function setStrategy(strategy: SelectionStrategy) {
 export async function saveAccounts(newAccounts: AntigravityAccount[]) {
   accounts = newAccounts;
   await saveConfig({ accounts, strategy: currentStrategy });
-  eventBus.emit("update", { accounts, strategy: currentStrategy });
+  adminEventBus.emit("update", { accounts, strategy: currentStrategy });
 }
 
 export function getCooldowns(): Record<string, number> {
@@ -180,7 +177,7 @@ export function markCooldown(email: string, pool: "cli" | "sandbox", modelFamily
     account.consecutiveFailures = (account.consecutiveFailures || 0) + 1;
     saveAccounts(accounts);
   }
-  eventBus.emit("cooldown", { cooldowns: Object.fromEntries(cooldownMap) });
+  adminEventBus.emit("cooldown", { cooldowns: Object.fromEntries(cooldownMap) });
 }
 
 export function clearCooldown(email: string, pool: string, modelFamily: string) {
@@ -193,7 +190,7 @@ export function clearCooldown(email: string, pool: string, modelFamily: string) 
       account.consecutiveFailures = 0;
       saveAccounts(accounts);
     }
-    eventBus.emit("cooldown", { cooldowns: Object.fromEntries(cooldownMap) });
+    adminEventBus.emit("cooldown", { cooldowns: Object.fromEntries(cooldownMap) });
   }
 }
 
@@ -216,7 +213,7 @@ export function flagAccountChallenge(email: string, pool: "cli" | "sandbox", mod
     account.cooldowns[`${pool}|${modelFamily}`] = expiry;
     account.challenge = { ...challenge, detectedAt: Date.now() };
     saveAccounts(accounts);
-    eventBus.emit("cooldown", { cooldowns: Object.fromEntries(cooldownMap) });
+    adminEventBus.emit("cooldown", { cooldowns: Object.fromEntries(cooldownMap) });
   }
 }
 
@@ -469,7 +466,7 @@ export async function removeAccount(email: string) {
 }
 
 export function emitAccountFlash(email: string, status: "success" | "error" = "success") {
-  eventBus.emit("flash", { email, status });
+  adminEventBus.emit("flash", { email, status });
 }
 
 export function ensureFingerprint(account: AntigravityAccount): void {
