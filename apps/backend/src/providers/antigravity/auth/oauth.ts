@@ -1,5 +1,5 @@
 import { type GoogleTokenResponse } from "./types";
-import { OAUTH_CONFIG, getImpersonationHeaders } from "../../../utils/headers";
+import { OAUTH_CONFIG, getImpersonationHeaders } from "../upstream/headers";
 
 export function generateAuthUrl(): string {
   const params = new URLSearchParams({

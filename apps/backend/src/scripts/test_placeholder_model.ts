@@ -1,6 +1,6 @@
 import { readFileSync } from "fs";
 import { join } from "path";
-import { getImpersonationHeaders } from "../utils/headers";
+import { getImpersonationHeaders } from "../providers/antigravity/upstream/headers";
 import { transformToGoogleBody } from "../utils/transform";
 
 // Usage: bun run src/scripts/test_placeholder_model.ts <email>

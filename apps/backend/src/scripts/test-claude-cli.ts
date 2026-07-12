@@ -1,4 +1,4 @@
-import { getGeminiCliHeaders } from "../utils/headers";
+import { getGeminiCliHeaders } from "../providers/antigravity/upstream/headers";
 import { transformToGoogleBody } from "../utils/transform";
 import { getAccounts, initManager } from "../providers/antigravity/auth/manager";
 

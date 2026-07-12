@@ -1,7 +1,7 @@
 import { EventEmitter } from "events";
 
 import { getProxyConfig as getConfigFromManager } from "../../../config/manager";
-import { generateFingerprint } from "../../../utils/headers";
+import { generateFingerprint } from "../upstream/headers";
 import { getProjectId, refreshAccessToken } from "./oauth";
 import { loadConfig, saveConfig } from "./storage";
 import { type AntigravityAccount, type SelectionStrategy } from "./types";

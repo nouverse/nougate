@@ -621,12 +621,12 @@ export function mapOpenAIToGoogle(
 - [x] **Verifikasi**: `bun x tsc --noEmit --skipLibCheck`
 
 #### 1.4 — Migrasi Provider Antigravity: API & Upstream
-- [ ] Buat direktori `src/providers/antigravity/api/` dan `src/providers/antigravity/upstream/`
-- [ ] Move `src/api/quota.ts` → `src/providers/antigravity/api/quota.ts` (update imports)
-- [ ] Move `src/utils/headers.ts` → `src/providers/antigravity/upstream/headers.ts` (update imports)
-- [ ] Move `src/utils/errors.ts` → `src/providers/antigravity/upstream/errors.ts` (update imports)
-- [ ] **Hapus** `src/api/`, `src/utils/headers.ts`, `src/utils/errors.ts`
-- [ ] **Verifikasi**: `bun x tsc --noEmit --skipLibCheck`
+- [x] Buat direktori `src/providers/antigravity/api/` dan `src/providers/antigravity/upstream/`
+- [x] Move `src/api/quota.ts` → `src/providers/antigravity/api/quota.ts` (update imports)
+- [x] Move `src/utils/headers.ts` → `src/providers/antigravity/upstream/headers.ts` (update imports)
+- [x] Move `src/utils/errors.ts` → `src/providers/antigravity/upstream/errors.ts` (update imports)
+- [x] **Hapus** `src/api/`, `src/utils/headers.ts`, `src/utils/errors.ts`
+- [x] **Verifikasi**: `bun x tsc --noEmit --skipLibCheck`
 
 #### 1.5 — Extract Executor dari `server.ts`
 - [ ] Buat `src/providers/antigravity/upstream/executor.ts` (lihat contoh kode di bawah)

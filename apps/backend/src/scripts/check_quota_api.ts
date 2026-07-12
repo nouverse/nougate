@@ -1,6 +1,6 @@
 import { readFileSync } from "fs";
 import { join } from "path";
-import { getImpersonationHeaders } from "../utils/headers";
+import { getImpersonationHeaders } from "../providers/antigravity/upstream/headers";
 
 // Usage: bun run src/scripts/check_quota_api.ts <email>
 

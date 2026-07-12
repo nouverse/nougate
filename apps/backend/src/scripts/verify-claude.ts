@@ -1,5 +1,5 @@
 import { initManager, getAccounts } from "../providers/antigravity/auth/manager";
-import { getGeminiCliHeaders } from "../utils/headers";
+import { getGeminiCliHeaders } from "../providers/antigravity/upstream/headers";
 
 console.log("Initializing...");
 await initManager();

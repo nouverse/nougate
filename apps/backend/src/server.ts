@@ -11,10 +11,10 @@ const APP_VERSION = pkg.version || "0.0.0";
 import { initManager, getBestAccount, updateAccountUsage, addAccount, getAccounts, removeAccount, getStrategy, setStrategy, saveAccounts, emitAccountFlash, eventBus, getEarliestReset, markCooldown, ensureFingerprint, regenerateFingerprint, getCooldowns, resetAccount, flagAccountChallenge, flagModelUnsupported, updateAccountProject, getFamilyName, resetAllCooldowns } from "./providers/antigravity/auth/manager";
 import { generateAuthUrl, exchangeCode, getUserEmail, getProjectId } from "./providers/antigravity/auth/oauth";
 import { type SelectionStrategy, type AntigravityAccount } from "./providers/antigravity/auth/types";
+import { refreshAllQuotas, fetchQuota, supportedModelsCache } from "./providers/antigravity/api/quota";
+import { parseGoogleError } from "./providers/antigravity/upstream/errors";
+import { getImpersonationHeaders, getGeminiCliHeaders, generateFingerprint } from "./providers/antigravity/upstream/headers";
 import { transformToGoogleBody, transformGoogleEventToOpenAI, createOpenAIStreamTransformer, getOriginalToolName } from "./utils/transform";
-import { getImpersonationHeaders, getGeminiCliHeaders, generateFingerprint } from "./utils/headers";
-import { refreshAllQuotas, fetchQuota, supportedModelsCache } from "./api/quota";
-import { parseGoogleError } from "./utils/errors";
 
 const logBuffer: string[] = [];
 const MAX_LOGS = 200;
