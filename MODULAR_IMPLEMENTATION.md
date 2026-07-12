@@ -591,11 +591,11 @@ export function mapOpenAIToGoogle(
 ### Checklist Phase 1
 
 #### 1.1 — Buat Core Interfaces & Utilities
-- [ ] Buat `src/core/interfaces.ts` — semua interface utama + `IModelSpec` + `IModelRegistry` (lihat contoh kode di bawah)
-- [ ] Buat `src/core/model-resolver.ts` — parse `"antigravity:gemini-3.5-flash"` → `{ providerId, modelId }` + `requireProviderPrefix()` + `ModelPrefixError`
-- [ ] Buat `src/core/request-context.ts` — type `RequestContext`
-- [ ] Buat `src/core/registry.ts` — provider & handler registry (Map-based)
-- [ ] **Verifikasi**: file compile tanpa error (`bun x tsc --noEmit --skipLibCheck`)
+- [x] Buat `src/core/interfaces.ts` — semua interface utama + `IModelSpec` + `IModelRegistry` (lihat contoh kode di bawah)
+- [x] Buat `src/core/model-resolver.ts` — parse `"antigravity:gemini-3.5-flash"` → `{ providerId, modelId }` + `requireProviderPrefix()` + `ModelPrefixError`
+- [x] Buat `src/core/request-context.ts` — type `RequestContext`
+- [x] Buat `src/core/registry.ts` — provider & handler registry (Map-based)
+- [x] **Verifikasi**: file compile tanpa error (`bun x tsc --noEmit --skipLibCheck`)
 
 #### 1.2 — Migrasi Model Specs ke Provider Antigravity
 - [ ] Buat direktori `src/providers/antigravity/config/`
