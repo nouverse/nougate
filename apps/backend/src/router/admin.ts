@@ -1,3 +1,4 @@
+import { join } from "path";
 import { getProxyConfig, updateProxyConfig } from "../config/manager";
 import {
   addAccount,
@@ -18,6 +19,7 @@ import type { AntigravityAccount, SelectionStrategy } from "../providers/antigra
 import { fetchQuota, supportedModelsCache } from "../providers/antigravity/api/quota";
 import { getAntigravityConfig, updateAntigravityConfig } from "../providers/antigravity";
 import { getCapturedLogs } from "./middleware";
+import { getAllProviders, getProvider } from "../core/registry";
 
 const pkg = await Bun.file("package.json").json();
 const APP_VERSION = pkg.version || "0.0.0";
@@ -151,9 +153,15 @@ function createAdminEventStream(): Response {
  * Read and serve a frontend asset from the embedded dashboard bundle.
  */
 function serveFrontendAsset(pathname: string): Response {
-  const relativePath = pathname.replace("/frontend/", "");
-  const file = Bun.file(`${import.meta.dir}/../frontend/${relativePath}`);
-  return new Response(file);
+  const relativePath = pathname.replace("/frontend/", "") || "index.html";
+  const lastSegment = relativePath.split("/").pop() || "";
+  const isFile = lastSegment.includes(".");
+  
+  if (!isFile) {
+    return new Response(Bun.file(join(process.cwd(), "apps/frontend/dist/index.html")));
+  }
+  
+  return new Response(Bun.file(join(process.cwd(), "apps/frontend/dist", relativePath)));
 }
 
 /**
@@ -348,6 +356,113 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
     const body = await req.json() as { pool?: "cli" | "sandbox" };
     markCooldown(email, body.pool || "cli", "3600s");
     return new Response("OK", { status: 200 });
+  }
+
+  // ─── Provider endpoints ───────────────────────────────────────────────────
+
+  if (url.pathname === "/api/providers" && req.method === "GET") {
+    const results = getAllProviders().map((p) => {
+      let accounts: any[] = [];
+      try {
+        accounts = p.getAccounts();
+      } catch {}
+      return {
+        id: p.id,
+        displayName: p.displayName,
+        accountCount: accounts.length,
+        modelCount: p.getSupportedModels().length,
+      };
+    });
+    return createJsonResponse(results);
+  }
+
+  if (url.pathname.startsWith("/api/providers/") && req.method === "GET") {
+    const parts = url.pathname.split("/");
+    // GET /api/providers/:id/config
+    if (parts.length === 5 && parts[4] === "config") {
+      const id = parts[3];
+      const p = getProvider(id);
+      if (!p) {
+        return new Response("Provider not found", { status: 404 });
+      }
+      const config = id === "antigravity" ? getAntigravityConfig() : {};
+      return createJsonResponse(config);
+    }
+    // GET /api/providers/:id/models
+    if (parts.length === 5 && parts[4] === "models") {
+      const id = parts[3];
+      const p = getProvider(id);
+      if (!p) {
+        return new Response("Provider not found", { status: 404 });
+      }
+      const modelIds = p.getModelRegistry().listModelIds();
+      const models = modelIds.map((mid) => p.getModelRegistry().getSpec(mid));
+      return createJsonResponse(models);
+    }
+    // GET /api/providers/:id/accounts
+    if (parts.length === 5 && parts[4] === "accounts") {
+      const id = parts[3];
+      const p = getProvider(id);
+      if (!p) {
+        return new Response("Provider not found", { status: 404 });
+      }
+      if (id === "antigravity") {
+        return createJsonResponse(getAccounts());
+      }
+      return createJsonResponse(p.getAccounts());
+    }
+    // GET /api/providers/:id
+    if (parts.length === 4) {
+      const id = parts[3];
+      const p = getProvider(id);
+      if (!p) {
+        return new Response("Provider not found", { status: 404 });
+      }
+      let accounts: any[] = [];
+      try {
+        accounts = id === "antigravity" ? getAccounts() : p.getAccounts();
+      } catch {}
+      const modelIds = p.getModelRegistry().listModelIds();
+      const models = modelIds.map((mid) => p.getModelRegistry().getSpec(mid));
+      const config = id === "antigravity" ? getAntigravityConfig() : {};
+      return createJsonResponse({
+        id: p.id,
+        displayName: p.displayName,
+        config,
+        models,
+        accounts,
+      });
+    }
+  }
+
+  if (url.pathname.startsWith("/api/providers/") && req.method === "POST") {
+    const parts = url.pathname.split("/");
+    // POST /api/providers/:id/config
+    if (parts.length === 5 && parts[4] === "config") {
+      const id = parts[3];
+      const p = getProvider(id);
+      if (!p) {
+        return new Response("Provider not found", { status: 404 });
+      }
+      const body = await req.json();
+      if (id === "antigravity") {
+        try {
+          await updateAntigravityConfig(body);
+          return createJsonResponse(getAntigravityConfig());
+        } catch (error: any) {
+          return createJsonResponse({ error: error.message }, 400);
+        }
+      }
+      return createJsonResponse({});
+    }
+    // POST /api/providers/:id/accounts/add
+    if (parts.length === 6 && parts[4] === "accounts" && parts[5] === "add") {
+      const id = parts[3];
+      if (id === "antigravity") {
+        return createJsonResponse({ redirectUrl: "/oauth/start" });
+      }
+      return new Response("Not Supported", { status: 400 });
+    }
   }
 
   if (url.pathname.startsWith("/frontend/")) {
