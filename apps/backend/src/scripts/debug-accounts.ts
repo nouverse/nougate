@@ -3,7 +3,7 @@ import { file } from "bun";
 
 async function main() {
     try {
-        const path = "antigravity-accounts.json";
+        const path = "providers/antigravity/accounts.json";
         const f = file(path);
         if (await f.exists()) {
             const data = await f.json();

@@ -1,7 +1,7 @@
+import type { IModelSpec } from "../../core/interfaces";
+import { getAntigravityConfig } from "../../providers/antigravity/provider-config";
 import { getSignature, getSignatureByCallId } from "../../utils/cache";
 import { cleanJSONSchemaForAntigravity } from "../../utils/schema";
-import { getProxyConfig } from "../../config/manager";
-import type { IModelSpec } from "../../core/interfaces";
 
 const TOOL_NAME_REMAP_CACHE = new Map<string, string>();
 const ANTIGRAVITY_SYSTEM_INSTRUCTION = `You are Antigravity, a powerful agentic AI coding assistant designed by the Google DeepMind team working on Advanced Agentic Coding.
@@ -284,7 +284,7 @@ function appendContentParts(parts: any[], message: any): void {
  * Append thought parts for the active turn when cached signatures are available.
  */
 function appendThoughtParts(parts: any[], message: any, sessionId?: string): void {
-  const proxyConfig = getProxyConfig();
+  const providerConfig = getAntigravityConfig();
   const thoughtText = message?.thought || message?.reasoning_content;
   if (!thoughtText) {
     return;
@@ -301,7 +301,7 @@ function appendThoughtParts(parts: any[], message: any, sessionId?: string): voi
     return;
   }
 
-  if (proxyConfig.features.keepThinking) {
+  if (providerConfig.features.keepThinking) {
     parts.push({ thought: true, text: thoughtText });
   }
 }
@@ -554,7 +554,7 @@ function buildToolDeclarations(openaiBody: any, aggressive: boolean): any[] | un
     return undefined;
   }
 
-  const proxyConfig = getProxyConfig();
+  const providerConfig = getAntigravityConfig();
   return [
     {
       functionDeclarations: openaiBody.tools.map((tool: any) => {
@@ -564,7 +564,7 @@ function buildToolDeclarations(openaiBody: any, aggressive: boolean): any[] | un
         );
 
         let functionName = tool.function.name;
-        if (proxyConfig.features.sanitizeToolNames) {
+        if (providerConfig.features.sanitizeToolNames) {
           functionName = sanitizeFunctionName(functionName);
         }
 
@@ -595,7 +595,7 @@ export function mapOpenAIToGoogle(
   sessionId?: string,
   options: { aggressive?: boolean; projectId?: string } = {},
 ): any {
-  const proxyConfig = getProxyConfig();
+  const providerConfig = getAntigravityConfig();
   const aggressive = options.aggressive ?? false;
   const googleModel = resolveUpstreamModelId(modelSpec);
   const isCliPool = modelSpec.useCliPool ?? modelSpec.pool === "cli";
@@ -672,9 +672,9 @@ export function mapOpenAIToGoogle(
     }
   }
 
-  if (googleModel.includes("gemini") && proxyConfig.features.googleSearchGrounding) {
+  if (googleModel.includes("gemini") && providerConfig.features.googleSearchGrounding) {
     const groundingTool: any = { googleSearchRetrieval: {} };
-    if (proxyConfig.features.groundingMode === "always") {
+    if (providerConfig.features.groundingMode === "always") {
       groundingTool.googleSearchRetrieval.dynamicRetrievalConfig = {
         mode: "MODE_UNSPECIFIED",
         dynamicThreshold: 0.0,

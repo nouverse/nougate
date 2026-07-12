@@ -1,19 +1,20 @@
 #!/usr/bin/env bun
 import { loadProxyConfig, getProxyConfig, updateProxyConfig } from "./config/manager";
-import { loadModelSpecOverrides } from "./providers/antigravity/config/model-specs";
+import {
+  AntigravityProvider,
+  getAntigravityConfig,
+  updateAntigravityConfig,
+} from "./providers/antigravity";
 
 await loadProxyConfig();
-await loadModelSpecOverrides();
 
 const pkg = await Bun.file("package.json").json();
 const APP_VERSION = pkg.version || "0.0.0";
 
-import { initManager, addAccount, getAccounts, removeAccount, getStrategy, setStrategy, saveAccounts, eventBus, markCooldown, getCooldowns, resetAccount, updateAccountProject, resetAllCooldowns } from "./providers/antigravity/auth/manager";
+import { addAccount, getAccounts, removeAccount, getStrategy, setStrategy, saveAccounts, eventBus, markCooldown, getCooldowns, resetAccount, updateAccountProject, resetAllCooldowns } from "./providers/antigravity/auth/manager";
 import { generateAuthUrl, exchangeCode, getUserEmail, getProjectId } from "./providers/antigravity/auth/oauth";
 import { type SelectionStrategy, type AntigravityAccount } from "./providers/antigravity/auth/types";
 import { refreshAllQuotas, fetchQuota, supportedModelsCache } from "./providers/antigravity/api/quota";
-import { antigravityModelRegistry } from "./providers/antigravity/config/model-specs";
-import type { IAccount, IProvider } from "./core/interfaces";
 import { findHandler, getDefaultProvider, registerProvider } from "./core/registry";
 import { resolveModel } from "./core/model-resolver";
 import { registerOpenAIProtocol } from "./protocols/openai";
@@ -21,6 +22,51 @@ import { buildSessionId } from "./protocols/openai/handler";
 
 const logBuffer: string[] = [];
 const MAX_LOGS = 200;
+
+/**
+ * Combine global proxy config with provider-local config for the admin API.
+ */
+function buildCombinedConfig() {
+  const proxyConfig = getProxyConfig();
+  const antigravityConfig = getAntigravityConfig();
+
+  return {
+    ...proxyConfig,
+    models: antigravityConfig.models,
+    quota: antigravityConfig.quota,
+    endpoints: antigravityConfig.endpoints,
+    features: antigravityConfig.features,
+    scheduling: antigravityConfig.scheduling,
+  };
+}
+
+/**
+ * Split admin config updates into global and provider-local payloads.
+ */
+function splitConfigUpdates(updates: any) {
+  const proxyUpdates: any = {};
+  const providerUpdates: any = {};
+
+  for (const key of ["rotation", "scoring", "retry", "tokens", "logging"]) {
+    if (key in updates) {
+      proxyUpdates[key] = updates[key];
+    }
+  }
+
+  for (const key of ["quota", "endpoints", "features", "scheduling"]) {
+    if (key in updates) {
+      providerUpdates[key] = updates[key];
+    }
+  }
+
+  if (updates.models?.blacklist) {
+    providerUpdates.models = {
+      blacklist: updates.models.blacklist,
+    };
+  }
+
+  return { proxyUpdates, providerUpdates };
+}
 
 function captureLog(level: string, args: any[]) {
     try {
@@ -46,46 +92,14 @@ console.log = (...args) => { originalLog(...args); captureLog('info', args); };
 console.error = (...args) => { originalError(...args); captureLog('error', args); };
 console.warn = (...args) => { originalWarn(...args); captureLog('warn', args); };
 
-await initManager();
-
-/**
- * Expose the current antigravity provider through the registry before phase 1.7
- * introduces a dedicated provider class.
- */
-function createAntigravityProviderBridge(): IProvider {
-    return {
-        id: "antigravity",
-        displayName: "Antigravity",
-        async init() {
-            await initManager();
-        },
-        async getBestAccount() {
-            return null;
-        },
-        async updateAccountUsage() {
-        },
-        getAccounts(): IAccount[] {
-            return getAccounts().map((account) => ({
-                id: account.email,
-                providerId: "antigravity",
-                healthScore: account.healthScore,
-                lastUsed: account.lastUsed,
-                capabilities: account.capabilities,
-            }));
-        },
-        getModelRegistry() {
-            return antigravityModelRegistry;
-        },
-    };
-}
-
-const antigravityProvider = createAntigravityProviderBridge();
+const antigravityProvider = new AntigravityProvider();
+await antigravityProvider.init();
 registerProvider(antigravityProvider);
 registerOpenAIProtocol(antigravityProvider);
 
-const proxyConfig = getProxyConfig();
+const antigravityConfig = getAntigravityConfig();
 
-setInterval(refreshAllQuotas, proxyConfig.quota.refreshIntervalMs);
+setInterval(refreshAllQuotas, antigravityConfig.quota.refreshIntervalMs);
 // Initial quota refresh on startup
 refreshAllQuotas();
 
@@ -233,7 +247,7 @@ Bun.serve({
     }
 
     if (url.pathname === "/api/config" && req.method === "GET") {
-        return new Response(JSON.stringify(getProxyConfig()), { 
+        return new Response(JSON.stringify(buildCombinedConfig()), { 
             headers: { 
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Origin": "*"
@@ -244,8 +258,15 @@ Bun.serve({
     if (url.pathname === "/api/config" && req.method === "POST") {
         const body = await req.json() as any;
         try {
-            const updated = await updateProxyConfig(body);
-            return new Response(JSON.stringify(updated), { 
+            const { proxyUpdates, providerUpdates } = splitConfigUpdates(body);
+            if (Object.keys(proxyUpdates).length > 0) {
+                await updateProxyConfig(proxyUpdates);
+            }
+            if (Object.keys(providerUpdates).length > 0) {
+                await updateAntigravityConfig(providerUpdates);
+            }
+
+            return new Response(JSON.stringify(buildCombinedConfig()), { 
                 headers: { 
                     "Content-Type": "application/json",
                     "Access-Control-Allow-Origin": "*"

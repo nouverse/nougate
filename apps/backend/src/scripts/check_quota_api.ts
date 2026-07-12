@@ -11,14 +11,14 @@ if (!email) {
 }
 
 // 1. Load Account
-const dbPath = join(process.cwd(), "antigravity-accounts.json");
+const dbPath = join(process.cwd(), "providers/antigravity/accounts.json");
 let accounts = [];
 try {
     const data = readFileSync(dbPath, "utf-8");
     const json = JSON.parse(data);
     accounts = Array.isArray(json) ? json : (json.accounts || []);
 } catch (e) {
-    console.error("Could not read antigravity-accounts.json");
+    console.error("Could not read providers/antigravity/accounts.json");
     process.exit(1);
 }
 

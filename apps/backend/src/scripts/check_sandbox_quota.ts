@@ -8,7 +8,7 @@ if (!email) {
     process.exit(1);
 }
 
-const dbPath = join(process.cwd(), "antigravity-accounts.json");
+const dbPath = join(process.cwd(), "providers/antigravity/accounts.json");
 let json = JSON.parse(readFileSync(dbPath, "utf-8"));
 let accounts = Array.isArray(json) ? json : (json.accounts || []);
 const account = accounts.find((a: any) => a.email === email);

@@ -10,6 +10,8 @@ tmp/
 
 # Backend runtime state
 apps/backend/antigravity-accounts.json
+apps/backend/providers/antigravity/accounts.json
+apps/backend/providers/antigravity/config.json
 apps/backend/config.json
 
 # Frontend build output

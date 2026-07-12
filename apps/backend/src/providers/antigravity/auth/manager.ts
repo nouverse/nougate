@@ -1,51 +1,143 @@
-import { EventEmitter } from "events";
+import { EventEmitter } from 'events';
 
-import { getProxyConfig as getConfigFromManager } from "../../../config/manager";
-import { generateFingerprint } from "../upstream/headers";
-import { getProjectId, refreshAccessToken } from "./oauth";
-import { loadConfig, saveConfig } from "./storage";
-import { type AntigravityAccount, type SelectionStrategy } from "./types";
+import { getProxyConfig as getGlobalProxyConfig } from '../../../config/manager';
+import { getAntigravityConfig, loadAntigravityConfig } from '../provider-config';
+import { generateFingerprint } from '../upstream/headers';
+import { getProjectId, refreshAccessToken } from './oauth';
+import { loadConfig, saveConfig } from './storage';
+import { type AntigravityAccount, type SelectionStrategy } from './types';
 
 let accounts: AntigravityAccount[] = [];
-let currentStrategy: SelectionStrategy = "hybrid";
-let lastAccountIndex = -1;
+let currentStrategy: SelectionStrategy = 'hybrid';
 const clientStickyMap = new Map<string, string>();
 const cooldownMap = new Map<string, number>();
 
 export const eventBus = new EventEmitter();
 
 const MODEL_FAMILIES = {
-  "Gemini 3 Flash": (n: string) => n.includes("gemini") && (n.includes("flash") || n.includes("1.5 flash")) && !n.includes("2.5"),
-  "Gemini 3 Pro": (n: string) => (n.includes("gemini") && (n.includes("pro") || n.includes("1.5 pro")) || n.includes("image")) && !n.includes("2.5"),
-  "Gemini 2.5": (n: string) => n.includes("2.5"),
-  "Claude/GPT": (n: string) => n.includes("claude") || n.includes("gpt"),
+  'Gemini 3 Flash': (n: string) =>
+    n.includes('gemini') && (n.includes('flash') || n.includes('1.5 flash')) && !n.includes('2.5'),
+  'Gemini 3 Pro': (n: string) =>
+    ((n.includes('gemini') && (n.includes('pro') || n.includes('1.5 pro'))) || n.includes('image')) &&
+    !n.includes('2.5'),
+  'Gemini 2.5': (n: string) => n.includes('2.5'),
+  'Claude/GPT': (n: string) => n.includes('claude') || n.includes('gpt'),
 };
 
+/**
+ * Group a model into the legacy quota/cooldown family buckets.
+ */
 export function getFamilyName(modelName: string) {
   const n = modelName.toLowerCase();
   for (const [family, check] of Object.entries(MODEL_FAMILIES)) {
     if (check(n)) return family;
   }
-  return "Other";
+  return 'Other';
 }
 
-function getProxyConfig() {
+/**
+ * Read both global proxy config and provider-local config with safe fallbacks.
+ */
+function getManagerConfig() {
+  const globalConfig = (() => {
+    try {
+      return getGlobalProxyConfig();
+    } catch {
+      return {
+        rotation: { cooldown: { defaultDurationMs: 60000, maxDurationMs: 3600000 } },
+        scoring: {
+          weights: { health: 2, lru: 0.1 },
+          healthRange: { min: 0, max: 100, initial: 100 },
+          penalties: { apiError: -10, refreshError: -20, fatalError: -50, systemicError: -10 },
+          rewards: { success: 2 },
+        },
+        tokens: { expiryBufferMs: 60000 },
+      };
+    }
+  })();
+
+  const providerConfig = (() => {
+    try {
+      return getAntigravityConfig();
+    } catch {
+      return {
+        features: {
+          pidOffsetEnabled: false,
+          softQuotaThresholdPercent: 90,
+        },
+        scheduling: {
+          mode: 'cache_first',
+          maxCacheFirstWaitSeconds: 60,
+          maxRateLimitWaitSeconds: 300,
+        },
+      };
+    }
+  })();
+
   return {
-    rotation: { cooldown: { defaultDurationMs: 60000, maxDurationMs: 3600000 } },
-    scoring: {
-      weights: { health: 2, lru: 0.1 },
-      healthRange: { min: 0, max: 100, initial: 100 },
-      penalties: { apiError: -10, refreshError: -20, fatalError: -50, systemicError: -10 },
-      rewards: { success: 2 }
-    },
-    tokens: { expiryBufferMs: 60000 }
+    ...globalConfig,
+    features: providerConfig.features,
+    scheduling: providerConfig.scheduling,
   };
 }
 
+/**
+ * Normalize stored model-related keys from the old `antigravity-` prefix format.
+ */
+function normalizeStoredModelKey(key: string): string {
+  const [modelKey, suffix] = key.split('|');
+  const normalizedModelKey = modelKey.replace(/^antigravity[-:]/, '');
+  return suffix ? `${normalizedModelKey}|${suffix}` : normalizedModelKey;
+}
+
+/**
+ * Migrate per-account model metadata to the provider-local key format.
+ */
+function migrateAccountModelMetadata(account: AntigravityAccount): boolean {
+  let changed = false;
+
+  if (account.modelScores) {
+    const migratedScores: Record<string, number> = {};
+    for (const [key, value] of Object.entries(account.modelScores)) {
+      const normalizedKey = normalizeStoredModelKey(key);
+      migratedScores[normalizedKey] = value;
+      changed = changed || normalizedKey !== key;
+    }
+    account.modelScores = migratedScores;
+  }
+
+  if (account.capabilities) {
+    const migratedCapabilities: Record<string, boolean> = {};
+    for (const [key, value] of Object.entries(account.capabilities)) {
+      const normalizedKey = normalizeStoredModelKey(key);
+      migratedCapabilities[normalizedKey] = value;
+      changed = changed || normalizedKey !== key;
+    }
+    account.capabilities = migratedCapabilities;
+  }
+
+  return changed;
+}
+
+/**
+ * Load account state and apply startup migrations for legacy metadata keys.
+ */
 export async function initManager() {
+  await loadAntigravityConfig();
   const config = await loadConfig();
   accounts = config.accounts || [];
-  currentStrategy = config.strategy || "hybrid";
+  currentStrategy = config.strategy || 'hybrid';
+
+  let migrated = false;
+  for (const account of accounts) {
+    migrated = migrateAccountModelMetadata(account) || migrated;
+  }
+
+  if (migrated) {
+    await saveConfig({ accounts, strategy: currentStrategy });
+    console.log('[Manager] Migrated legacy antigravity-prefixed account metadata.');
+  }
+
   console.log(`[Manager] Loaded ${accounts.length} accounts from storage.`);
 }
 
@@ -67,7 +159,7 @@ export function getCooldowns(): Record<string, number> {
 }
 
 export function markCooldown(email: string, pool: "cli" | "sandbox", modelFamily: string, resetTimeStr?: string) {
-  const config = getProxyConfig();
+  const config = getManagerConfig();
   const account = accounts.find(a => a.email === email);
   const key = `${email}|${pool}|${modelFamily}`;
   let baseDuration = config.rotation.cooldown.defaultDurationMs;
@@ -129,8 +221,8 @@ export function flagAccountChallenge(email: string, pool: "cli" | "sandbox", mod
 }
 
 function isAccountQuotaExhausted(account: AntigravityAccount, model?: string): boolean {
-  let config: ReturnType<typeof getConfigFromManager>;
-  try { config = getConfigFromManager(); } catch { return false; }
+  let config: ReturnType<typeof getManagerConfig>;
+  try { config = getManagerConfig(); } catch { return false; }
   const threshold = config.features.softQuotaThresholdPercent;
   if (threshold >= 100 || !account.quota || account.quota.length === 0) return false;
 
@@ -160,8 +252,8 @@ function isAccountQuotaExhausted(account: AntigravityAccount, model?: string): b
 }
 
 function getPidOffset(): number {
-  let config: ReturnType<typeof getConfigFromManager>;
-  try { config = getConfigFromManager(); } catch { return 0; }
+  let config: ReturnType<typeof getManagerConfig>;
+  try { config = getManagerConfig(); } catch { return 0; }
   if (!config.features.pidOffsetEnabled) return 0;
   return process.pid % Math.max(accounts.length, 1);
 }
@@ -180,8 +272,8 @@ export async function getBestAccount(pool?: "cli" | "sandbox", model?: string, c
       return !expiry || expiry <= now;
     });
 
-    let schedulingConfig: ReturnType<typeof getConfigFromManager>["scheduling"] | undefined;
-    try { schedulingConfig = getConfigFromManager().scheduling; } catch {}
+    let schedulingConfig: ReturnType<typeof getManagerConfig>["scheduling"] | undefined;
+    try { schedulingConfig = getManagerConfig().scheduling; } catch {}
 
     if (candidates.length === 0 && schedulingConfig?.mode === "cache_first" && clientId) {
       const stickyEmail = clientStickyMap.get(clientId);
@@ -224,7 +316,6 @@ export async function getBestAccount(pool?: "cli" | "sandbox", model?: string, c
       if (sticky) return await ensureAccountReady(sticky);
     }
 
-    const config = getProxyConfig();
     candidates.sort((a, b) => {
       const priorityB = calculatePriority(b, now, model, pool);
       const priorityA = calculatePriority(a, now, model, pool);
@@ -244,7 +335,7 @@ export async function getBestAccount(pool?: "cli" | "sandbox", model?: string, c
 
 async function ensureAccountReady(account: AntigravityAccount): Promise<AntigravityAccount | null> {
   const now = Date.now();
-  const config = getProxyConfig();
+  const config = getManagerConfig();
   const needsRefresh = !account.accessToken || (account.expiresAt && account.expiresAt < now + config.tokens.expiryBufferMs);
 
   if (needsRefresh) {
@@ -264,7 +355,7 @@ async function ensureAccountReady(account: AntigravityAccount): Promise<Antigrav
 }
 
 function calculatePriority(account: AntigravityAccount, now: number, model?: string, pool?: string): number {
-  const config = getProxyConfig();
+  const config = getManagerConfig();
   const secondsSinceUsed = (now - account.lastUsed) / 1000;
   let health = account.healthScore;
   if (model && pool) {
@@ -348,7 +439,7 @@ export async function updateAccountProject(email: string, projectId: string) {
   }
 }
 
-export function getEarliestReset(pool: "cli" | "sandbox"): string | null {
+export function getEarliestReset(_pool: "cli" | "sandbox"): string | null {
   const usable = accounts.filter(a => a.refreshToken && a.quota);
   if (usable.length === 0) return null;
   let resetTimes: number[] = [];

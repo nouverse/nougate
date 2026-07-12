@@ -40,21 +40,6 @@ const DEFAULT_CONFIG: ProxyConfig = {
       lru: 0.1
     }
   },
-  models: {
-    blacklist: [],
-    routing: {
-      sandboxKeywords: ['gpt', 'antigravity', 'image'],
-      cliKeywords: ['claude', 'gemini-2.0', 'gemini-2.5', '-preview'],
-      forceToSandbox: ['gpt']
-    },
-    timeouts: {
-      'default': 30000,
-      'claude': 60000,
-      'gemini-3-pro': 45000,
-      'gemini-3.1-pro': 45000,
-      'thinking': 120000
-    }
-  },
   retry: {
     maxAttempts: 5,
     transientRetryThresholdSeconds: 5
@@ -62,43 +47,9 @@ const DEFAULT_CONFIG: ProxyConfig = {
   tokens: {
     expiryBufferMs: 60000
   },
-  quota: {
-    refreshIntervalMs: 300000,
-    initialDelayMs: 10000
-  },
-  endpoints: {
-    sandbox: [
-      'https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse',
-      'https://cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse',
-      'https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:streamGenerateContent?alt=sse',
-      // 'https://autopush-cloudcode-pa.sandbox.googleapis.com/v1internal:streamGenerateContent?alt=sse'
-    ],
-    cli: [
-      'https://cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse',
-      'https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse',
-      // 'https://autopush-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse'
-    ]
-  },
   logging: {
     maxBufferSize: 200,
     enableConsoleCapture: true
-  },
-  features: {
-    googleSearchGrounding: false,
-    groundingMode: 'auto',
-    keepThinking: false,
-    sanitizeToolNames: true,
-    pidOffsetEnabled: false,
-    softQuotaThresholdPercent: 90,
-    jitterEnabled: true,
-    // higher jitter make the traffic look more natural
-    jitterMinMs: 2000,
-    jitterMaxMs: 5000
-  },
-  scheduling: {
-    mode: 'cache_first',
-    maxCacheFirstWaitSeconds: 60,
-    maxRateLimitWaitSeconds: 300
   }
 };
 
@@ -116,7 +67,7 @@ export async function loadProxyConfig(): Promise<ProxyConfig> {
 
     const text = await file.text();
     const loadedConfig = JSON.parse(text);
-    config = deepMerge(DEFAULT_CONFIG, loadedConfig) as ProxyConfig;
+    config = mergeKnownKeys(DEFAULT_CONFIG, loadedConfig) as ProxyConfig;
     console.log(`[Config] Loaded configuration: strategy=${config.rotation.strategy}`);
     return config;
   } catch (e) {
@@ -146,20 +97,42 @@ export function getProxyConfig(): ProxyConfig {
 }
 
 export async function updateProxyConfig(updates: Partial<ProxyConfig>): Promise<ProxyConfig> {
-  const merged = deepMerge(config, updates);
+  const merged = mergeKnownKeys(config, updates);
   await saveProxyConfig(merged);
   return merged;
 }
 
-function deepMerge(target: any, source: any): any {
+/**
+ * Merge only keys that are already part of the target shape.
+ */
+function mergeKnownKeys(target: any, source: any): any {
   const result = { ...target };
 
-  for (const key in source) {
-    if (source[key] !== null && typeof source[key] === 'object' && !Array.isArray(source[key])) {
-      result[key] = deepMerge(result[key] || {}, source[key]);
-    } else {
-      result[key] = source[key];
+  if (!source || typeof source !== 'object') {
+    return result;
+  }
+
+  for (const key of Object.keys(target)) {
+    if (!(key in source)) {
+      continue;
     }
+
+    const sourceValue = source[key];
+    const targetValue = target[key];
+
+    if (
+      sourceValue !== null &&
+      typeof sourceValue === 'object' &&
+      !Array.isArray(sourceValue) &&
+      targetValue !== null &&
+      typeof targetValue === 'object' &&
+      !Array.isArray(targetValue)
+    ) {
+      result[key] = mergeKnownKeys(targetValue, sourceValue);
+      continue;
+    }
+
+    result[key] = sourceValue;
   }
 
   return result;

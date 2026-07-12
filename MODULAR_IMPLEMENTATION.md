@@ -657,17 +657,17 @@ export function mapOpenAIToGoogle(
 - [ ] **Verifikasi**: `POST /openai/v1/chat/completions` streaming dan non-streaming jalan, `POST /v1/chat/completions` **404**
 
 #### 1.7 — Buat Provider Registration + Config Migration
-- [ ] Buat `src/providers/antigravity/index.ts` — `AntigravityProvider` class:
-  - [ ] Implement semua method `IProvider` termasuk `getModelRegistry()`
-  - [ ] Implement `loadAntigravityConfig()` yang baca `providers/antigravity/config.json`
-  - [ ] Config antigravity-specific (endpoints, features, quota, scheduling) dibaca dari sini, bukan dari global `config.json`
-- [ ] **Rename** `antigravity-accounts.json` → `providers/antigravity/accounts.json`
-- [ ] Update path di `src/providers/antigravity/auth/storage.ts` untuk baca dari path baru
-- [ ] Buat `providers/antigravity/config.json` — isi dengan field yang dipindahkan dari `config.json`: `endpoints`, `features`, `scheduling`, `quota`, `models.blacklist`
-- [ ] Update `config.json` — hapus field yang sudah pindah ke provider: `endpoints`, `features`, `scheduling`, `quota`, `models`
-- [ ] Startup migration di `initManager()`: strip `antigravity-` prefix dari key `modelScores` dan `capabilities` yang ada di `accounts.json`
-- [ ] Update `src/providers/antigravity/config/model-specs.ts`: implement `getModelRegistry()` di provider
-- [ ] Register provider ke registry
+- [x] Buat `src/providers/antigravity/index.ts` — `AntigravityProvider` class:
+  - [x] Implement semua method `IProvider` termasuk `getModelRegistry()`
+  - [x] Implement `loadAntigravityConfig()` yang baca `providers/antigravity/config.json`
+  - [x] Config antigravity-specific (endpoints, features, quota, scheduling) dibaca dari sini, bukan dari global `config.json`
+- [x] **Rename** `antigravity-accounts.json` → `providers/antigravity/accounts.json`
+- [x] Update path di `src/providers/antigravity/auth/storage.ts` untuk baca dari path baru
+- [x] Buat `providers/antigravity/config.json` — isi dengan field yang dipindahkan dari `config.json`: `endpoints`, `features`, `scheduling`, `quota`, `models.blacklist`
+- [x] Update `config.json` — hapus field yang sudah pindah ke provider: `endpoints`, `features`, `scheduling`, `quota`, `models`
+- [x] Startup migration di `initManager()`: strip `antigravity-` prefix dari key `modelScores` dan `capabilities` yang ada di `accounts.json`
+- [x] Update `src/providers/antigravity/config/model-specs.ts`: implement `getModelRegistry()` di provider
+- [x] Register provider ke registry
 
 #### 1.8 — Buat Router & Slim Down `server.ts`
 - [ ] Buat `src/router/middleware.ts` — cors + request logger + log capture (pindah dari `server.ts`)

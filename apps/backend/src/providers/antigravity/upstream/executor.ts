@@ -1,5 +1,6 @@
-import { getProxyConfig } from "../../../config/manager";
 import type { UpstreamExecuteOptions, UpstreamResult } from "../../../core/interfaces";
+import { getProxyConfig } from "../../../config/manager";
+import { getAntigravityConfig } from "../provider-config";
 import {
   emitAccountFlash,
   ensureFingerprint,
@@ -201,17 +202,16 @@ export class AntigravityExecutor {
    * Execute one upstream request with account rotation, retries, and error handling.
    */
   async execute(options: AntigravityExecuteOptions): Promise<UpstreamResult> {
-    const config = getProxyConfig();
-    const maxAttempts = Math.max(config.retry.maxAttempts, getAccounts().length);
+    const proxyConfig = getProxyConfig();
+    const providerConfig = getAntigravityConfig();
+    const maxAttempts = Math.max(proxyConfig.retry.maxAttempts, getAccounts().length);
     const modelId = options.modelSpec.modelId;
     const isClaudeModel =
       modelId.toLowerCase().includes("claude") ||
       (options.modelSpec.upstreamModelId || "").toLowerCase().includes("claude");
     const endpoints = {
-      sandbox: Array.isArray(config.endpoints.sandbox)
-        ? config.endpoints.sandbox
-        : [config.endpoints.sandbox],
-      cli: Array.isArray(config.endpoints.cli) ? config.endpoints.cli : [config.endpoints.cli],
+      sandbox: providerConfig.endpoints.sandbox,
+      cli: providerConfig.endpoints.cli,
     };
 
     let attempts = 0;
@@ -298,10 +298,10 @@ export class AntigravityExecutor {
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
       try {
-        if (config.features.jitterEnabled) {
+        if (providerConfig.features.jitterEnabled) {
           const jitterMs =
-            config.features.jitterMinMs +
-            Math.random() * (config.features.jitterMaxMs - config.features.jitterMinMs);
+            providerConfig.features.jitterMinMs +
+            Math.random() * (providerConfig.features.jitterMaxMs - providerConfig.features.jitterMinMs);
           await new Promise((resolve) => setTimeout(resolve, jitterMs));
         }
 
@@ -385,7 +385,7 @@ export class AntigravityExecutor {
           if (
             status === 429 &&
             resetSeconds > 0 &&
-            resetSeconds <= config.retry.transientRetryThresholdSeconds
+            resetSeconds <= proxyConfig.retry.transientRetryThresholdSeconds
           ) {
             console.log(
               `[Skip] Account ${account.email} transiently limited (${resetSeconds}s), rotating...`,
@@ -464,7 +464,10 @@ export class AntigravityExecutor {
         clearTimeout(timeoutId);
         if (error.name === "AbortError") {
           console.error(`[Timeout] Request timed out for ${account.email} after ${timeoutMs}ms`);
-          account.healthScore = Math.max(config.scoring.healthRange.min, account.healthScore - 5);
+          account.healthScore = Math.max(
+            proxyConfig.scoring.healthRange.min,
+            account.healthScore - 5,
+          );
         } else {
           console.error(`Proxy error for ${account.email}:`, error);
         }

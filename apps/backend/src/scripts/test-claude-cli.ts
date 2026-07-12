@@ -29,7 +29,7 @@ const accounts = getAccounts();
 const account = accounts.find(a => a.email === email);
 
 if (!account) {
-    console.error(`Account ${email} not found in antigravity-accounts.json`);
+    console.error(`Account ${email} not found in providers/antigravity/accounts.json`);
     process.exit(1);
 }
 
