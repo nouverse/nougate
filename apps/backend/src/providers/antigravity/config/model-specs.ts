@@ -80,8 +80,8 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
     timeoutMs: 60000,
   },
   'claude-opus-4-5-thinking': {
-    modelId: 'claude-opus-4-5-thinking',
-    displayName: 'Claude Opus 5.6 Thinking',
+    modelId: 'claude-opus-4-6-thinking',
+    displayName: 'Claude Opus 4.6 Thinking',
     pool: 'sandbox',
     isThinking: true,
     thinkingMode: 'budget',
