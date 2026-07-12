@@ -113,6 +113,9 @@ function parseQuotaResponse(data: any): AntigravityAccount["quota"] | null {
         group.labels.sort();
         group.groupName = group.labels.join(" / ");
       }
+      if (!group.modelIds.includes(modelId)) {
+        group.modelIds.push(modelId);
+      }
     } else {
       let resetTime = model.quotaInfo.quotaResetTime ||
         model.quotaResetTime ||
@@ -149,6 +152,7 @@ function parseQuotaResponse(data: any): AntigravityAccount["quota"] | null {
       groups.set(limitName, {
         groupName: label,
         labels: [label],
+        modelIds: [modelId],
         limit: model.quotaInfo.quotaLimit || "Unknown",
         usage: model.quotaInfo.quotaUsage || "Unknown",
         limitName,

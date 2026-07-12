@@ -48,9 +48,13 @@ export function QuotaCard({
             max="100"
           />
           <div className="flex justify-between items-center text-[10px] text-base-content/50 font-medium">
-            <span>
-              {usage} / {limit} requests
-            </span>
+            {usage !== 'Unknown' && limit !== 'Unknown' ? (
+              <span>
+                {usage} / {limit} requests
+              </span>
+            ) : (
+              <span />
+            )}
             <span>Reset: {resetIn}</span>
           </div>
         </div>

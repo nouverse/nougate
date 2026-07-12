@@ -181,6 +181,7 @@ function ProviderPage() {
       });
     }
   });
+
   const mergedQuotas = Array.from(allQuotasMap.values());
 
   return (

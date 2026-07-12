@@ -9,6 +9,7 @@ interface QuotaEntry {
   limit: string | number;
   resetIn: string;
   limitName: string;
+  modelIds?: string[];
 }
 
 interface Props {

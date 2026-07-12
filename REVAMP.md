@@ -1034,45 +1034,6 @@ graph TD
 
 ---
 
-## 6. Struktur File Target
-
-```
-src/
-├── server.ts                    # Entry point + route registration
-├── config/
-│   ├── index.ts                 # Proxy config loader
-│   └── model-routes.json        # Dynamic model routing rules
-├── middleware/
-│   ├── auth.ts                  # API key verification
-│   ├── cors.ts                  # CORS headers
-│   └── monitor.ts               # Request logging middleware
-├── handlers/
-│   ├── openai.ts                # POST /v1/chat/completions
-│   ├── anthropic.ts             # POST /v1/messages
-│   ├── codex.ts                 # POST /v1/responses
-│   ├── models.ts                # GET /v1/models
-│   └── stats.ts                 # GET /api/stats/*
-├── mappers/
-│   ├── openai-to-google.ts      # OpenAI → Google Gemini transform
-│   ├── anthropic-to-google.ts   # Anthropic → Google Gemini transform
-│   ├── google-to-openai.ts      # Google → OpenAI SSE transform
-│   └── google-to-anthropic.ts   # Google → Anthropic SSE transform
-├── core/
-│   ├── account-manager.ts       # Account pool, tiered sorting, selection
-│   ├── signature-cache.ts       # 4-layer signature cache
-│   ├── rate-limiter.ts          # Per-account + per-model rate limiting
-│   ├── context-manager.ts       # Thinking purification + tool compression
-│   └── model-router.ts          # Dynamic model routing + regex matching
-├── auth/
-│   └── storage.ts               # OAuth token storage & refresh
-└── utils/
-    ├── transform.ts             # Shared transform utilities
-    ├── cache.ts                  # Generic cache utilities
-    └── headers.ts               # Header manipulation
-```
-
----
-
 ## 7. Roadmap Implementasi
 
 ### Phase 1: Core Robustness (1-2 minggu)
