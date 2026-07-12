@@ -15,19 +15,19 @@ Dokumen ini merangkum fitur-fitur inti dari [Antigravity-Manager](https://github
 | Fitur | Proxy Kita | Antigravity-Manager | Implemented | Priority | Section |
 |-------|:----------:|:-------------------:|:-----------:|:--------:|:-------:|
 | OpenAI-compatible endpoint | ✅ | ✅ | ✅ | — | — |
-| Anthropic native `/v1/messages` | ❌ | ✅ | ❌ | 🔴 High | [§2.1](#21--native-anthropic-endpoint-v1messages) |
+| Anthropic native `/v1/messages` | ✅ | ✅ | ✅ | 🔴 High | [§2.1](#21--native-anthropic-endpoint-v1messages) |
 | Multi-layer signature cache | 🟡 Basic (2-layer) | ✅ (4-layer: tool, family, session, reasoning) | 🟡 Basic | 🔴 High | [§2.2](#22--multi-layer-signature-cache) |
 | Tiered account sorting (Ultra/Pro/Free) | ❌ | ✅ | ❌ | 🔴 High | [§2.3](#23--tiered-account-sorting) |
-| Model-level rate limiting | ❌ (account-level only) | ✅ (account + model level) | ❌ | 🔴 High | [§2.4](#24--model-level-rate-limiting) |
-| Rate limit tracker with exponential backoff | 🟡 Basic cooldown | ✅ (per-account failure counter + backoff) | 🟡 Basic | 🔴 High | [§2.4](#24--model-level-rate-limiting) |
-| **JSON Schema cleaning for Gemini** | ❌ | ✅ ($ref flatten, anyOf, constraint→desc) | ❌ | 🔴 **High** | [§2.5](#25--json-schema-cleaning-for-gemini) |
+| Model-level rate limiting | 🟡 Basic (family-level) | ✅ (account + model level) | 🟡 Basic | 🔴 High | [§2.4](#24--model-level-rate-limiting) |
+| Rate limit tracker with exponential backoff | ✅ (with backoff) | ✅ (per-account failure counter + backoff) | ✅ | 🔴 High | [§2.4](#24--model-level-rate-limiting) |
+| **JSON Schema cleaning for Gemini** | ✅ | ✅ ($ref flatten, anyOf, constraint→desc) | ✅ | 🔴 **High** | [§2.5](#25--json-schema-cleaning-for-gemini) |
 | **Smart retry delay parsing + grace retry** | ❌ | ✅ (recursive JSON parse + 1.5s grace window) | ❌ | 🔴 **High** | [§2.6](#26--smart-retry-delay-parsing--grace-retry) |
 | Model routing / wildcard mapping | ❌ (hardcoded) | ✅ (exact + wildcard + specificity scoring) | ❌ | 🟡 Medium | [§3.1](#31--dynamic-model-routing) |
 | Tool result compression | ❌ | ✅ (browser snapshot, HTML cleanup) | ❌ | 🟡 Medium | [§3.2](#32--tool-result-compression) |
-| Context purification (thinking strip) | 🟡 Basic | ✅ (soft/aggressive + token estimation) | 🟡 Basic | 🟡 Medium | [§3.3](#33--context-purification) |
+| Context purification (thinking strip) | 🟡 Basic (strips previous thinking) | ✅ (soft/aggressive + token estimation) | 🟡 Basic | 🟡 Medium | [§3.3](#33--context-purification) |
 | Request monitoring / usage logging | ❌ | ✅ (SQLite + real-time stats) | ❌ | 🟡 Medium | [§3.4](#34--request-monitoring--usage-stats) |
 | Codex `/v1/responses` endpoint | ❌ | ✅ | ❌ | 🟡 Medium | [§3.5](#35--codex--responses-endpoint) |
-| **Session fingerprinting** | 🟡 (x-client-id header) | ✅ (SHA256 of first user message) | 🟡 | 🟡 **Medium** | [§3.6](#36--session-fingerprinting) |
+| **Session fingerprinting** | ✅ | ✅ (SHA256 of first user message) | ✅ | 🟡 **Medium** | [§3.6](#36--session-fingerprinting) |
 | **Client adapter system** | ❌ | ✅ (per-IDE behavior via User-Agent) | ❌ | 🟡 **Medium** | [§3.7](#37--client-adapter-system) |
 | **Multi-level context compression** | ❌ | ✅ (L1: tool trim, L2: thinking, L3: fork) | ❌ | 🟡 **Medium** | [§3.8](#38--multi-level-context-compression) |
 | **Global system prompt injection** | ❌ | ✅ (auto-inject to all requests) | ❌ | 🟡 **Medium** | [§3.9](#39--global-system-prompt-injection) |
@@ -36,7 +36,7 @@ Dokumen ini merangkum fitur-fitur inti dari [Antigravity-Manager](https://github
 | **Model specs from JSON** | ❌ | ✅ (per-model max_output_tokens, thinking_budget) | ✅ | 🟡 **Medium** | [§3.12](#312--model-specs-from-json-config) |
 | Background task silent downgrade | ❌ | ✅ (reroute ke Flash) | ❌ | 🟡 Medium | [§3.1](#31--dynamic-model-routing) |
 | Gemini native endpoint | ❌ | ✅ | ❌ | 🟡 Medium | — |
-| `/v1/models` endpoint | ❌ | ✅ | ❌ | 🟢 Low | [§4.1](#41--v1models-endpoint) |
+| `/v1/models` endpoint | ✅ | ✅ | ✅ | 🟢 Low | [§4.1](#41--v1models-endpoint) |
 | `/v1/images/generations` (Imagen 3) | ❌ | ✅ | ❌ | 🟢 Low | [§4.2](#42--imagen-3-support) |
 | API Key auth middleware (multi-token) | ❌ (single header) | ✅ (per-user tokens + whitelist/blacklist) | ❌ | 🟢 Low | [§4.3](#43--api-key-auth-middleware-multi-token) |
 | IP filtering / security | ❌ | ✅ (whitelist/blacklist + access logs) | ❌ | 🟢 Low | [§4.4](#44--ip-whitelistblacklist) |
@@ -47,7 +47,7 @@ Dokumen ini merangkum fitur-fitur inti dari [Antigravity-Manager](https://github
 | **Debug payload logger** | ❌ | ✅ (dump req/res JSON to disk) | ❌ | 🟢 **Low** | [§4.9](#49--debug-payload-logger) |
 | **Quota scheduler** | ❌ | ✅ (auto-scan 100% quota, trigger warmup) | ❌ | 🟢 **Low** | [§4.10](#410--quota-scheduler) |
 | HTTP Session Store (Codex) | ❌ | ✅ (multi-turn via previous_response_id) | ❌ | 🟢 Low | [§4.11](#411--http-session-store-codex) |
-| OAuth browser flow | ❌ | ✅ (callback handler) | ❌ | 🟢 Low | — |
+| OAuth browser flow | ✅ | ✅ (callback handler) | ✅ | 🟢 Low | — |
 
 ---
 
@@ -1039,23 +1039,23 @@ graph TD
 ### Phase 1: Core Robustness (1-2 minggu)
 Perkuat fondasi yang sudah ada tanpa mengubah API surface.
 
-- [ ] **JSON Schema Cleaning** — Strip `$ref`, `anyOf`, `additionalProperties`, constraint→description
+- [x] **JSON Schema Cleaning** — Strip `$ref`, `anyOf`, `additionalProperties`, constraint→description
 - [ ] **4-Layer Signature Cache** — Upgrade `cache.ts` dengan session tracking + rewind detection
 - [ ] **Smart Retry Delay Parsing** — Deep parse 429 errors + grace retry ≤2s
 - [ ] **Tiered Account Sorting** — Upgrade `manager.ts` dengan multi-dimension sorting
 - [ ] **Model-Level Rate Limiting** — Upgrade rate limit dari account-level ke account:model level
-- [ ] **Rate Limit Exponential Backoff** — Per-account failure counter + grace window
+- [x] **Rate Limit Exponential Backoff** — Per-account failure counter + grace window
 - [ ] **Tool Result Compression** — Tambah compression layer di `transform.ts`
 - [ ] **Context Purification Enhancement** — Token estimation + auto aggressive mode
-- [ ] **Session Fingerprinting** — SHA256 first user message → stable session ID
+- [x] **Session Fingerprinting** — SHA256 first user message → stable session ID
 
 ### Phase 2: Multi-Protocol (2-3 minggu)
 Tambah endpoint baru untuk mendukung lebih banyak client.
 
-- [ ] **Refactor ke handler-based architecture** — Pisah `server.ts` ke `handlers/*`
-- [ ] **Anthropic `/v1/messages`** — Full Claude Code CLI support
+- [x] **Refactor ke handler-based architecture** — Pisah `server.ts` ke `handlers/*`
+- [x] **Anthropic `/v1/messages`** — Full Claude Code CLI support
 - [ ] **Codex `/v1/responses`** — OpenAI Codex CLI support
-- [ ] **`GET /v1/models`** — Model listing endpoint
+- [x] **`GET /v1/models`** — Model listing endpoint
 - [ ] **Dynamic Model Router** — Configurable routing via JSON + wildcard
 - [x] **Model Specs from JSON** — Per-model max_output_tokens, thinking_budget
 
