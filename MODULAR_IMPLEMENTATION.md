@@ -89,9 +89,20 @@ Contoh request:
 
 ## Struktur File Target (Final)
 
+> **Note**: `src/` paths di checklist items = relatif ke `apps/backend/`.
+
 ```
 nougate/
-├── src/
+├── apps/
+│   ├── backend/
+│   │   ├── package.json
+│   │   ├── tsconfig.json
+│   │   ├── config.json                      # GLOBAL proxy config
+│   │   ├── providers/                       # Runtime per-provider config & state
+│   │   │   └── antigravity/
+│   │   │       ├── config.json
+│   │   │       └── accounts.json
+│   │   ├── src/
 │   ├── server.ts                        # Entry point: init + Bun.serve (< 80 baris)
 │   │
 │   ├── router/
@@ -567,6 +578,15 @@ export function mapOpenAIToGoogle(
 > **Scope**: Pindah file, buat core interfaces, pecah `server.ts`.
 > **ZERO fitur baru, ZERO breaking change.**
 > Setiap subtask bisa dikerjakan dalam satu agent session.
+
+> [!IMPORTANT]
+> **Working Directory**: Semua path `src/...` di plan ini **relatif ke `apps/backend/`**.
+> Semua command (`bun x tsc`, `bun test`, `bun run`) dijalankan dari `apps/backend/`.
+> Contoh: `src/core/interfaces.ts` = `apps/backend/src/core/interfaces.ts`
+> ```bash
+> cd apps/backend
+> bun x tsc --noEmit --skipLibCheck
+> ```
 
 ### Checklist Phase 1
 
