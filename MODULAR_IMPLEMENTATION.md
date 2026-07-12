@@ -629,13 +629,13 @@ export function mapOpenAIToGoogle(
 - [x] **Verifikasi**: `bun x tsc --noEmit --skipLibCheck`
 
 #### 1.5 — Extract Executor dari `server.ts`
-- [ ] Buat `src/providers/antigravity/upstream/executor.ts` (lihat contoh kode di bawah)
-- [ ] Extract retry loop dari `server.ts` ke `executor.ts` — preserve **exact** semua error handling
-- [ ] Executor **menerima `IModelSpec`** (bukan raw model string) untuk timeout, pool, dll:
-  - `options.modelSpec.pool` menggantikan keyword-based pool detection
-  - `options.modelSpec.timeoutMs ?? 60000` menggantikan `config.models.timeouts.*`
-- [ ] Inject `project: account.projectId` ke googleBody di dalam executor setelah account dipilih
-- [ ] `server.ts` call executor, bukan inline retry logic
+- [x] Buat `src/providers/antigravity/upstream/executor.ts` (lihat contoh kode di bawah)
+- [x] Extract retry loop dari `server.ts` ke `executor.ts` — preserve **exact** semua error handling
+- [x] Executor **menerima `IModelSpec`** (bukan raw model string) untuk timeout, pool, dll:
+  - [x] `options.modelSpec.pool` menggantikan keyword-based pool detection
+  - [x] `options.modelSpec.timeoutMs ?? 60000` menggantikan `config.models.timeouts.*`
+- [x] Inject `project: account.projectId` ke googleBody di dalam executor setelah account dipilih
+- [x] `server.ts` call executor, bukan inline retry logic
 - [ ] **Verifikasi**: curl test dengan `antigravity:gemini-3.5-flash-low` jalan
 
 #### 1.6 — Migrasi Protocol OpenAI
