@@ -1,106 +1,124 @@
-import { join } from "path";
+import { TextDecoder } from "util";
 
-async function performRequest(label: string, body: any) {
-  console.log(`\n--- ${label} ---`);
-  console.log("🚀 Sending request...");
-  
-  try {
-    const response = await fetch("http://127.0.0.1:3000/anthropic/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": "sk-antigravity"
-      },
-      body: JSON.stringify(body)
-    });
+function parseArgs() {
+  const args: Record<string, string | boolean> = {};
+  for (let i = 2; i < process.argv.length; i++) {
+    const arg = process.argv[i];
+    if (arg.startsWith('--')) {
+      const parts = arg.slice(2).split('=');
+      const key = parts[0];
+      const val = parts[1] !== undefined ? parts[1] : true;
+      args[key] = val;
+    }
+  }
+  return args;
+}
 
-    if (!response.ok) {
-        const text = await response.text();
-        console.error(`❌ Error: ${response.status} - ${text}`);
-        return { ok: false, status: response.status, text };
+async function main() {
+  const argv = parseArgs();
+  const model = (argv.model as string) || "antigravity:gemini-2.5-flash";
+  const prompt = (argv.prompt as string) || "Explain quantum entanglement in one sentence.";
+  const stream = argv.stream === 'true' || argv.stream === true; // default to false
+
+  console.log(`📡 Protocol: Anthropic-compatible`);
+  console.log(`🤖 Model   : ${model}`);
+  console.log(`💬 Prompt  : "${prompt}"`);
+  console.log(`📡 Stream  : ${stream}`);
+  console.log("------------------------------------------");
+
+  const response = await fetch("http://127.0.0.1:3000/anthropic/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": "sk-antigravity"
+    },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: 4096,
+      stream
+    })
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    console.error(`\n❌ Error ${response.status}: ${text}`);
+    process.exit(1);
+  }
+
+  if (stream) {
+    const body = response.body;
+    if (!body) {
+      console.error("\n❌ Response body is not readable.");
+      process.exit(1);
     }
 
-    if (body.stream === false) {
-      const data = await response.json() as any;
-      console.log("✅ Success response:", JSON.stringify(data, null, 2));
-      return { ok: true, data };
-    }
-
-    console.log("✅ Connected! receiving stream:\n");
-    
-    const reader = response.body?.getReader();
-    if (!reader) return { ok: false };
-    
     const decoder = new TextDecoder();
-    let fullContent = "";
-    let reasoningContent = "";
     let buffer = "";
 
-    while (true) {
+    if (typeof body.getReader === 'function') {
+      const reader = body.getReader();
+      while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        
-        buffer += decoder.decode(value);
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        
-        for (const line of lines) {
-            if (line.startsWith("data: ")) {
-                try {
-                    const json = JSON.parse(line.slice(6));
-                    if (json.type === "content_block_delta") {
-                        const delta = json.delta;
-                        if (delta?.type === "text_delta" && delta?.text) {
-                            process.stdout.write(delta.text);
-                            fullContent += delta.text;
-                        }
-                        if (delta?.type === "thinking_delta" && delta?.thinking) {
-                            reasoningContent += delta.thinking;
-                        }
-                    }
-                } catch (e) {}
-            }
-        }
+        handleChunk(decoder.decode(value, { stream: true }));
+      }
+    } else {
+      for await (const chunk of body as any) {
+        handleChunk(decoder.decode(chunk, { stream: true }));
+      }
     }
-    console.log("\n\n✨ Done.");
-    return { ok: true, fullContent, reasoningContent };
+
+    function handleChunk(chunkText: string) {
+      buffer += chunkText;
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        const cleanLine = line.trim();
+        if (!cleanLine) continue;
+
+        if (cleanLine.startsWith("data: ")) {
+          try {
+            const data = JSON.parse(cleanLine.slice(6));
+            if (data.type === "content_block_delta") {
+              const delta = data.delta;
+              if (delta?.type === "text_delta" && delta?.text) {
+                process.stdout.write(delta.text);
+              }
+              if (delta?.type === "thinking_delta" && delta?.thinking) {
+                process.stdout.write(delta.thinking);
+              }
+            }
+          } catch (e) {
+            // Ignore parse errors on incomplete chunks
+          }
+        }
+      }
+    }
     
-  } catch (e) {
-      console.error("❌ Failed to connect.", e);
-      return { ok: false, error: e };
+    if (buffer) {
+      handleChunk("");
+    }
+    console.log("\n");
+  } else {
+    const data = await response.json() as any;
+    
+    // Check if there is a thinking/reasoning content block
+    const thinkingBlock = data.content?.find((c: any) => c.type === "thinking");
+    const textBlock = data.content?.find((c: any) => c.type === "text");
+
+    if (thinkingBlock?.thinking) {
+      console.log(`🤔 Thinking:\n${thinkingBlock.thinking}\n`);
+    }
+    if (textBlock?.text) {
+      console.log(`✨ Response:\n${textBlock.text}`);
+    } else if (data.content?.[0]?.text) {
+      console.log(`✨ Response:\n${data.content[0].text}`);
+    } else {
+      console.log("✨ Response:", JSON.stringify(data, null, 2));
+    }
   }
 }
 
-async function runTests() {
-  console.log("🧪 STARTING ANTHROPIC PROTOCOL INTEGRATION TESTS");
-
-  const basicResult = await performRequest("BASIC TEXT NON-STREAMING TEST", {
-    model: "antigravity:gemini-3.5-flash-low",
-    messages: [{ role: "user", content: "say pong" }],
-    max_tokens: 1024,
-    stream: false
-  });
-
-  if (basicResult.ok && basicResult.data?.content?.[0]?.text?.toLowerCase().includes("pong")) {
-    console.log("✅ PASS: Non-streaming greeting succeeded.");
-  } else {
-    console.error("❌ FAIL: Non-streaming greeting failed.");
-  }
-
-  const streamResult = await performRequest("STREAMING TEXT TEST", {
-    model: "antigravity:gemini-3.5-flash-low",
-    messages: [{ role: "user", content: "Explain gravity in one sentence." }],
-    max_tokens: 1024,
-    stream: true
-  });
-
-  if (streamResult.ok && streamResult.fullContent) {
-    console.log("✅ PASS: Streaming text request succeeded.");
-  } else {
-    console.error("❌ FAIL: Streaming text request failed.");
-  }
-
-  console.log("\n🏁 ALL TESTS COMPLETED");
-}
-
-runTests();
+main().catch(console.error);
