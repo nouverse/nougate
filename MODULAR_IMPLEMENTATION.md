@@ -812,10 +812,10 @@ export function mapOpenAIToGoogle(
 - [x] Update `src/providers/antigravity/index.ts`: implement `getSupportedModels()` yang return model IDs dari `supportedModelsCache`
 
 #### 3.4 — Model Specs Update
-- [ ] Update `config/model-specs.json`:
+- [x] Update `config/model-specs.json`:
   - Semua model ID boleh tetap tanpa prefix (resolver strip prefix sebelum lookup)
-- [ ] Update `src/config/model-specs.ts`: fungsi-fungsi resolver sudah menerima `modelId` tanpa prefix (tidak perlu ubah)
-- [ ] Update `resolveModelId()` di `mapper-in.ts` (OpenAI): strip provider prefix sebelum resolve ke Google model
+- [x] Update `src/config/model-specs.ts`: fungsi-fungsi resolver sudah menerima `modelId` tanpa prefix (tidak perlu ubah)
+- [x] Update `resolveModelId()` di `mapper-in.ts` (OpenAI): strip provider prefix sebelum resolve ke Google model
 
 #### 3.5 — Testing Phase 3
 - [ ] Test: `antigravity:gemini-3.5-flash-low` → route ke provider antigravity, model gemini-3.5-flash-low
