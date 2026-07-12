@@ -41,7 +41,27 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
     maxOutputTokens: 4096,
     timeoutMs: 60000,
   },
+  // ─── Claude (via Google Cloud Code) ─────────────────────────────────────────
+  'claude-opus-4-6': {
+    modelId: 'claude-opus-4-6',
+    pool: 'sandbox',
+    isThinking: false,
+    maxOutputTokens: 8192,
+    upstreamModelId: 'claude-opus-4-6-thinking',
+    timeoutMs: 60000,
+  },
+  'claude-opus-4-6-thinking': {
+    modelId: 'claude-opus-4-6-thinking',
+    pool: 'sandbox',
+    isThinking: true,
+    thinkingMode: 'budget',
+    thinkingBudget: 32768,
+    maxOutputTokens: 64000,
+    timeoutMs: 60000,
+  },
 };
+
+
 
 /**
  * Clone a model spec so callers do not mutate the in-memory registry accidentally.
