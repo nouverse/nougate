@@ -12,7 +12,7 @@ import {
   usesThinkingLevel,
   getDefaultThinkingLevel,
   getMaxOutputTokens
-} from "../config/model-specs";
+} from "../providers/antigravity/config/model-specs";
 
 const TOOL_NAME_REMAP_CACHE = new Map<string, string>();
 

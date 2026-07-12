@@ -598,14 +598,14 @@ export function mapOpenAIToGoogle(
 - [x] **Verifikasi**: file compile tanpa error (`bun x tsc --noEmit --skipLibCheck`)
 
 #### 1.2 — Migrasi Model Specs ke Provider Antigravity
-- [ ] Buat direktori `src/providers/antigravity/config/`
-- [ ] Buat `src/providers/antigravity/config/model-specs.ts` — `antigravityModelRegistry` implementing `IModelRegistry` (lihat contoh kode di bawah)
-  - [ ] Daftarkan semua model secara explicit dengan `IModelSpec` lengkap incl. `timeoutMs` (menggantikan `config.models.timeouts.*`)
-  - [ ] Hapus semua concept: `gptFallbacks`, fuzzy `resolveClaudeModel`, `forceThinkingAliases` → gantikan dengan `upstreamModelId`
-  - [ ] Support runtime overrides via `providers/antigravity/model-specs.json` (opsional)
-- [ ] **Hapus** `src/config/model-specs.ts`
-- [ ] **Hapus** `config/model-specs.json`
-- [ ] **Verifikasi**: `bun x tsc --noEmit --skipLibCheck`
+- [x] Buat direktori `src/providers/antigravity/config/`
+- [x] Buat `src/providers/antigravity/config/model-specs.ts` — `antigravityModelRegistry` implementing `IModelRegistry` (lihat contoh kode di bawah)
+  - [x] Daftarkan semua model secara explicit dengan `IModelSpec` lengkap incl. `timeoutMs` (menggantikan `config.models.timeouts.*`)
+  - [x] Hapus semua concept: `gptFallbacks`, fuzzy `resolveClaudeModel`, `forceThinkingAliases` → gantikan dengan `upstreamModelId`
+  - [x] Support runtime overrides via `providers/antigravity/model-specs.json` (opsional)
+- [x] **Hapus** `src/config/model-specs.ts`
+- [x] **Hapus** `config/model-specs.json`
+- [x] **Verifikasi**: `bun x tsc --noEmit --skipLibCheck`
 
 > [!NOTE]
 > Task 1.2 tidak perlu update `providers/antigravity/index.ts` dulu — itu dilakukan di task 1.7.
