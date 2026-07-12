@@ -1,0 +1,58 @@
+@import "tailwindcss";
+@plugin "daisyui";
+
+@theme {
+  --font-sans: 'Outfit', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+@plugin "daisyui/theme" {
+  name: "nougate";
+  prefersdark: true;
+  color-scheme: dark;
+  --color-primary: oklch(65% 0.22 162); /* custom emerald primary */
+  --color-primary-content: oklch(100% 0 0);
+  --color-secondary: oklch(58% 0.23 269); /* custom indigo secondary */
+  --color-accent: oklch(76% 0.18 78); /* custom amber accent */
+  --color-neutral: oklch(20% 0.02 240); /* slate/zinc base neutral */
+  --color-base-100: oklch(10% 0.01 240); /* deep slate/zinc 950 */
+  --color-base-200: oklch(14% 0.01 240); /* zinc 900 */
+  --color-base-300: oklch(18% 0.01 240); /* zinc 800 */
+  --color-base-content: oklch(90% 0.01 240); /* clear light slate text */
+}
+
+@plugin "daisyui/theme" {
+  name: "nougate-light";
+  prefersdark: false;
+  color-scheme: light;
+  --color-primary: oklch(55% 0.20 162);
+  --color-primary-content: oklch(100% 0 0);
+  --color-secondary: oklch(50% 0.20 269);
+  --color-accent: oklch(68% 0.18 78);
+  --color-neutral: oklch(95% 0.01 240);
+  --color-base-100: oklch(100% 0 0);
+  --color-base-200: oklch(97% 0.01 240);
+  --color-base-300: oklch(92% 0.01 240);
+  --color-base-content: oklch(15% 0.01 240);
+}
+
+@plugin "daisyui" {
+  themes: nougate --default, nougate-light;
+  logs: false;
+}
+
+/* Custom scrollbars for a sleek dashboard feel */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: oklch(30% 0.01 240);
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: oklch(45% 0.01 240);
+}

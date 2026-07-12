@@ -1,21 +1,39 @@
-FROM oven/bun:alpine AS builder
+# ---- Stage 1: Build Frontend ----
+FROM oven/bun:alpine AS frontend-builder
 WORKDIR /app
+COPY package.json ./
+COPY apps/frontend/package.json ./apps/frontend/
+COPY apps/backend/package.json ./apps/backend/
+RUN bun install
+COPY apps/frontend ./apps/frontend
+RUN cd apps/frontend && bun run build
 
-COPY package.json bun.lock ./
-RUN bun install --frozen-lockfile --production
+# ---- Stage 2: Install backend deps ----
+FROM oven/bun:alpine AS backend-deps
+WORKDIR /app
+COPY apps/backend/package.json ./
+RUN bun install --production
 
+# ---- Stage 3: Runtime ----
 FROM oven/bun:alpine
 WORKDIR /app
 
-COPY --from=builder /app/node_modules ./node_modules
-COPY src ./src
-COPY package.json ./
+# Backend deps
+COPY --from=backend-deps /app/node_modules ./node_modules
 
-# Create a data directory for persistence and set permissions
-RUN mkdir -p /app/data && chown -R bun:bun /app/data
+# Backend source
+COPY apps/backend/src ./src
+COPY apps/backend/package.json ./
 
-# Default accounts file path — writable by bun user
-ENV ACCOUNTS_FILE=/app/data/antigravity-accounts.json
+# Built Frontend
+COPY --from=frontend-builder /app/apps/frontend/dist ./frontend/dist
+
+# Runtime config files
+COPY config.json ./config.json
+COPY providers/ ./providers/
+
+# Data directory for runtime persistence (accounts, config)
+RUN mkdir -p /app/data/providers/antigravity && chown -R bun:bun /app/data
 
 EXPOSE 3000
 
