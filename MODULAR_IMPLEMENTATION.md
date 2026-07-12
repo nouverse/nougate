@@ -791,10 +791,10 @@ export function mapOpenAIToGoogle(
 ### Checklist Phase 3
 
 #### 3.1 — Enforce Model Resolver di Semua Handler
-- [ ] Verifikasi `src/core/model-resolver.ts` sudah ada (dari Phase 1.1)
-- [ ] Verifikasi `requireProviderPrefix()` sudah di-call di OpenAI handler (dari Phase 1.6) dan Anthropic handler (dari Phase 2.3)
-- [ ] Verifikasi `provider.getModelRegistry().getSpec()` sudah di-call di semua handler (return 400 jika null)
-- [ ] **Verifikasi**: request `antigravity:gemini-3.5-flash-low` → resolve ke `{ providerId: 'antigravity', modelId: 'gemini-3.5-flash-low' }` → `IModelSpec` ditemukan → 200
+- [x] Verifikasi `src/core/model-resolver.ts` sudah ada (dari Phase 1.1)
+- [x] Verifikasi `requireProviderPrefix()` sudah di-call di OpenAI handler (dari Phase 1.6) dan Anthropic handler (dari Phase 2.3)
+- [x] Verifikasi `provider.getModelRegistry().getSpec()` sudah di-call di semua handler (return 400 jika null)
+- [x] **Verifikasi**: request `antigravity:gemini-3.5-flash-low` → resolve ke `{ providerId: 'antigravity', modelId: 'gemini-3.5-flash-low' }` → `IModelSpec` ditemukan → 200
 
 #### 3.2 — Provider-Aware Account Selection (Clean Up)
 - [ ] Verifikasi key di `accounts.json` sudah pure `modelId|pool` (migration di `initManager()` dari Phase 1.7)
