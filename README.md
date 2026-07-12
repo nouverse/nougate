@@ -1,477 +1,204 @@
-# Antigravity Proxy
+# Nougate
 
-![Antigravity Proxy Dashboard](screenshots/screenshot.png)
+> Route any LLM provider through any protocol. One gateway, isolated providers, strict model namespacing.
 
-Antigravity Proxy is a high-performance gateway that exposes Google's internal Gemini and Claude APIs through an **OpenAI-compatible interface**. It enables seamless integration between advanced models (like Claude 4.6 Opus, Gemini 3, and GPT-equivalent models) and CLI agents (such as **OpenCode** or **Claude Code**), as well as any application supporting the OpenAI API standard.
+**Nougate** is Nouverse's internal LLM gateway — a modular router that sits between your tools and AI providers. Route requests through OpenAI or Anthropic protocols, authenticate via isolated per-provider accounts, and address any model unambiguously with `provider:model-id` namespacing.
 
-This project is strongly inspired by [opencode-antigravity-auth](https://github.com/NoeFabris/opencode-antigravity-auth).
+![Nougate Dashboard](screenshots/screenshot.png)
+
+---
 
 ## Features
 
-- **OpenAI API Compatibility**: Full support for `v1/chat/completions` with streaming (SSE).
-- **Multi-Agent Support**: Specifically designed to work with **Claude Code**, **OpenCode**, and other agentic frameworks.
-- **Account Rotation & Health Scoring**: Automatically rotates multiple Google accounts, penalizing those with errors and favoring healthy ones.
-- **Quota Management**: Real-time monitoring and automatic cooldowns (backoff) on `429 Too Many Requests` errors.
-- **Dual-Pool Routing**:
-  - **CLI Pool**: Routes to production endpoints (Gemini 2.5/3 Flash & Pro).
-  - **Sandbox Pool**: Accesses internal/experimental models (Claude 3.5 Sonnet, Thinking models, GPT-equivalent).
-- **Integrated Dashboard**: Manage accounts, monitor health, and view real-time logs via a built-in web interface.
-- **Automatic Project Discovery**: Auto-detects Google Cloud Project IDs via Cloud SDK impersonation.
+- **Multi-Protocol**: Expose providers via OpenAI (`/openai/v1/`) and Anthropic (`/anthropic/v1/`) compatible APIs simultaneously.
+- **Multi-Provider**: Pluggable provider system — each provider owns its auth, accounts, config, and model registry. No shared global state.
+- **Strict Model Namespacing**: All models use `provider:model-id` format (e.g. `antigravity:gemini-3.5-flash-low`). No ambiguity, no fallbacks, no silent re-routing.
+- **Per-Provider Auth Isolation**: Provider credentials, tokens, and account storage are fully isolated. `antigravity` provider uses Google OAuth; future providers use their own mechanism.
+- **Account Rotation & Health Scoring**: Automatically rotates accounts, penalizes on errors, and applies cooldowns on quota exhaustion.
+- **Real-time Dashboard**: Monitor accounts, view live logs, and manage config via a built-in web UI.
 
-## Deployment Options
+---
 
-### Bunx (Recommended)
-You can run the proxy instantly using `bunx`:
-```bash
-bunx antigravity-proxy@0.7.0
+## Model Naming
+
+All models follow the `provider:model-id` format:
+
+```
+antigravity:gemini-3.5-flash-low
+antigravity:claude-sonnet-4-6
+antigravity:gpt-oss-120b
 ```
 
-### Docker Hub
-```bash
-docker run -d -p 3000:3000 -e BASE_URL=http://localhost:3000 --name antigravity-proxy frieserpaldi/antigravity-proxy:0.7.0
+**Provider and protocol are independent.** You can use an `antigravity` model through the OpenAI protocol or the Anthropic protocol — it's your choice.
+
+> [!IMPORTANT]
+> Requests with a model string that does not include a provider prefix will be rejected with `400 Bad Request`.
+
+---
+
+## API Routes
+
+```
+# OpenAI Protocol
+GET  /openai/v1/models
+POST /openai/v1/chat/completions
+
+# Anthropic Protocol
+GET  /anthropic/v1/models
+POST /anthropic/v1/messages
+
+# Admin
+GET  /api/status
+GET  /api/sse
+GET  /api/config
+POST /api/config
+GET  /oauth/start
 ```
 
-### Local Execution (Bun)
-Requirements: Bun (v1.0.0 or higher).
-```bash
-bun install
-bun run start
-```
-The server starts on port 3000.
+> [!WARNING]
+> Legacy routes (`/v1/chat/completions`, `/v1/messages`, `/v1/models`) are **not supported**. Update your client config accordingly.
 
-## Supported Models (Active)
+---
 
-Antigravity Proxy routes to two different pools depending on the requested model. Following our latest checks, these are the active models available:
+## Providers
 
-### Sandbox Pool (Internal / Experimental)
-*   **Claude Opus 4.6** (`claude-opus-4-6-thinking`)
-*   **Gemini 3.5 Flash** (`gemini-3.5-flash-low`)
-*   **Gemini 3.1 Pro** (`gemini-3.1-pro`, `gemini-3.1-pro-preview`, `gemini-3.1-pro-high`, `gemini-3.1-pro-low`)
-*   **Gemini 3 Pro** (`gemini-3-pro`, `gemini-3-pro-high`, `gemini-3-pro-low`)
-*   **Gemini 3 Flash** (`gemini-3-flash`)
-*   **GPT-OSS 120B** (`gpt-oss-120b`, `gpt-oss-120b-medium`)
+### `antigravity`
 
-### CLI Pool (Production)
-*   **Gemini 2.5 Pro** (`gemini-2.5-pro`)
-*   **Gemini 2.5 Flash** (`gemini-2.5-flash`, `gemini-2.5-flash-lite`, `gemini-2.5-flash-thinking`)
-*   **Gemini 3 Pro Preview** (`gemini-3-pro-preview`)
-*   **Gemini 3 Flash Preview** (`gemini-3-flash-preview`)
+Routes to Google's internal Cloud Code endpoints via OAuth. Supports Gemini, Claude (via Google), and GPT-OSS models.
 
-*(Note: Models that are restricted or return 404 from Google, such as Claude Sonnet 4.6/4.5, have been automatically removed from our routing list).*
+**Available models:**
+
+| Model ID | Pool | Thinking |
+|---|---|---|
+| `antigravity:gemini-3.5-flash-low` | sandbox | ✅ level/low |
+| `antigravity:gemini-3.5-flash-high` | sandbox | ✅ level/high |
+| `antigravity:gemini-3.1-pro` | sandbox | ✅ level/low |
+| `antigravity:gemini-3.1-pro-high` | sandbox | ✅ level/high |
+| `antigravity:gemini-3-pro` | sandbox | ✅ level/low |
+| `antigravity:gemini-3-flash` | cli | ❌ |
+| `antigravity:gemini-2.5-pro` | sandbox | ❌ |
+| `antigravity:gemini-2.5-flash` | sandbox | ❌ |
+| `antigravity:gemini-2.5-flash-thinking` | sandbox | ✅ budget |
+| `antigravity:claude-sonnet-4-6` | sandbox | ❌ |
+| `antigravity:claude-sonnet-4-6-thinking` | sandbox | ✅ budget |
+| `antigravity:claude-opus-4-6` | sandbox | ❌ |
+| `antigravity:claude-opus-4-6-thinking` | sandbox | ✅ budget |
+| `antigravity:gpt-oss-120b` | cli | ❌ |
+| `antigravity:gpt-oss-120b-medium` | cli | ❌ |
+
+---
 
 ## Integration Guides
 
-### Claude Code Configuration
-To use **Claude Code** with Antigravity Proxy, point the API base URL to your local instance and specify a model from the Sandbox Pool:
+### Claude Code
 
 ```bash
-# Point Claude Code to the proxy
-export CLAUDE_CODE_API_BASE="http://localhost:3000/v1"
-
-# Run Claude specifying an Antigravity model
-claude --model antigravity-claude-sonnet-4-5
+export ANTHROPIC_BASE_URL="http://localhost:3000/anthropic"
+claude --model antigravity:claude-sonnet-4-6
 ```
 
-### OpenCode Configuration
-Add the following provider to your `~/.config/opencode/opencode.json` under the `"provider"` key:
+### OpenCode
 
 ```json
 "provider": {
-    "antigravity-proxy": {
-        "npm": "@ai-sdk/openai-compatible",
-        "name": "Antigravity Proxy",
-        "options": {
-            "baseURL": "http://localhost:3000/v1"
-        },
-        "models": {
-            "antigravity-gemini-3.1-pro-low": {
-                "name": "Gemini 3.1 Pro Low (Antigravity)",
-                "limit": { "context": 1048576, "output": 65535 }
-            },
-            "antigravity-gemini-3.1-pro-high": {
-                "name": "Gemini 3.1 Pro High (Antigravity)",
-                "limit": { "context": 1048576, "output": 65535 }
-            },
-            "antigravity-gemini-3-pro-low": {
-                "name": "Gemini 3 Pro Low (Antigravity)",
-                "limit": { "context": 1048576, "output": 65535 }
-            },
-            "antigravity-gemini-3-pro-high": {
-                "name": "Gemini 3 Pro High (Antigravity)",
-                "limit": { "context": 1048576, "output": 65535 }
-            },
-            "antigravity-gemini-3-flash": {
-                "name": "Gemini 3 Flash (Antigravity)",
-                "limit": { "context": 1048576, "output": 65536 }
-            },
-
-            "antigravity-gemini-3.5-flash-low": {
-                "name": "Gemini 3.5 Flash Low (Antigravity)",
-                "limit": { "context": 1048576, "output": 65536 }
-            },
-            "antigravity-claude-opus-4-6-thinking-low": {
-                "name": "Claude Opus 4.6 Think Low (Antigravity)",
-                "limit": { "context": 1000000, "output": 64000 }
-            },
-            "antigravity-claude-opus-4-6-thinking-medium": {
-                "name": "Claude Opus 4.6 Think Medium (Antigravity)",
-                "limit": { "context": 1000000, "output": 64000 }
-            },
-            "antigravity-claude-opus-4-6-thinking-high": {
-                "name": "Claude Opus 4.6 Think High (Antigravity)",
-                "limit": { "context": 1000000, "output": 64000 }
-            },
-            "gemini-2.5-flash": {
-                "name": "Gemini 2.5 Flash (CLI)",
-                "limit": { "context": 1048576, "output": 65536 }
-            },
-            "gemini-2.5-pro": {
-                "name": "Gemini 2.5 Pro (CLI)",
-                "limit": { "context": 1048576, "output": 65536 }
-            },
-            "antigravity-gpt-oss-120b-medium": {
-                "name": "GPT-OSS 120B Medium (Antigravity)",
-                "limit": { "context": 200000, "output": 64000 }
-            }
-        }
-    }
-}
-```
-
-
-### OpenClaw Configuration
-Add the following configuration to include all active models:
-
-```json
-{
-  "providers": {
-    "nouverse-antigravity": {
-      "baseUrl": "http://localhost:3000/v1",
-      "api": "openai-completions",
-      "apiKey": "sk-antigravity",
-      "models": [
-        {
-          "id": "antigravity-claude-opus-4-6-thinking",
-          "name": "Claude Opus 4 6 Thinking (Antigravity)",
-          "contextWindow": 1000000,
-          "maxTokens": 8192,
-          "input": [
-            "text",
-            "image"
-          ],
-          "cost": {
-            "input": 15,
-            "output": 75,
-            "cacheRead": 1.5,
-            "cacheWrite": 3
-          },
-          "reasoning": true
-        },
-        {
-          "id": "antigravity-gemini-3.5-flash-low",
-          "name": "Gemini 3.5 Flash Low (Antigravity)",
-          "contextWindow": 1048576,
-          "maxTokens": 8192,
-          "input": [
-            "text",
-            "image"
-          ],
-          "cost": {
-            "input": 0.15,
-            "output": 0.6,
-            "cacheRead": 0.04,
-            "cacheWrite": 0.08
-          },
-          "reasoning": false
-        },
-        {
-          "id": "antigravity-gemini-3.1-pro-high",
-          "name": "Gemini 3.1 Pro High (Antigravity)",
-          "contextWindow": 1048576,
-          "maxTokens": 8192,
-          "input": [
-            "text",
-            "image"
-          ],
-          "cost": {
-            "input": 2,
-            "output": 12,
-            "cacheRead": 0.5,
-            "cacheWrite": 1
-          },
-          "reasoning": false
-        },
-        {
-          "id": "antigravity-gemini-3.1-pro-low",
-          "name": "Gemini 3.1 Pro Low (Antigravity)",
-          "contextWindow": 1048576,
-          "maxTokens": 8192,
-          "input": [
-            "text",
-            "image"
-          ],
-          "cost": {
-            "input": 2,
-            "output": 12,
-            "cacheRead": 0.5,
-            "cacheWrite": 1
-          },
-          "reasoning": false
-        },
-        {
-          "id": "antigravity-gemini-3.1-pro",
-          "name": "Gemini 3.1 Pro (Antigravity)",
-          "contextWindow": 1048576,
-          "maxTokens": 8192,
-          "input": [
-            "text",
-            "image"
-          ],
-          "cost": {
-            "input": 2,
-            "output": 12,
-            "cacheRead": 0.5,
-            "cacheWrite": 1
-          },
-          "reasoning": false
-        },
-        {
-          "id": "antigravity-gemini-3.1-pro-preview",
-          "name": "Gemini 3.1 Pro Preview (Antigravity)",
-          "contextWindow": 1048576,
-          "maxTokens": 8192,
-          "input": [
-            "text",
-            "image"
-          ],
-          "cost": {
-            "input": 2,
-            "output": 12,
-            "cacheRead": 0.5,
-            "cacheWrite": 1
-          },
-          "reasoning": false
-        },
-        {
-          "id": "antigravity-gemini-3-flash",
-          "name": "Gemini 3 Flash (Antigravity)",
-          "contextWindow": 1048576,
-          "maxTokens": 8192,
-          "input": [
-            "text",
-            "image"
-          ],
-          "cost": {
-            "input": 0.075,
-            "output": 0.3,
-            "cacheRead": 0.02,
-            "cacheWrite": 0.04
-          },
-          "reasoning": false
-        },
-        {
-          "id": "antigravity-gemini-3-pro-high",
-          "name": "Gemini 3 Pro High (Antigravity)",
-          "contextWindow": 1048576,
-          "maxTokens": 8192,
-          "input": [
-            "text",
-            "image"
-          ],
-          "cost": {
-            "input": 2,
-            "output": 12,
-            "cacheRead": 0.5,
-            "cacheWrite": 1
-          },
-          "reasoning": false
-        },
-        {
-          "id": "antigravity-gemini-3-pro-low",
-          "name": "Gemini 3 Pro Low (Antigravity)",
-          "contextWindow": 1048576,
-          "maxTokens": 8192,
-          "input": [
-            "text",
-            "image"
-          ],
-          "cost": {
-            "input": 2,
-            "output": 12,
-            "cacheRead": 0.5,
-            "cacheWrite": 1
-          },
-          "reasoning": false
-        },
-        {
-          "id": "antigravity-gemini-3-pro",
-          "name": "Gemini 3 Pro (Antigravity)",
-          "contextWindow": 1048576,
-          "maxTokens": 8192,
-          "input": [
-            "text",
-            "image"
-          ],
-          "cost": {
-            "input": 2,
-            "output": 12,
-            "cacheRead": 0.5,
-            "cacheWrite": 1
-          },
-          "reasoning": false
-        },
-        {
-          "id": "antigravity-gemini-2.5-pro",
-          "name": "Gemini 2.5 Pro (Antigravity)",
-          "contextWindow": 1048576,
-          "maxTokens": 8192,
-          "input": [
-            "text",
-            "image"
-          ],
-          "cost": {
-            "input": 1.25,
-            "output": 5,
-            "cacheRead": 0.3,
-            "cacheWrite": 0.6
-          },
-          "reasoning": false
-        },
-        {
-          "id": "antigravity-gemini-2.5-flash",
-          "name": "Gemini 2.5 Flash (Antigravity)",
-          "contextWindow": 1048576,
-          "maxTokens": 8192,
-          "input": [
-            "text",
-            "image"
-          ],
-          "cost": {
-            "input": 0.075,
-            "output": 0.3,
-            "cacheRead": 0.02,
-            "cacheWrite": 0.04
-          },
-          "reasoning": false
-        },
-        {
-          "id": "antigravity-gemini-2.5-flash-lite",
-          "name": "Gemini 2.5 Flash Lite (Antigravity)",
-          "contextWindow": 1048576,
-          "maxTokens": 8192,
-          "input": [
-            "text",
-            "image"
-          ],
-          "cost": {
-            "input": 0.075,
-            "output": 0.3,
-            "cacheRead": 0.02,
-            "cacheWrite": 0.04
-          },
-          "reasoning": false
-        },
-        {
-          "id": "antigravity-gemini-2.5-flash-thinking",
-          "name": "Gemini 2.5 Flash Thinking (Antigravity)",
-          "contextWindow": 1048576,
-          "maxTokens": 8192,
-          "input": [
-            "text",
-            "image"
-          ],
-          "cost": {
-            "input": 0.075,
-            "output": 0.3,
-            "cacheRead": 0.02,
-            "cacheWrite": 0.04
-          },
-          "reasoning": true
-        },
-        {
-          "id": "antigravity-gemini-3-pro-preview",
-          "name": "Gemini 3 Pro Preview (Antigravity)",
-          "contextWindow": 1048576,
-          "maxTokens": 8192,
-          "input": [
-            "text",
-            "image"
-          ],
-          "cost": {
-            "input": 2,
-            "output": 12,
-            "cacheRead": 0.5,
-            "cacheWrite": 1
-          },
-          "reasoning": false
-        },
-        {
-          "id": "antigravity-gemini-3-flash-preview",
-          "name": "Gemini 3 Flash Preview (Antigravity)",
-          "contextWindow": 1048576,
-          "maxTokens": 8192,
-          "input": [
-            "text",
-            "image"
-          ],
-          "cost": {
-            "input": 0.075,
-            "output": 0.3,
-            "cacheRead": 0.02,
-            "cacheWrite": 0.04
-          },
-          "reasoning": false
-        },
-        {
-          "id": "antigravity-gpt-oss-120b",
-          "name": "Gpt Oss 120b (Antigravity)",
-          "contextWindow": 200000,
-          "maxTokens": 8192,
-          "input": [
-            "text",
-            "image"
-          ],
-          "cost": {
-            "input": 0.7,
-            "output": 0.9,
-            "cacheRead": 0.1,
-            "cacheWrite": 0.2
-          },
-          "reasoning": false
-        },
-        {
-          "id": "antigravity-gpt-oss-120b-medium",
-          "name": "Gpt Oss 120b Medium (Antigravity)",
-          "contextWindow": 200000,
-          "maxTokens": 8192,
-          "input": [
-            "text",
-            "image"
-          ],
-          "cost": {
-            "input": 0.7,
-            "output": 0.9,
-            "cacheRead": 0.1,
-            "cacheWrite": 0.2
-          },
-          "reasoning": false
-        }
-      ]
+  "nougate": {
+    "npm": "@ai-sdk/openai-compatible",
+    "name": "Nougate",
+    "options": {
+      "baseURL": "http://localhost:3000/openai/v1"
+    },
+    "models": {
+      "antigravity:gemini-3.5-flash-low": {
+        "name": "Gemini 3.5 Flash Low",
+        "limit": { "context": 1048576, "output": 65535 }
+      },
+      "antigravity:claude-sonnet-4-6-thinking": {
+        "name": "Claude Sonnet 4.6 (Thinking)",
+        "limit": { "context": 1000000, "output": 64000 }
+      },
+      "antigravity:gemini-3.1-pro-high": {
+        "name": "Gemini 3.1 Pro High",
+        "limit": { "context": 1048576, "output": 65535 }
+      }
     }
   }
 }
 ```
 
-## How It Works
+### OpenAI-compatible clients (curl)
 
-Antigravity Proxy acts as a sophisticated bridge that translates OpenAI-formatted requests into Google's internal RPC protocols. It manages the complexities of authentication, session handling, and response streaming, allowing you to use high-tier models with your favorite tools.
+```bash
+curl http://localhost:3000/openai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer sk-nougate" \
+  -d '{
+    "model": "antigravity:gemini-3.5-flash-low",
+    "messages": [{ "role": "user", "content": "Hello!" }],
+    "stream": true
+  }'
+```
 
-### Account Selection Strategy
-- **Hybrid (Default)**: Ranks accounts based on `(Health Score × 2) + (Idle Time × 0.1)`.
-- **Sticky**: Keeps a client session tied to the same account for consistency.
-- **Round-Robin**: Cycles through all available accounts evenly.
+---
 
-## Security Notes
-- **Safety Filters**: Controlled via `SAFETY_THRESHOLD` (default: `BLOCK_NONE`).
-- **Credentials**: OAuth tokens are stored locally in `antigravity-accounts.json`. Do not share or commit this file.
+## Running Locally
 
+Requirements: [Bun](https://bun.sh) v1.0.0+
+
+```bash
+bun install
+bun run dev       # development with watch mode
+bun run start     # production
+```
+
+Server starts on port `3000` by default.
+
+---
+
+## Configuration
+
+### Global (`config.json`)
+
+Proxy-level behavior shared across all providers:
+
+```jsonc
+{
+  "rotation": { "strategy": "sticky" },
+  "scoring": { ... },
+  "retry": { "maxAttempts": 5 },
+  "logging": { "maxBufferSize": 200 }
+}
+```
+
+### Per-Provider (`providers/antigravity/config.json`)
+
+Provider-specific config (endpoints, features, quota):
+
+```jsonc
+{
+  "endpoints": { "sandbox": [...], "cli": [...] },
+  "features": { "keepThinking": false, "jitterEnabled": true },
+  "quota": { "refreshIntervalMs": 300000 }
+}
+```
+
+### Accounts (`providers/antigravity/accounts.json`)
+
+Runtime state — OAuth tokens, health scores, cooldowns. **Do not commit this file.**
+
+---
+
+## Account Selection Strategies
+
+| Strategy | Behavior |
+|---|---|
+| `sticky` | Pins a client session to the same account |
+| `hybrid` | Scores by `(health × 2) + (idle time × 0.1)` |
+| `round-robin` | Cycles through accounts evenly |
+
+---
+
+## Security
+
+- OAuth tokens are stored in `providers/antigravity/accounts.json` — **never commit this file**.
+- Each provider's credentials are fully isolated from other providers.
+- All safety filters default to `BLOCK_NONE` (configurable).
