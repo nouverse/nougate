@@ -1,34 +1,26 @@
-# ---- Stage 1: Build frontend ----
-FROM node:22-alpine AS frontend-build
-WORKDIR /build
-COPY apps/frontend/ .
-RUN npm ci && npm run build
-
-# ---- Stage 2: Install backend deps ----
+# ---- Stage 1: Install backend deps ----
 FROM oven/bun:alpine AS backend-deps
 WORKDIR /app
 COPY apps/backend/package.json apps/backend/bun.lock ./
 RUN bun install --frozen-lockfile --production
 
-# ---- Stage 3: Runtime ----
+# ---- Stage 2: Runtime ----
 FROM oven/bun:alpine
 WORKDIR /app
 
 # Backend deps
 COPY --from=backend-deps /app/node_modules ./node_modules
 
-# Backend source
+# Backend source (includes src/frontend/ dashboard)
 COPY apps/backend/src ./src
 COPY apps/backend/package.json ./
 
-# Frontend build output (served as static files by backend)
-COPY --from=frontend-build /build/dist ./static/
+# Runtime config files
+COPY config.json ./config.json
+COPY providers/ ./providers/
 
 # Data directory for runtime persistence (accounts, config)
-RUN mkdir -p /app/data && chown -R bun:bun /app/data
-
-ENV ACCOUNTS_FILE=/app/data/antigravity-accounts.json
-ENV STATIC_DIR=/app/static
+RUN mkdir -p /app/data/providers/antigravity && chown -R bun:bun /app/data
 
 EXPOSE 3000
 
