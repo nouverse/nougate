@@ -13,7 +13,7 @@ import {
 } from '@/providers/antigravity/auth/manager';
 import type { AntigravityAccount } from '@/providers/antigravity/auth/types';
 import { antigravityModelRegistry, loadModelSpecOverrides } from '@/providers/antigravity/config/model-specs';
-import { supportedModelsCache } from '@/providers/antigravity/api/quota';
+import { supportedModelsCache, refreshAllQuotas } from '@/providers/antigravity/api/quota';
 import {
   ANTIGRAVITY_SYSTEM_INSTRUCTION,
   getAntigravityConfig,
@@ -288,6 +288,11 @@ export class AntigravityProvider implements IProvider {
     await loadAntigravityConfig();
     await loadModelSpecOverrides();
     await initManager();
+
+    // Start background quota refreshing
+    const antigravityConfig = getAntigravityConfig();
+    setInterval(refreshAllQuotas, antigravityConfig.quota.refreshIntervalMs);
+    refreshAllQuotas();
   }
 
   /**
