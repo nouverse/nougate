@@ -1,11 +1,11 @@
 import { EventEmitter } from 'events';
 
-import { getProxyConfig as getGlobalProxyConfig } from '../../../config/manager';
-import { getAntigravityConfig, loadAntigravityConfig } from '../provider-config';
-import { generateFingerprint } from '../upstream/headers';
-import { getProjectId, refreshAccessToken } from './oauth';
-import { loadConfig, saveConfig } from './storage';
-import { type AntigravityAccount, type SelectionStrategy } from './types';
+import { getProxyConfig as getGlobalProxyConfig } from '@/config/manager';
+import { getAntigravityConfig, loadAntigravityConfig } from '@/providers/antigravity/provider-config';
+import { generateFingerprint } from '@/providers/antigravity/upstream/headers';
+import { getProjectId, refreshAccessToken } from '@/providers/antigravity/auth/oauth';
+import { loadConfig, saveConfig } from '@/providers/antigravity/auth/storage';
+import { type AntigravityAccount, type SelectionStrategy } from '@/providers/antigravity/auth/types';
 
 let accounts: AntigravityAccount[] = [];
 let currentStrategy: SelectionStrategy = 'hybrid';

@@ -1,6 +1,6 @@
 import { readFileSync } from "fs";
 import { join } from "path";
-import { getImpersonationHeaders } from "../providers/antigravity/upstream/headers";
+import { getImpersonationHeaders } from "@/providers/antigravity/upstream/headers";
 
 const email = process.argv[2];
 if (!email) {

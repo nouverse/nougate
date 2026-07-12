@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { subscribeToLogs, getCachedLogs, clearCachedLogs } from '../../hooks/useSSE';
+import { subscribeToLogs, getCachedLogs, clearCachedLogs } from '@/hooks/useSSE';
 
 interface Props {
   maxHeight?: string;

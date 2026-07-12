@@ -4,30 +4,30 @@ import type {
   IModelRegistry,
   IProvider,
   ProviderExecuteParams,
-} from '../../core/interfaces';
+} from '@/core/interfaces';
 import {
   getAccounts,
   getBestAccount as getBestAntigravityAccount,
   initManager,
   updateAccountUsage as updateAntigravityAccountUsage,
-} from './auth/manager';
-import type { AntigravityAccount } from './auth/types';
-import { antigravityModelRegistry, loadModelSpecOverrides } from './config/model-specs';
-import { supportedModelsCache } from './api/quota';
+} from '@/providers/antigravity/auth/manager';
+import type { AntigravityAccount } from '@/providers/antigravity/auth/types';
+import { antigravityModelRegistry, loadModelSpecOverrides } from '@/providers/antigravity/config/model-specs';
+import { supportedModelsCache } from '@/providers/antigravity/api/quota';
 import {
   ANTIGRAVITY_SYSTEM_INSTRUCTION,
   getAntigravityConfig,
   loadAntigravityConfig,
   saveAntigravityConfig,
   updateAntigravityConfig,
-} from './provider-config';
+} from '@/providers/antigravity/provider-config';
 
-import { AntigravityExecutor } from './upstream/executor';
-import { mapOpenAIToGoogle } from './mappers/openai-in';
-import { createOpenAIStreamTransformer } from './mappers/openai-out';
-import { mapAnthropicToGoogle } from './mappers/anthropic-in';
-import { createAnthropicStreamTransformer, aggregateAnthropicResponse } from './mappers/anthropic-out';
-import { checkSessionSignatureRewind } from './utils/signature-cache';
+import { AntigravityExecutor } from '@/providers/antigravity/upstream/executor';
+import { mapOpenAIToGoogle } from '@/providers/antigravity/mappers/openai-in';
+import { createOpenAIStreamTransformer } from '@/providers/antigravity/mappers/openai-out';
+import { mapAnthropicToGoogle } from '@/providers/antigravity/mappers/anthropic-in';
+import { createAnthropicStreamTransformer, aggregateAnthropicResponse } from '@/providers/antigravity/mappers/anthropic-out';
+import { checkSessionSignatureRewind } from '@/providers/antigravity/utils/signature-cache';
 
 // Helper to build OpenAI/Anthropic responses
 function createJsonResponse(body: unknown, status: number, attempts?: number): Response {

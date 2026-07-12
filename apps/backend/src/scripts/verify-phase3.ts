@@ -1,4 +1,4 @@
-import { antigravityModelRegistry } from "../providers/antigravity/config/model-specs";
+import { antigravityModelRegistry } from "@/providers/antigravity/config/model-specs";
 
 async function runVerification() {
   console.log("🧪 Running Phase 3.5 Automated Verification Tests...\n");

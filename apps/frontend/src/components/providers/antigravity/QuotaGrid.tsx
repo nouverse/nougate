@@ -1,5 +1,5 @@
 import React from 'react';
-import { QuotaCard } from '../../shared/QuotaCard';
+import { QuotaCard } from '@/components/shared/QuotaCard';
 
 interface QuotaEntry {
   groupName: string;

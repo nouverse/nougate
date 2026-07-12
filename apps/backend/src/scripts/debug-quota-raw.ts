@@ -1,7 +1,7 @@
 
-import { initManager, getAccounts } from "../providers/antigravity/auth/manager";
-import { refreshAccessToken } from "../providers/antigravity/auth/oauth";
-import { getImpersonationHeaders } from "../providers/antigravity/upstream/headers";
+import { initManager, getAccounts } from "@/providers/antigravity/auth/manager";
+import { refreshAccessToken } from "@/providers/antigravity/auth/oauth";
+import { getImpersonationHeaders } from "@/providers/antigravity/upstream/headers";
 
 async function debugQuota() {
     await initManager();

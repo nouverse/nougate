@@ -1,15 +1,15 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
-import { useProviderDetail } from '../../../hooks/useQueries';
+import { useProviderDetail } from '@/hooks/useQueries';
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { api } from '../../../lib/api';
-import { ConfirmModal } from '../../../components/shared/ConfirmModal';
-import { QuotaGrid } from '../../../components/providers/antigravity/QuotaGrid';
-import { AccountsTable } from '../../../components/providers/antigravity/AccountsTable';
-import { AccountCard } from '../../../components/providers/antigravity/AccountCard';
-import { ModelRegistryTable } from '../../../components/providers/antigravity/ModelRegistryTable';
-import { JsonEditor } from '../../../components/shared/JsonEditor';
-import { EmptyState } from '../../../components/shared/EmptyState';
+import { api } from '@/lib/api';
+import { ConfirmModal } from '@/components/shared/ConfirmModal';
+import { QuotaGrid } from '@/components/providers/antigravity/QuotaGrid';
+import { AccountsTable } from '@/components/providers/antigravity/AccountsTable';
+import { AccountCard } from '@/components/providers/antigravity/AccountCard';
+import { ModelRegistryTable } from '@/components/providers/antigravity/ModelRegistryTable';
+import { JsonEditor } from '@/components/shared/JsonEditor';
+import { EmptyState } from '@/components/shared/EmptyState';
 import { Plus, Users, Cpu, Settings2, BarChart2, Shield } from 'lucide-react';
 
 interface SearchParams {

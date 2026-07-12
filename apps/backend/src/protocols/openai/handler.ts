@@ -2,9 +2,9 @@ import {
   ModelPrefixError,
   formatModelId,
   requireProviderPrefix,
-} from "../../core/model-resolver";
-import type { IProtocolHandler } from "../../core/interfaces";
-import type { RequestContext } from "../../core/request-context";
+} from "@/core/model-resolver";
+import type { IProtocolHandler } from "@/core/interfaces";
+import type { RequestContext } from "@/core/request-context";
 
 /**
  * Build a JSON response with the shared OpenAI proxy headers.

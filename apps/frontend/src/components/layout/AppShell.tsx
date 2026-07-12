@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useRouterState } from '@tanstack/react-router';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
-import { useProviders, useConfig } from '../../hooks/useQueries';
-import { useTheme } from '../../hooks/useTheme';
-import { useSSE } from '../../hooks/useSSE';
-import { api } from '../../lib/api';
-import { LogViewer } from '../shared/LogViewer';
+import { useProviders, useConfig } from '@/hooks/useQueries';
+import { useTheme } from '@/hooks/useTheme';
+import { useSSE } from '@/hooks/useSSE';
+import { api } from '@/lib/api';
+import { LogViewer } from '@/components/shared/LogViewer';
 import { Menu, Settings, Terminal, Shield, List, Sun, Moon } from 'lucide-react';
 
 interface Props {

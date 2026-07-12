@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { useProviders } from '../hooks/useQueries';
+import { useProviders } from '@/hooks/useQueries';
 import { Shield, Key, Cpu, ArrowRight, Server } from 'lucide-react';
 
 export const Route = createFileRoute('/')({

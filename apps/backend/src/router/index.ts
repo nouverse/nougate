@@ -1,13 +1,13 @@
-import { getDefaultProvider, getProvider, findHandler } from "../core/registry";
-import { resolveModel } from "../core/model-resolver";
-import { buildSessionId } from "../protocols/openai/handler";
-import { handleAdminRoute } from "./admin";
+import { getDefaultProvider, getProvider, findHandler } from "@/core/registry";
+import { resolveModel } from "@/core/model-resolver";
+import { buildSessionId } from "@/protocols/openai/handler";
+import { handleAdminRoute } from "@/router/admin";
 import {
   handleCorsPreflight,
   logIncomingRequest,
   normalizePathname,
   withCorsHeaders,
-} from "./middleware";
+} from "@/router/middleware";
 
 /**
  * Read a shallow preview of the request body so routing can derive model and session data.

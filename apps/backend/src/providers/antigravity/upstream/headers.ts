@@ -1,4 +1,4 @@
-import { type DeviceFingerprint } from "../auth/types";
+import { type DeviceFingerprint } from "@/providers/antigravity/auth/types";
 
 export const OAUTH_CONFIG = {
   clientId: "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com",

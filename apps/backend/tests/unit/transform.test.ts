@@ -1,11 +1,11 @@
 import { describe, expect, test, beforeAll } from "bun:test";
-import { mapOpenAIToGoogle } from "../../src/providers/antigravity/mappers/openai-in";
-import { transformGoogleEventToOpenAI } from "../../src/providers/antigravity/mappers/openai-out";
-import { loadProxyConfig } from "../../src/config/manager";
-import { loadAntigravityConfig } from "../../src/providers/antigravity";
-import type { IModelSpec } from "../../src/core/interfaces";
-import { resolveModel } from "../../src/core/model-resolver";
-import { OpenAIProtocolHandler } from "../../src/protocols/openai/handler";
+import { mapOpenAIToGoogle } from "@/providers/antigravity/mappers/openai-in";
+import { transformGoogleEventToOpenAI } from "@/providers/antigravity/mappers/openai-out";
+import { loadProxyConfig } from "@/config/manager";
+import { loadAntigravityConfig } from "@/providers/antigravity";
+import type { IModelSpec } from "@/core/interfaces";
+import { resolveModel } from "@/core/model-resolver";
+import { OpenAIProtocolHandler } from "@/protocols/openai/handler";
 
 beforeAll(async () => {
   await loadProxyConfig();

@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { useConfig } from '../hooks/useQueries';
-import { JsonEditor } from '../components/shared/JsonEditor';
+import { useConfig } from '@/hooks/useQueries';
+import { JsonEditor } from '@/components/shared/JsonEditor';
 import { useState } from 'react';
 import { Settings, Code, ShieldCheck } from 'lucide-react';
 

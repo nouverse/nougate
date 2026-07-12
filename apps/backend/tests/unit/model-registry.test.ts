@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { antigravityModelRegistry } from "../../src/providers/antigravity/config/model-specs";
+import { antigravityModelRegistry } from "@/providers/antigravity/config/model-specs";
 
 describe("Antigravity Model Registry", () => {
   test("getSpec returns a model spec for a known model", () => {

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ModelSpec } from '../../../lib/types';
+import { ModelSpec } from '@/lib/types';
 
 interface Props {
   models: ModelSpec[];

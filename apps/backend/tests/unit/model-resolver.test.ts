@@ -3,7 +3,7 @@ import {
   ModelPrefixError,
   requireProviderPrefix,
   resolveModel,
-} from "../../src/core/model-resolver";
+} from "@/core/model-resolver";
 
 describe("Model Resolver", () => {
   test("resolveModel parses provider-prefixed model IDs", () => {

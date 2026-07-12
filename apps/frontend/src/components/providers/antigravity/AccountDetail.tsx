@@ -1,5 +1,5 @@
 import React from 'react';
-import { Account } from '../../../lib/types';
+import { Account } from '@/lib/types';
 
 interface Props {
   account: Account;

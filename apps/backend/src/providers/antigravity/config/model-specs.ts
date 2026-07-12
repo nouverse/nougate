@@ -1,6 +1,6 @@
 import { existsSync } from 'fs';
 import { join } from 'path';
-import type { IModelRegistry, IModelSpec } from '../../../core/interfaces';
+import type { IModelRegistry, IModelSpec } from '@/core/interfaces';
 
 
 const MODEL_REGISTRY: Record<string, IModelSpec> = {

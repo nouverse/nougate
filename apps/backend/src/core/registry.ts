@@ -1,4 +1,4 @@
-import type { IProtocolHandler, IProvider } from './interfaces';
+import type { IProtocolHandler, IProvider } from '@/core/interfaces';
 
 const DEFAULT_PROVIDER_ID = 'antigravity';
 const providers = new Map<string, IProvider>();

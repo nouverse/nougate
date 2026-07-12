@@ -1,7 +1,7 @@
-import { getGeminiCliHeaders } from "../providers/antigravity/upstream/headers";
-import { getModelSpec } from "../providers/antigravity/config/model-specs";
-import { mapOpenAIToGoogle } from "../protocols/openai";
-import { getAccounts, initManager } from "../providers/antigravity/auth/manager";
+import { getGeminiCliHeaders } from "@/providers/antigravity/upstream/headers";
+import { getModelSpec } from "@/providers/antigravity/config/model-specs";
+import { mapOpenAIToGoogle } from "@/protocols/openai";
+import { getAccounts, initManager } from "@/providers/antigravity/auth/manager";
 
 /**
  * Read a model spec for the manual test script.

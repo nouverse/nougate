@@ -1,4 +1,4 @@
-import type { ResolvedModel } from './interfaces';
+import type { ResolvedModel } from '@/core/interfaces';
 
 const DEFAULT_PROVIDER = 'antigravity';
 

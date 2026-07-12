@@ -1,4 +1,4 @@
-import { initManager, getAccounts, resetAllCooldowns, saveAccounts } from "../providers/antigravity/auth/manager";
+import { initManager, getAccounts, resetAllCooldowns, saveAccounts } from "@/providers/antigravity/auth/manager";
 
 async function main() {
   await initManager();

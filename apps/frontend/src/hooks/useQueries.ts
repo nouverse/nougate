@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api } from '../lib/api';
-import { Provider, ProviderDetail, ProxyConfig, Account, ModelSpec } from '../lib/types';
+import { api } from '@/lib/api';
+import { Provider, ProviderDetail, ProxyConfig, Account, ModelSpec } from '@/lib/types';
 
 export function useProviders() {
   return useQuery({

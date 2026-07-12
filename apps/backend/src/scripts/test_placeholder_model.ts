@@ -1,8 +1,8 @@
 import { readFileSync } from "fs";
 import { join } from "path";
-import { getImpersonationHeaders } from "../providers/antigravity/upstream/headers";
-import { getModelSpec } from "../providers/antigravity/config/model-specs";
-import { mapOpenAIToGoogle } from "../protocols/openai";
+import { getImpersonationHeaders } from "@/providers/antigravity/upstream/headers";
+import { getModelSpec } from "@/providers/antigravity/config/model-specs";
+import { mapOpenAIToGoogle } from "@/protocols/openai";
 
 /**
  * Read a model spec for the placeholder model script.

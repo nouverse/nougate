@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { LogViewer } from '../components/shared/LogViewer';
+import { LogViewer } from '@/components/shared/LogViewer';
 
 export const Route = createFileRoute('/logs')({
   component: LogsPage,

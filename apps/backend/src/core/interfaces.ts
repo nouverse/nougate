@@ -1,4 +1,4 @@
-import type { RequestContext } from './request-context';
+import type { RequestContext } from '@/core/request-context';
 
 /**
  * Supported protocol identifiers for request routing.

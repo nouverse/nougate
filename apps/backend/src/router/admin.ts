@@ -1,6 +1,6 @@
 import { join } from "path";
 import { existsSync } from "fs";
-import { getProxyConfig, updateProxyConfig } from "../config/manager";
+import { getProxyConfig, updateProxyConfig } from "@/config/manager";
 import {
   addAccount,
   eventBus,
@@ -14,13 +14,13 @@ import {
   saveAccounts,
   setStrategy,
   updateAccountProject,
-} from "../providers/antigravity/auth/manager";
-import { exchangeCode, generateAuthUrl, getProjectId, getUserEmail } from "../providers/antigravity/auth/oauth";
-import type { AntigravityAccount, SelectionStrategy } from "../providers/antigravity/auth/types";
-import { fetchQuota, supportedModelsCache } from "../providers/antigravity/api/quota";
-import { getAntigravityConfig, updateAntigravityConfig } from "../providers/antigravity";
-import { getCapturedLogs } from "./middleware";
-import { getAllProviders, getProvider } from "../core/registry";
+} from "@/providers/antigravity/auth/manager";
+import { exchangeCode, generateAuthUrl, getProjectId, getUserEmail } from "@/providers/antigravity/auth/oauth";
+import type { AntigravityAccount, SelectionStrategy } from "@/providers/antigravity/auth/types";
+import { fetchQuota, supportedModelsCache } from "@/providers/antigravity/api/quota";
+import { getAntigravityConfig, updateAntigravityConfig } from "@/providers/antigravity";
+import { getCapturedLogs } from "@/router/middleware";
+import { getAllProviders, getProvider } from "@/core/registry";
 
 const pkg = await Bun.file("package.json").json();
 const APP_VERSION = pkg.version || "0.0.0";

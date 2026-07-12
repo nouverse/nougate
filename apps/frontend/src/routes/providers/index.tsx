@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
-import { useProviders } from '../../hooks/useQueries';
+import { useProviders } from '@/hooks/useQueries';
 import { useEffect } from 'react';
 
 export const Route = createFileRoute('/providers/')({

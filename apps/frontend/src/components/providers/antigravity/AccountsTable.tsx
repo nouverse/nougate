@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Account } from '../../../lib/types';
-import { HealthBadge } from '../../shared/HealthBadge';
-import { AccountDetail } from './AccountDetail';
+import { Account } from '@/lib/types';
+import { HealthBadge } from '@/components/shared/HealthBadge';
+import { AccountDetail } from '@/components/providers/antigravity/AccountDetail';
 
 interface Props {
   accounts: Account[];

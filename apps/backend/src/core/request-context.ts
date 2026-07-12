@@ -1,4 +1,4 @@
-import type { IProvider, ProtocolId, ResolvedModel } from './interfaces';
+import type { IProvider, ProtocolId, ResolvedModel } from '@/core/interfaces';
 
 /**
  * Parsed request data shared between the router and protocol handlers.

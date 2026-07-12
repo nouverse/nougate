@@ -1,6 +1,6 @@
-import type { UpstreamExecuteOptions, UpstreamResult } from "../../../core/interfaces";
-import { getProxyConfig } from "../../../config/manager";
-import { getAntigravityConfig } from "../provider-config";
+import type { UpstreamExecuteOptions, UpstreamResult } from "@/core/interfaces";
+import { getProxyConfig } from "@/config/manager";
+import { getAntigravityConfig } from "@/providers/antigravity/provider-config";
 import {
   emitAccountFlash,
   ensureFingerprint,
@@ -12,11 +12,11 @@ import {
   getBestAccount,
   markCooldown,
   updateAccountUsage,
-} from "../auth/manager";
-import type { AntigravityAccount } from "../auth/types";
-import { parseGoogleError } from "./errors";
-import { getGeminiCliHeaders, getImpersonationHeaders } from "./headers";
-import { parseRetryDelay } from "../utils/retry";
+} from "@/providers/antigravity/auth/manager";
+import type { AntigravityAccount } from "@/providers/antigravity/auth/types";
+import { parseGoogleError } from "@/providers/antigravity/upstream/errors";
+import { getGeminiCliHeaders, getImpersonationHeaders } from "@/providers/antigravity/upstream/headers";
+import { parseRetryDelay } from "@/providers/antigravity/utils/retry";
 
 /**
  * Parameters used to rebuild a Google request body for the current attempt.

@@ -1,6 +1,6 @@
 
-import { getModelSpec } from "../providers/antigravity/config/model-specs";
-import { mapOpenAIToGoogle } from "../protocols/openai";
+import { getModelSpec } from "@/providers/antigravity/config/model-specs";
+import { mapOpenAIToGoogle } from "@/protocols/openai";
 
 /**
  * Read a model spec for the routing test matrix.

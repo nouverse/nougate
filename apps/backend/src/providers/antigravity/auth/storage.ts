@@ -2,7 +2,7 @@ import { existsSync } from 'fs';
 import { mkdir } from 'fs/promises';
 import { dirname, join } from 'path';
 
-import { type AntigravityAccount, type SelectionStrategy } from './types';
+import { type AntigravityAccount, type SelectionStrategy } from '@/providers/antigravity/auth/types';
 
 // In Docker, /app/data/ is the writable volume. Fallback to cwd for local dev.
 const DEFAULT_PATH = existsSync("/app/data")

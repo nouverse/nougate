@@ -1,4 +1,4 @@
-import { type ProxyConfig } from './types';
+import { type ProxyConfig } from '@/config/types';
 import { EventEmitter } from 'node:events';
 import { join } from 'path';
 import { existsSync } from 'fs';

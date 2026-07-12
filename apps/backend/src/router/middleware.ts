@@ -1,5 +1,5 @@
-import { getProxyConfig } from "../config/manager";
-import { eventBus } from "../providers/antigravity/auth/manager";
+import { getProxyConfig } from "@/config/manager";
+import { eventBus } from "@/providers/antigravity/auth/manager";
 
 const logBuffer: string[] = [];
 const originalConsole = {
