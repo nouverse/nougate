@@ -24,6 +24,7 @@ COPY --from=backend-deps /app/node_modules ./node_modules
 # Backend source
 COPY apps/backend/src ./src
 COPY apps/backend/package.json ./
+COPY apps/backend/tsconfig.json ./
 
 # Built Frontend
 COPY --from=frontend-builder /app/apps/frontend/dist ./frontend/dist
