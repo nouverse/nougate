@@ -46,7 +46,7 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
     isThinking: true,
     thinkingMode: 'level',
     thinkingLevel: 'low',
-    maxOutputTokens: 8192, // max: 65536
+    maxOutputTokens: 64000, // max: 65536
     timeoutMs: 60000,
   },
   'gemini-3.5-flash-low': {
@@ -56,7 +56,7 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
     isThinking: true,
     thinkingMode: 'level',
     thinkingLevel: 'medium',
-    maxOutputTokens: 8192, // max: 65536
+    maxOutputTokens: 64000, // max: 65536
     timeoutMs: 60000,
   },
   'gemini-3.1-pro-low': {
@@ -66,7 +66,7 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
     isThinking: true,
     thinkingMode: 'level',
     thinkingLevel: 'low',
-    maxOutputTokens: 8192, // max: 65536
+    maxOutputTokens: 64000, // max: 65536
     timeoutMs: 60000,
   },
   'claude-sonnet-4-6': {
