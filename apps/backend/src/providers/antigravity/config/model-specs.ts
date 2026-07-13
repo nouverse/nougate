@@ -76,7 +76,7 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
     isThinking: true,
     thinkingMode: 'budget',
     thinkingBudget: 32768,
-    maxOutputTokens: 8192,
+    maxOutputTokens: 64000,
     timeoutMs: 60000,
   },
   'claude-opus-4-6-thinking': {
