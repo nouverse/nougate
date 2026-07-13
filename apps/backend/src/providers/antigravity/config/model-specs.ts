@@ -71,7 +71,7 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
   },
   'claude-sonnet-4-6': {
     modelId: 'claude-sonnet-4-6',
-    displayName: 'Claude Sonnet 4.6',
+    displayName: 'Claude Sonnet 4.6 Thinking',
     pool: 'sandbox',
     isThinking: true,
     thinkingMode: 'budget',
