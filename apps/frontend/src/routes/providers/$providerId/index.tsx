@@ -170,19 +170,38 @@ function ProviderPage() {
     });
   };
 
-  const allQuotasMap = new Map<string, any>();
+  const allQuotasMap = new Map<string, { sumRemainingFraction: number; count: number; minRemainingFraction: number; worstQuota: any }>();
   detail.accounts.forEach((acc) => {
     if (acc.quota && Array.isArray(acc.quota)) {
       acc.quota.forEach((q: any) => {
         const existing = allQuotasMap.get(q.limitName);
-        if (!existing || q.remainingFraction < existing.remainingFraction) {
-          allQuotasMap.set(q.limitName, q);
+        if (!existing) {
+          allQuotasMap.set(q.limitName, {
+            sumRemainingFraction: q.remainingFraction,
+            count: 1,
+            minRemainingFraction: q.remainingFraction,
+            worstQuota: { ...q },
+          });
+        } else {
+          existing.sumRemainingFraction += q.remainingFraction;
+          existing.count += 1;
+          if (q.remainingFraction < existing.minRemainingFraction) {
+            existing.minRemainingFraction = q.remainingFraction;
+            existing.worstQuota = { ...q };
+          }
         }
       });
     }
   });
 
-  const mergedQuotas = Array.from(allQuotasMap.values());
+  const mergedQuotas = Array.from(allQuotasMap.values()).map((entry) => {
+    const avg = entry.sumRemainingFraction / entry.count;
+    return {
+      ...entry.worstQuota,
+      remainingFraction: avg,
+      quotaLeft: `${Math.round(avg * 100)}%`,
+    };
+  });
 
   return (
     <div className="space-y-6">
