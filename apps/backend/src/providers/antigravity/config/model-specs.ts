@@ -20,7 +20,7 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
     isThinking: true,
     thinkingMode: 'level',
     thinkingLevel: 'high',
-    maxOutputTokens: 8192, // max: 65536
+    maxOutputTokens: 64000, // max: 65536
     timeoutMs: 60000,
   },
   'gemini-3.1-flash-lite': {
