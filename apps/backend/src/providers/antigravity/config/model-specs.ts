@@ -10,7 +10,7 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
     displayName: 'Gemini 3 Flash',
     pool: 'sandbox',
     isThinking: false,
-    maxOutputTokens: 65536,
+    maxOutputTokens: 8192, // max: 65536
     timeoutMs: 60000,
   },
   'gemini-3-flash-agent': {
@@ -20,7 +20,7 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
     isThinking: true,
     thinkingMode: 'level',
     thinkingLevel: 'high',
-    maxOutputTokens: 65536,
+    maxOutputTokens: 8192, // max: 65536
     timeoutMs: 60000,
   },
   'gemini-3.1-flash-lite': {
@@ -28,7 +28,7 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
     displayName: 'Gemini 3.1 Flash Lite',
     pool: 'sandbox',
     isThinking: false,
-    maxOutputTokens: 65536,
+    maxOutputTokens: 8192,
     timeoutMs: 60000,
   },
   'gemini-3.1-flash-image': {
@@ -36,7 +36,7 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
     displayName: 'Gemini 3.1 Flash Image',
     pool: 'sandbox',
     isThinking: false,
-    maxOutputTokens: 65536,
+    maxOutputTokens: 8192, // max: 65536
     timeoutMs: 60000,
   },
   'gemini-3.5-flash-extra-low': {
@@ -46,7 +46,7 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
     isThinking: true,
     thinkingMode: 'level',
     thinkingLevel: 'low',
-    maxOutputTokens: 65536,
+    maxOutputTokens: 8192, // max: 65536
     timeoutMs: 60000,
   },
   'gemini-3.5-flash-low': {
@@ -56,7 +56,7 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
     isThinking: true,
     thinkingMode: 'level',
     thinkingLevel: 'medium',
-    maxOutputTokens: 65536,
+    maxOutputTokens: 8192, // max: 65536
     timeoutMs: 60000,
   },
   'gemini-3.1-pro-low': {
@@ -66,7 +66,7 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
     isThinking: true,
     thinkingMode: 'level',
     thinkingLevel: 'low',
-    maxOutputTokens: 65536,
+    maxOutputTokens: 8192, // max: 65536
     timeoutMs: 60000,
   },
   'claude-sonnet-4-6': {
@@ -76,17 +76,17 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
     isThinking: true,
     thinkingMode: 'budget',
     thinkingBudget: 32768,
-    maxOutputTokens: 65536,
+    maxOutputTokens: 8192,
     timeoutMs: 60000,
   },
-  'claude-opus-4-5-thinking': {
+  'claude-opus-4-6-thinking': {
     modelId: 'claude-opus-4-6-thinking',
     displayName: 'Claude Opus 4.6 Thinking',
     pool: 'sandbox',
     isThinking: true,
     thinkingMode: 'budget',
     thinkingBudget: 32768,
-    maxOutputTokens: 65536,
+    maxOutputTokens: 64000,
     timeoutMs: 60000,
   },
 };
