@@ -50,7 +50,98 @@ Untuk mendaftarkan akun baru setelah reset, kita membutuhkan email unik agar tid
 
 ---
 
+---
+
+## 3. 9Router Free Forever Providers (Coding Gratis)
+
+Provider AI coding yang **benar-benar gratis** tanpa perlu bypass atau workaround. Ideal untuk development dengan budget terbatas atau sebagai fallback ketika quota provider berbayar habis.
+
+### Top 3 Provider Gratis untuk Coding:
+
+#### 🥇 Qwen (Qwen2.5-Coder)
+*   **Provider**: Alibaba Cloud (FREE FOREVER)
+*   **Model**: Qwen2.5-Coder (specialized coding model)
+*   **Gratis**: Ya, unlimited dengan rate limit wajar
+*   **Kualitas**: Model coding terbaik di kategori free
+*   **API**: OpenAI-compatible
+*   **Implementasi**: Mudah, cukup signup di Alibaba Cloud
+*   **Use Case**: Code generation, debugging, refactoring
+*   **Website**: https://dashscope.aliyun.com/
+
+#### 🥈 Kiro AI
+*   **Provider**: Kiro AI (FREE FOREVER)
+*   **Model**: Proprietary coding-focused models
+*   **Gratis**: Ya, unlimited
+*   **Kualitas**: Good untuk coding tasks
+*   **API**: Simple REST API
+*   **Implementasi**: Sangat mudah, signup langsung
+*   **Use Case**: General coding assistance
+*   **Website**: https://kiroai.com/
+
+#### 🥉 Gemini 2.0 Flash
+*   **Provider**: Google AI Studio (FREE tier)
+*   **Model**: Gemini 2.0 Flash / Gemini 1.5 Pro
+*   **Gratis**: 15 requests/minute (sangat cukup untuk personal use)
+*   **Kualitas**: Coding capability excellent
+*   **API**: Google AI SDK
+*   **Implementasi**: Mudah, API key gratis dari Google AI Studio
+*   **Use Case**: Code generation, reasoning, multi-modal coding
+*   **Website**: https://aistudio.google.com/
+
+### Provider Gratis Lainnya:
+
+#### OpenCode Free
+*   **Status**: FREE FOREVER
+*   **Specialty**: Coding-specialized
+*   **Note**: Good alternative untuk specific coding tasks
+
+#### Cloudflare Workers AI
+*   **Status**: FREE (10,000 requests/day)
+*   **Models**: CodeLlama, Mistral, Llama variants
+*   **Note**: Butuh Cloudflare account, rate limit generous
+*   **Website**: https://developers.cloudflare.com/workers-ai/
+
+#### NVIDIA NIM
+*   **Status**: FREE tier available
+*   **Models**: Powerful enterprise models
+*   **Note**: Setup lebih kompleks, tapi worth it untuk production use
+
+#### iFlow
+*   **Status**: FREE FOREVER
+*   **Note**: Support coding tasks dengan rate limit wajar
+
+### Provider OAuth Subscription (Tidak Direkomendasikan untuk Bypass):
+
+❌ **Cursor IDE** - OAuth subscription, kompleks untuk di-bypass, lebih baik pakai strategy reset di section 2
+❌ **Kilo Code** - OAuth subscription, tidak jelas free tier
+❌ **Cline** - VS Code extension dengan OAuth, bukan pure API provider
+
+### Analisis Kelebihan & Kekurangan:
+
+**Kelebihan:**
+*   **Zero Cost**: Benar-benar gratis tanpa perlu billing info
+*   **No Bypass Needed**: Tidak perlu setup proxy, token extraction, atau workaround
+*   **Legitimate**: Legal dan sesuai TOS provider
+*   **Reliable**: Tidak ada risiko banned karena bypass detection
+*   **Good Performance**: Qwen2.5-Coder dan Gemini 2.0 Flash performance mendekati GPT-4 untuk coding tasks
+
+**Kekurangan:**
+*   **Rate Limits**: Ada batasan request per menit/hari (tapi cukup untuk personal use)
+*   **Model Selection**: Terbatas pada model yang disediakan gratis
+*   **Context Window**: Biasanya lebih kecil dari flagship models (tapi Gemini 2M token gratis)
+*   **Uptime**: Free tier bisa lebih sering maintenance atau slower response time
+
+### Rekomendasi Strategi Hybrid:
+
+1. **Primary**: Gunakan **Qwen2.5-Coder** atau **Gemini 2.0 Flash** untuk daily coding tasks
+2. **Fallback**: **Cloudflare Workers AI** untuk batch processing atau high-volume requests
+3. **Premium**: **Copilot/Cursor bypass** untuk complex reasoning atau flagship model needs
+4. **Backup**: **Antigravity Proxy** untuk unlimited context atau heavy agentic workflows
+
+---
+
 ## Kesimpulan Rekomendasi
 *   **Untuk Keamanan & Keawetan**: Gunakan **iCloud Hide My Email** secara semi-otomatis (reset machine ID otomatis via local script, pendaftaran akun baru manual 30 detik).
 *   **Untuk Full Otomatisasi (Script-driven)**: Gunakan **Domain Tumbal ($5/tahun) + Catch-All Routing** untuk menampung verifikasi OTP secara programmatic.
+*   **Untuk Coding Gratis Legitimate**: Gunakan **Qwen2.5-Coder** atau **Gemini 2.0 Flash** sebagai primary provider untuk daily development.
 *   **Benteng Utama**: Untuk kebutuhan data pribadi atau dumping harian dengan context besar, tetap gunakan **Antigravity Proxy (Google)** karena sejauh ini masih menjadi opsi paling ekonomis (unlimited/tanpa kuota ketat).
