@@ -19,6 +19,7 @@ export interface ModelSpec {
 }
 
 export interface Account {
+  id: string;
   email: string;
   projectId?: string;
   healthScore: number;
