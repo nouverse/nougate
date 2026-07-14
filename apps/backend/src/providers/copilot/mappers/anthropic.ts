@@ -23,26 +23,84 @@ export function mapAnthropicToOpenAI(anthropicBody: any, upstreamModelId: string
   if (Array.isArray(anthropicBody.messages)) {
     for (const msg of anthropicBody.messages) {
       const role = msg.role;
-      let content = msg.content;
+      const content = msg.content;
 
-      if (Array.isArray(content)) {
-        content = content.map((c: any) => {
-          if (typeof c === 'string') return c;
-          if (c.type === 'text') return c.text;
-          if (c.type === 'image') {
-            // OpenAI format image
-            return {
+      if (typeof content === 'string') {
+        messages.push({ role, content });
+      } else if (Array.isArray(content)) {
+        const textBlocks: string[] = [];
+        const imageBlocks: any[] = [];
+        const toolUseBlocks: any[] = [];
+        const toolResultBlocks: any[] = [];
+
+        for (const block of content) {
+          if (typeof block === 'string') {
+            textBlocks.push(block);
+          } else if (block.type === 'text') {
+            textBlocks.push(block.text);
+          } else if (block.type === 'image') {
+            imageBlocks.push({
               type: 'image_url',
               image_url: {
-                url: `data:${c.source.media_type};base64,${c.source.data}`
+                url: `data:${block.source.media_type};base64,${block.source.data}`
               }
-            };
+            });
+          } else if (block.type === 'tool_use') {
+            toolUseBlocks.push(block);
+          } else if (block.type === 'tool_result') {
+            toolResultBlocks.push(block);
           }
-          return '';
-        }).filter(Boolean);
-      }
+        }
 
-      messages.push({ role, content });
+        // Process based on blocks found
+        if (toolResultBlocks.length > 0) {
+          // If there are tool results, OpenAI requires them to be individual messages with role 'tool'
+          for (const block of toolResultBlocks) {
+            messages.push({
+              role: 'tool',
+              tool_call_id: block.tool_use_id,
+              content: typeof block.content === 'string' ? block.content : JSON.stringify(block.content || '')
+            });
+          }
+          // If there was also text content in the same message, push it as a user message
+          if (textBlocks.length > 0 || imageBlocks.length > 0) {
+            const contentParts: any[] = [
+              ...textBlocks.map(t => ({ type: 'text' as const, text: t })),
+              ...imageBlocks
+            ];
+            messages.push({
+              role: 'user',
+              content: contentParts.length === 1 && contentParts[0].type === 'text' ? contentParts[0].text : contentParts
+            });
+          }
+        } else if (toolUseBlocks.length > 0) {
+          const tool_calls = toolUseBlocks.map((b) => ({
+            id: b.id,
+            type: 'function' as const,
+            function: {
+              name: b.name,
+              arguments: typeof b.input === 'string' ? b.input : JSON.stringify(b.input || {})
+            }
+          }));
+          messages.push({
+            role: 'assistant',
+            content: textBlocks.join('\n') || null,
+            tool_calls
+          });
+        } else {
+          // Normal message
+          const contentParts: any[] = [
+            ...textBlocks.map(t => ({ type: 'text' as const, text: t })),
+            ...imageBlocks
+          ];
+          if (contentParts.length > 0) {
+            messages.push({
+              role,
+              content: contentParts.length === 1 && contentParts[0].type === 'text' ? contentParts[0].text : contentParts
+            });
+          }
+        }
+      }
     }
   }
 

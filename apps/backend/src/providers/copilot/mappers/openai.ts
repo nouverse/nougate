@@ -1,3 +1,52 @@
+export function mapOpenAIToCopilot(openaiBody: any, upstreamModelId: string) {
+  const allowedKeys = [
+    'messages',
+    'stream',
+    'temperature',
+    'top_p',
+    'max_tokens',
+    'max_completion_tokens',
+    'stop',
+    'tools',
+    'tool_choice',
+    'response_format',
+    'n'
+  ];
+
+  const sanitizedBody: any = {
+    model: upstreamModelId
+  };
+
+  for (const key of allowedKeys) {
+    if (key in openaiBody && openaiBody[key] !== undefined) {
+      sanitizedBody[key] = openaiBody[key];
+    }
+  }
+
+  // Sanitize messages to only include supported fields
+  if (Array.isArray(sanitizedBody.messages)) {
+    sanitizedBody.messages = sanitizedBody.messages.map((msg: any) => {
+      const sanitizedMsg: any = {
+        role: msg.role,
+        content: msg.content
+      };
+      if (msg.name !== undefined) sanitizedMsg.name = msg.name;
+      if (msg.tool_call_id !== undefined) sanitizedMsg.tool_call_id = msg.tool_call_id;
+      if (msg.tool_calls !== undefined) {
+        // Map any tool call formatting safely
+        sanitizedMsg.tool_calls = msg.tool_calls.map((tc: any) => ({
+          id: tc.id,
+          type: tc.type || 'function',
+          function: tc.function
+        }));
+      }
+      return sanitizedMsg;
+    });
+  }
+
+  return sanitizedBody;
+}
+
 export function createOpenAIStreamTransformer(requestedModelId: string) {
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();

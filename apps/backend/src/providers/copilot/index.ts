@@ -27,7 +27,7 @@ import { startDeviceFlow, pollDeviceFlow } from './auth/device-flow';
 import { CopilotExecutor } from './upstream/executor';
 import { loadCopilotConfig, getCopilotConfig, updateCopilotConfig } from './config/provider-config';
 import { mapAnthropicToOpenAI, createOpenAIToAnthropicStreamTransformer, finalizeOpenAIToAnthropicResponse } from './mappers/anthropic';
-import { createOpenAIStreamTransformer, finalizeOpenAIResponse } from './mappers/openai';
+import { createOpenAIStreamTransformer, finalizeOpenAIResponse, mapOpenAIToCopilot } from './mappers/openai';
 
 export class CopilotProvider implements IProvider {
   readonly id = 'copilot';
@@ -89,8 +89,11 @@ export class CopilotProvider implements IProvider {
     const executor = new CopilotExecutor();
 
     if (protocol === 'openai') {
+      const upstreamModelId = modelSpec.upstreamModelId || modelSpec.modelId;
+      const mappedOpenAIBody = mapOpenAIToCopilot(body, upstreamModelId);
+
       const result = await executor.execute({
-        body,
+        body: mappedOpenAIBody,
         modelSpec,
         clientId: ctx.clientId,
       });
