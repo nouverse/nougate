@@ -2,6 +2,7 @@
 import { registerProvider } from "@/core/registry";
 import { loadProxyConfig } from "@/config/manager";
 import { AntigravityProvider } from "@/providers/antigravity";
+import { CopilotProvider } from "@/providers/copilot";
 import { registerOpenAIProtocol } from "@/protocols/openai";
 import { registerAnthropicProtocol } from "@/protocols/anthropic";
 import { handleRequest } from "@/router";
@@ -13,6 +14,11 @@ setupLogCapture();
 const antigravityProvider = new AntigravityProvider();
 await antigravityProvider.init();
 registerProvider(antigravityProvider);
+
+const copilotProvider = new CopilotProvider();
+await copilotProvider.init();
+registerProvider(copilotProvider);
+
 registerOpenAIProtocol();
 registerAnthropicProtocol();
 

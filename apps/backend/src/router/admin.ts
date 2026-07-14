@@ -395,6 +395,24 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
 
   if (url.pathname.startsWith("/api/providers/") && req.method === "GET") {
     const parts = url.pathname.split("/");
+    // GET /api/providers/copilot/device-status
+    if (parts.length === 5 && parts[3] === "copilot" && parts[4] === "device-status") {
+      const deviceCode = url.searchParams.get("device_code");
+      if (!deviceCode) {
+        return new Response("Missing device_code", { status: 400 });
+      }
+      const p = getProvider("copilot") as any;
+      if (!p || typeof p.completeDeviceFlow !== "function") {
+        return new Response("Device flow not supported on this provider", { status: 400 });
+      }
+      try {
+        const result = await p.completeDeviceFlow(deviceCode);
+        return createJsonResponse(result);
+      } catch (error: any) {
+        return createJsonResponse({ error: error.message || error }, 400);
+      }
+    }
+
     // GET /api/providers/:id/config
     if (parts.length === 5 && parts[4] === "config") {
       const id = parts[3];
