@@ -57,7 +57,7 @@ Dokumen ini menjelaskan rencana implementasi untuk mengintegrasikan **GitHub Cop
 
 ### Phase 1: Boilerplate & Auth Layer
 - [x] Buat file `PLAN.md` ini untuk tracking progress.
-- [ ] Buat folder `apps/backend/src/providers/copilot/` dengan struktur:
+- [x] Buat folder `apps/backend/src/providers/copilot/` dengan struktur:
   ```
   providers/copilot/
   ├── index.ts              # CopilotProvider class (implements IProvider)
@@ -73,8 +73,8 @@ Dokumen ini menjelaskan rencana implementasi untuk mengintegrasikan **GitHub Cop
       ├── executor.ts        # Upstream request executor dengan retry & account rotation
       └── headers.ts         # Copilot-specific headers (Editor-Version, User-Agent, dll)
   ```
-- [ ] Buat `providers/copilot/` folder di root untuk config file storage (`accounts.json`).
-- [ ] Definisikan `CopilotAccount` interface di `auth/types.ts`:
+- [x] Buat `providers/copilot/` folder di root untuk config file storage (`accounts.json`).
+- [x] Definisikan `CopilotAccount` interface di `auth/types.ts`:
   ```typescript
   interface CopilotAccount {
     id: string;                    // unique identifier (email atau github username)
@@ -98,20 +98,20 @@ Dokumen ini menjelaskan rencana implementasi untuk mengintegrasikan **GitHub Cop
   ```
 
 ### Phase 2: Device Flow & Token Exchange
-- [ ] Implement `auth/device-flow.ts`:
+- [x] Implement `auth/device-flow.ts`:
   - `startDeviceFlow()` → POST `https://github.com/login/device/code` → return `{ user_code, device_code, verification_uri, interval }`.
   - `pollDeviceFlow(deviceCode, interval)` → Poll `https://github.com/login/oauth/access_token` sampai status `authorization_pending` → `complete`.
   - Simpan hasil sebagai `personalToken` di `CopilotAccount`.
-- [ ] Implement `auth/token-exchange.ts`:
+- [x] Implement `auth/token-exchange.ts`:
   - `exchangeSessionToken(personalToken)` → GET `https://api.github.com/copilot_internal/v2/token` → return `{ token, expires_at }`.
   - `ensureSessionToken(account)` → Check cache, refresh kalau expired (buffer 60 detik sebelum expiry).
   - Cache session token di memory (tidak perlu persist, karena short-lived).
-- [ ] Expose Device Flow via admin route:
+- [x] Expose Device Flow via admin route:
   - `POST /api/providers/copilot/accounts/add` → Trigger device flow jika body kosong, atau accept `{ personalToken }` untuk manual paste.
   - `GET /api/providers/copilot/device-status?device_code=xxx` → Poll status untuk frontend.
 
 ### Phase 3: Provider Core & Upstream
-- [ ] Implement `CopilotProvider` class di `index.ts`:
+- [x] Implement `CopilotProvider` class di `index.ts`:
   - `init()` → Load accounts dari storage, validate personal tokens.
   - `getBestAccount()` → Rotation logic (reuse pattern dari antigravity manager).
   - `updateAccountUsage()` → Scoring & cooldown handling.
@@ -122,11 +122,11 @@ Dokumen ini menjelaskan rencana implementasi untuk mengintegrasikan **GitHub Cop
     4. Untuk protocol `anthropic`: convert Anthropic format → OpenAI format → kirim → convert response balik.
     5. Stream response langsung ke client (SSE passthrough).
   - `addAccount()` → Support 2 mode: device flow atau manual token paste.
-- [ ] Implement `upstream/executor.ts`:
+- [x] Implement `upstream/executor.ts`:
   - Retry logic dengan account rotation (mirip antigravity executor).
   - Handle 401 (token invalid → re-exchange session token → retry).
   - Handle 429 (rate limit → cooldown account → rotate ke akun lain).
-- [ ] Implement `upstream/headers.ts`:
+- [x] Implement `upstream/headers.ts`:
   ```typescript
   export function getCopilotHeaders(sessionToken: string) {
     return {
@@ -142,7 +142,7 @@ Dokumen ini menjelaskan rencana implementasi untuk mengintegrasikan **GitHub Cop
   ```
 
 ### Phase 4: Model Registry
-- [ ] Implement `config/model-specs.ts` dengan model mapping:
+- [x] Implement `config/model-specs.ts` dengan model mapping:
   ```
   copilot:gpt-4o          → gpt-4o (pool: cli)
   copilot:gpt-4.1         → gpt-4.1 (pool: cli)
@@ -155,7 +155,7 @@ Dokumen ini menjelaskan rencana implementasi untuk mengintegrasikan **GitHub Cop
   > Note: Model list bisa berubah seiring update Copilot. Fetch dari `/models` endpoint jika memungkinkan.
 
 ### Phase 5: Registrasi & Integrasi
-- [ ] Register `CopilotProvider` di `apps/backend/src/server.ts`:
+- [x] Register `CopilotProvider` di `apps/backend/src/server.ts`:
   ```typescript
   import { CopilotProvider } from "@/providers/copilot";
 
@@ -163,8 +163,8 @@ Dokumen ini menjelaskan rencana implementasi untuk mengintegrasikan **GitHub Cop
   await copilotProvider.init();
   registerProvider(copilotProvider);
   ```
-- [ ] Update admin router jika perlu route khusus device flow (atau gunakan existing `/api/providers/:id/accounts/add`).
-- [ ] Pastikan `model-resolver` bisa resolve prefix `copilot:` dengan benar.
+- [x] Update admin router jika perlu route khusus device flow (atau gunakan existing `/api/providers/:id/accounts/add`).
+- [x] Pastikan `model-resolver` bisa resolve prefix `copilot:` dengan benar.
 
 ### Phase 6: Testing & Verifikasi
 - [ ] Integration test: kirim request dengan model `copilot:gpt-4o` dan verifikasi response stream.
