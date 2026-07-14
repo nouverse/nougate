@@ -25,27 +25,35 @@ Method ini hanya masuk akal untuk Antigravity/Google, bukan untuk provider lain.
 
 ---
 
-## 2. Desain Solusi: Action Dispatcher Pattern
+## 2. Desain Solusi: Action Dispatcher Pattern (Provider-Segmented)
 
 ### Konsep
-Semua operasi per-akun yang bersifat "action" dikonsolidasikan ke satu endpoint generic:
+Semua operasi per-akun yang bersifat "action" dikonsolidasikan ke satu endpoint generic **per-provider**:
 
 ```
-POST /api/accounts/:accountId/action
+POST /api/providers/:providerId/accounts/:accountId/action
 Body: { "action": "<action_name>", "payload": { ... } }
 ```
 
-Router tidak perlu tahu *apa* yang di-action-kan. Cukup delegate ke provider yang memiliki akun tersebut via method baru `handleAccountAction`.
+Router akan:
+1. Identify provider by `:providerId` path segment
+2. Validate provider exists
+3. Delegate action ke provider via method `handleAccountAction`
+
+**Benefits:**
+- ✅ Provider isolation — no account ID collision
+- ✅ Explicit provider scoping — RESTful & clear intent
+- ✅ Safe for future multi-tenant scenarios
 
 ### Mapping Aksi Lama → Baru
 
 | Endpoint Lama | Endpoint Baru | Action Name | Payload |
 |---|---|---|---|
-| `POST /api/accounts/:id/reset` | `POST /api/accounts/:id/action` | `reset` | `{}` |
-| `POST /api/accounts/:id/cooldown` | `POST /api/accounts/:id/action` | `cooldown` | `{ pool?: string, duration?: string }` |
-| `POST /api/accounts/:id/project` | `POST /api/accounts/:id/action` | `update_project` | `{ projectId: string }` |
-| `POST /api/accounts/:id/project/rediscover` | `POST /api/accounts/:id/action` | `rediscover_project` | `{}` |
-| `DELETE /api/accounts/:id` | `DELETE /api/accounts/:id` | *(tetap, sudah OK)* | - |
+| `POST /api/accounts/:id/reset` | `POST /api/providers/:providerId/accounts/:id/action` | `reset` | `{}` |
+| `POST /api/accounts/:id/cooldown` | `POST /api/providers/:providerId/accounts/:id/action` | `cooldown` | `{ pool?: string, duration?: string }` |
+| `POST /api/accounts/:id/project` | `POST /api/providers/antigravity/accounts/:id/action` | `update_project` | `{ projectId: string }` |
+| `POST /api/accounts/:id/project/rediscover` | `POST /api/providers/antigravity/accounts/:id/action` | `rediscover_project` | `{}` |
+| `DELETE /api/accounts/:id` | `DELETE /api/providers/:providerId/accounts/:id` | *(endpoint, not action)* | - |
 | `POST /api/accounts/reset-all` | `POST /api/accounts/reset-all` | *(tetap, sudah OK)* | - |
 
 ---
@@ -91,47 +99,81 @@ Router tidak perlu tahu *apa* yang di-action-kan. Cukup delegate ke provider yan
 
 ### Phase 3: Router Cleanup
 
-- [ ] Di `apps/backend/src/router/admin.ts`, ganti semua endpoint action yang ada dengan satu handler baru:
+- [x] Di `apps/backend/src/router/admin.ts`, ganti semua endpoint action yang ada dengan handler **provider-segmented**:
   ```typescript
+  // POST /api/providers/:providerId/accounts/:accountId/action
   if (
-    url.pathname.startsWith("/api/accounts/") &&
-    url.pathname.endsWith("/action") &&
+    url.pathname.match(/^\/api\/providers\/[^\/]+\/accounts\/[^\/]+\/action$/) &&
     req.method === "POST"
   ) {
-    const id = url.pathname.split("/")[3];
+    const parts = url.pathname.split("/");
+    const providerId = parts[3];
+    const accountId = decodeURIComponent(parts[5]);
+
     const body = await req.json() as { action: string; payload?: any };
     if (!body.action) {
       return new Response("Missing action", { status: 400 });
     }
-    const p = getAllProviders().find((p) => p.getAccounts().some((a) => a.id === id));
-    if (p && p.handleAccountAction) {
-      const result = await p.handleAccountAction(id, body.action, body.payload);
-      return createJsonResponse(result ?? { ok: true });
+
+    const p = getAllProviders().find((provider) => provider.id === providerId);
+    if (!p) {
+      return new Response("Provider not found", { status: 404 });
     }
-    return new Response("Account not found or action not supported", { status: 404 });
+    if (!p.handleAccountAction) {
+      return new Response("Provider does not support account actions", { status: 400 });
+    }
+
+    try {
+      const result = await p.handleAccountAction(accountId, body.action, body.payload);
+      return createJsonResponse(result ?? { ok: true });
+    } catch (error: any) {
+      return new Response(error.message, { status: 500 });
+    }
+  }
+
+  // DELETE /api/providers/:providerId/accounts/:accountId
+  if (
+    url.pathname.match(/^\/api\/providers\/[^\/]+\/accounts\/[^\/]+$/) &&
+    req.method === "DELETE"
+  ) {
+    const parts = url.pathname.split("/");
+    const providerId = parts[3];
+    const accountId = decodeURIComponent(parts[5]);
+
+    const p = getAllProviders().find((provider) => provider.id === providerId);
+    if (!p || !p.removeAccount) {
+      return new Response("Provider not found or does not support removal", { status: 404 });
+    }
+
+    await p.removeAccount(accountId);
+    return new Response("OK", { status: 200 });
   }
   ```
-- [ ] Hapus 4 endpoint lama:
+- [x] Hapus 4 endpoint lama:
   - `POST /api/accounts/:id/reset`
   - `POST /api/accounts/:id/cooldown`
   - `POST /api/accounts/:id/project`
   - `POST /api/accounts/:id/project/rediscover`
+  - `DELETE /api/accounts/:id` (moved to provider-scoped)
 
 ### Phase 4: Frontend Update
 
-- [ ] Update semua pemanggilan API di `AntigravityAccountsTab.tsx`:
-  - `api.post('/api/accounts/${email}/cooldown', { pool })` → `api.post('/api/accounts/${email}/action', { action: 'cooldown', payload: { pool } })`
-  - `api.post('/api/accounts/${email}/reset')` → `api.post('/api/accounts/${email}/action', { action: 'reset' })`
-  - `api.post('/api/accounts/${email}/project/rediscover')` → `api.post('/api/accounts/${email}/action', { action: 'rediscover_project' })`
-- [ ] Update semua pemanggilan API di `CopilotAccountsTab.tsx`:
-  - `api.post('/api/accounts/${id}/cooldown', { pool })` → `api.post('/api/accounts/${id}/action', { action: 'cooldown', payload: { pool } })`
-  - `api.post('/api/accounts/${id}/reset')` → `api.post('/api/accounts/${id}/action', { action: 'reset' })`
+- [x] Update semua pemanggilan API di `AntigravityAccountsTab.tsx`:
+  - `api.post('/api/accounts/${email}/cooldown', { pool })` → `api.post('/api/providers/antigravity/accounts/${email}/action', { action: 'cooldown', payload: { pool } })`
+  - `api.post('/api/accounts/${email}/reset')` → `api.post('/api/providers/antigravity/accounts/${email}/action', { action: 'reset' })`
+  - `api.post('/api/accounts/${email}/project/rediscover')` → `api.post('/api/providers/antigravity/accounts/${email}/action', { action: 'rediscover_project' })`
+  - `api.delete('/api/accounts/${email}')` → `api.delete('/api/providers/antigravity/accounts/${email}')`
+- [x] Update semua pemanggilan API di `CopilotAccountsTab.tsx`:
+  - `api.post('/api/accounts/${id}/cooldown', { pool })` → `api.post('/api/providers/copilot/accounts/${id}/action', { action: 'cooldown', payload: { pool } })`
+  - `api.post('/api/accounts/${id}/reset')` → `api.post('/api/providers/copilot/accounts/${id}/action', { action: 'reset' })`
+  - `api.delete('/api/accounts/${id}')` → `api.delete('/api/providers/copilot/accounts/${id}')`
 
 ### Phase 5: Verifikasi & Cleanup
 
-- [ ] Test semua action via curl untuk Antigravity dan Copilot.
-- [ ] Pastikan dashboard Nougate masih bisa trigger cooldown, reset, rediscover, delete akun tanpa error.
-- [ ] Hapus method `updateAccountProject` dan `rediscoverAccountProject` dari `IProvider` jika sudah tidak ada consumer langsung.
+- [x] Test semua action via curl untuk Antigravity dan Copilot dengan **provider-segmented endpoints**.
+- [x] Pastikan dashboard Nougate masih bisa trigger cooldown, reset, rediscover, delete akun tanpa error.
+- [x] Hapus method `updateAccountProject` dan `rediscoverAccountProject` dari `IProvider` — sudah tidak ada consumer langsung.
+- [x] Verify old unified `/api/accounts/:id/*` endpoints return 404.
 
 ---
 

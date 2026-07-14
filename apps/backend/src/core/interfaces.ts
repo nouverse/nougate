@@ -101,11 +101,10 @@ export interface IProvider {
   resetAllAccounts?(): Promise<void>;
   removeAccount?(accountId: string): Promise<void>;
   resetAccount?(accountId: string): Promise<void>;
-  updateAccountProject?(accountId: string, projectId: string): Promise<void>;
-  rediscoverAccountProject?(accountId: string): Promise<any>;
   markAccountCooldown?(accountId: string, pool: string, duration?: string): Promise<void>;
   getCooldowns?(): Record<string, number>;
   addAccount?(body: any): Promise<any>;
+  handleAccountAction?(accountId: string, action: string, payload?: any): Promise<any>;
 }
 
 export interface ProviderExecuteParams {

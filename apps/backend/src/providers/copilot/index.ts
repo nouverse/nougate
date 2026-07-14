@@ -187,6 +187,17 @@ export class CopilotProvider implements IProvider {
     await resetAccount(accountId);
   }
 
+  async handleAccountAction(accountId: string, action: string, payload?: any): Promise<any> {
+    switch (action) {
+      case 'reset':
+        return this.resetAccount(accountId);
+      case 'cooldown':
+        return this.markAccountCooldown(accountId, payload?.pool || 'cli', payload?.duration || '3600s');
+      default:
+        throw new Error(`Action "${action}" not supported for Copilot provider`);
+    }
+  }
+
   async markAccountCooldown(accountId: string, pool: string, duration?: string): Promise<void> {
     markCooldown(accountId, pool as any, 'Other', duration);
   }

@@ -295,84 +295,57 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
     return new Response("OK", { status: 200 });
   }
 
-  if (url.pathname.startsWith("/api/accounts/") && req.method === "DELETE") {
-    const id = url.pathname.replace("/api/accounts/", "");
-    if (!id) {
-      return new Response("Bad Request", { status: 400 });
+  // ─── Provider-scoped Account Actions ─────────────────────────────────────
+
+  // DELETE /api/providers/:providerId/accounts/:accountId
+  if (
+    url.pathname.match(/^\/api\/providers\/[^\/]+\/accounts\/[^\/]+$/) &&
+    req.method === "DELETE"
+  ) {
+    const parts = url.pathname.split("/");
+    const providerId = parts[3];
+    const accountId = decodeURIComponent(parts[5]);
+
+    const p = getAllProviders().find((provider) => provider.id === providerId);
+    if (!p) {
+      return new Response("Provider not found", { status: 404 });
+    }
+    if (!p.removeAccount) {
+      return new Response("Provider does not support account removal", { status: 400 });
     }
 
-    const p = getAllProviders().find((p) => p.getAccounts().some((a) => a.id === id));
-    if (p && p.removeAccount) {
-      await p.removeAccount(id);
-      return new Response("OK", { status: 200 });
-    }
-    return new Response("Account not found or action not supported", { status: 404 });
+    await p.removeAccount(accountId);
+    return new Response("OK", { status: 200 });
   }
 
+  // POST /api/providers/:providerId/accounts/:accountId/action
   if (
-    url.pathname.startsWith("/api/accounts/") &&
-    url.pathname.endsWith("/reset") &&
+    url.pathname.match(/^\/api\/providers\/[^\/]+\/accounts\/[^\/]+\/action$/) &&
     req.method === "POST"
   ) {
-    const id = url.pathname.split("/")[3];
-    const p = getAllProviders().find((p) => p.getAccounts().some((a) => a.id === id));
-    if (p && p.resetAccount) {
-      await p.resetAccount(id);
-      return new Response("OK", { status: 200 });
-    }
-    return new Response("Account not found or action not supported", { status: 404 });
-  }
+    const parts = url.pathname.split("/");
+    const providerId = parts[3];
+    const accountId = decodeURIComponent(parts[5]);
 
-  if (
-    url.pathname.startsWith("/api/accounts/") &&
-    url.pathname.endsWith("/project/rediscover") &&
-    req.method === "POST"
-  ) {
-    const id = url.pathname.split("/")[3];
-    const p = getAllProviders().find((p) => p.getAccounts().some((a) => a.id === id));
-    if (p && p.rediscoverAccountProject) {
-      try {
-        const result = await p.rediscoverAccountProject(id);
-        return createJsonResponse(result);
-      } catch (error: any) {
-        return new Response(error.message, { status: 500 });
-      }
-    }
-    return new Response("Account not found or action not supported", { status: 404 });
-  }
-
-  if (
-    url.pathname.startsWith("/api/accounts/") &&
-    url.pathname.endsWith("/project") &&
-    req.method === "POST"
-  ) {
-    const id = url.pathname.split("/")[3];
-    const body = await req.json() as { projectId?: string };
-    if (!body.projectId) {
-      return new Response("Missing projectId", { status: 400 });
+    const body = await req.json() as { action: string; payload?: any };
+    if (!body.action) {
+      return new Response("Missing action", { status: 400 });
     }
 
-    const p = getAllProviders().find((p) => p.getAccounts().some((a) => a.id === id));
-    if (p && p.updateAccountProject) {
-      await p.updateAccountProject(id, body.projectId);
-      return new Response("OK", { status: 200 });
+    const p = getAllProviders().find((provider) => provider.id === providerId);
+    if (!p) {
+      return new Response("Provider not found", { status: 404 });
     }
-    return new Response("Account not found or action not supported", { status: 404 });
-  }
+    if (!p.handleAccountAction) {
+      return new Response("Provider does not support account actions", { status: 400 });
+    }
 
-  if (
-    url.pathname.startsWith("/api/accounts/") &&
-    url.pathname.endsWith("/cooldown") &&
-    req.method === "POST"
-  ) {
-    const id = url.pathname.split("/")[3];
-    const body = await req.json() as { pool?: string };
-    const p = getAllProviders().find((p) => p.getAccounts().some((a) => a.id === id));
-    if (p && p.markAccountCooldown) {
-      await p.markAccountCooldown(id, body.pool || "cli", "3600s");
-      return new Response("OK", { status: 200 });
+    try {
+      const result = await p.handleAccountAction(accountId, body.action, body.payload);
+      return createJsonResponse(result ?? { ok: true });
+    } catch (error: any) {
+      return new Response(error.message, { status: 500 });
     }
-    return new Response("Account not found or action not supported", { status: 404 });
   }
 
   // ─── Provider endpoints ───────────────────────────────────────────────────

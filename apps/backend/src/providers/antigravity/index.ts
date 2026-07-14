@@ -519,21 +519,32 @@ export class AntigravityProvider implements IProvider {
     await resetAccount(accountId);
   }
 
-  async updateAccountProject(accountId: string, projectId: string): Promise<void> {
-    await updateAccountProject(accountId, projectId);
-  }
-
-  async rediscoverAccountProject(accountId: string): Promise<any> {
-    const account = getAccounts().find((item) => item.email === accountId);
-    if (!account?.accessToken) {
-      throw new Error("Account not found or no token");
+  async handleAccountAction(accountId: string, action: string, payload?: any): Promise<any> {
+    switch (action) {
+      case 'reset':
+        return this.resetAccount(accountId);
+      case 'cooldown':
+        return this.markAccountCooldown(accountId, payload?.pool || 'cli', payload?.duration || '3600s');
+      case 'update_project':
+        if (!payload?.projectId) {
+          throw new Error('Missing projectId in payload');
+        }
+        return updateAccountProject(accountId, payload.projectId);
+      case 'rediscover_project': {
+        const account = getAccounts().find((item) => item.email === accountId);
+        if (!account?.accessToken) {
+          throw new Error('Account not found or no token');
+        }
+        const projectId = await getProjectId(account.accessToken);
+        if (!projectId) {
+          throw new Error('No project found via discovery');
+        }
+        await updateAccountProject(accountId, projectId);
+        return { projectId };
+      }
+      default:
+        throw new Error(`Unknown action: ${action}`);
     }
-    const projectId = await getProjectId(account.accessToken);
-    if (!projectId) {
-      throw new Error("No project found via discovery");
-    }
-    await updateAccountProject(accountId, projectId);
-    return { projectId };
   }
 
   async markAccountCooldown(accountId: string, pool: string, duration?: string): Promise<void> {

@@ -78,7 +78,7 @@ export function AntigravityAccountsTab({ accounts, refreshQueries }: Props) {
   };
 
   const cooldownMutation = useMutation({
-    mutationFn: (email: string) => api.post(`/api/accounts/${email}/cooldown`, { pool: 'cli' }),
+    mutationFn: (email: string) => api.post(`/api/providers/antigravity/accounts/${email}/action`, { action: 'cooldown', payload: { pool: 'cli' } }),
     onSuccess: () => {
       showToast('Cooldown triggered for account!');
       refreshQueries();
@@ -86,7 +86,7 @@ export function AntigravityAccountsTab({ accounts, refreshQueries }: Props) {
   });
 
   const rediscoverMutation = useMutation({
-    mutationFn: (email: string) => api.post(`/api/accounts/${email}/project/rediscover`),
+    mutationFn: (email: string) => api.post(`/api/providers/antigravity/accounts/${email}/action`, { action: 'rediscover_project' }),
     onSuccess: () => {
       showToast('Project rediscovered!');
       refreshQueries();
@@ -97,7 +97,7 @@ export function AntigravityAccountsTab({ accounts, refreshQueries }: Props) {
   });
 
   const resetMutation = useMutation({
-    mutationFn: (email: string) => api.post(`/api/accounts/${email}/reset`),
+    mutationFn: (email: string) => api.post(`/api/providers/antigravity/accounts/${email}/action`, { action: 'reset' }),
     onSuccess: () => {
       showToast('Account state reset successfully!');
       refreshQueries();
@@ -105,7 +105,7 @@ export function AntigravityAccountsTab({ accounts, refreshQueries }: Props) {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (email: string) => api.delete(`/api/accounts/${email}`),
+    mutationFn: (email: string) => api.delete(`/api/providers/antigravity/accounts/${email}`),
     onSuccess: () => {
       showToast('Account deleted successfully!');
       setDeleteEmail(null);

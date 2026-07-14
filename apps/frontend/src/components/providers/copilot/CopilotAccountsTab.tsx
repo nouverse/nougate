@@ -112,7 +112,7 @@ export function CopilotAccountsTab({ accounts, refreshQueries }: Props) {
   };
 
   const cooldownMutation = useMutation({
-    mutationFn: (id: string) => api.post(`/api/accounts/${id}/cooldown`, { pool: 'cli' }),
+    mutationFn: (id: string) => api.post(`/api/providers/copilot/accounts/${id}/action`, { action: 'cooldown', payload: { pool: 'cli' } }),
     onSuccess: () => {
       showToast('Cooldown triggered for account!');
       refreshQueries();
@@ -120,7 +120,7 @@ export function CopilotAccountsTab({ accounts, refreshQueries }: Props) {
   });
 
   const resetMutation = useMutation({
-    mutationFn: (id: string) => api.post(`/api/accounts/${id}/reset`),
+    mutationFn: (id: string) => api.post(`/api/providers/copilot/accounts/${id}/action`, { action: 'reset' }),
     onSuccess: () => {
       showToast('Account state reset successfully!');
       refreshQueries();
@@ -128,7 +128,7 @@ export function CopilotAccountsTab({ accounts, refreshQueries }: Props) {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => api.delete(`/api/accounts/${id}`),
+    mutationFn: (id: string) => api.delete(`/api/providers/copilot/accounts/${id}`),
     onSuccess: () => {
       showToast('Account deleted successfully!');
       setDeleteId(null);
