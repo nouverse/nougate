@@ -158,6 +158,7 @@ export function createOpenAIToAnthropicStreamTransformer(model: string, messageI
   let blockStarted = false;
   let startedReasoning = false;
   let finished = false;
+  let currentBlockType: 'text' | 'tool_use' | null = null;
 
   return new TransformStream({
     start(controller) {
@@ -212,44 +213,90 @@ export function createOpenAIToAnthropicStreamTransformer(model: string, messageI
           const finishReason = choice.finish_reason;
 
           if (delta) {
-            // Start the content block if not already started
-            if (!blockStarted && (delta.content || delta.reasoning_content)) {
-              controller.enqueue(encoder.encode(sseEvent('content_block_start', {
-                type: 'content_block_start',
-                index: blockIndex,
-                content_block: { type: 'text', text: '' },
-              })));
-              blockStarted = true;
-            }
+            // 1. Handle tool calls streaming
+            if (delta.tool_calls && Array.isArray(delta.tool_calls)) {
+              for (const toolCall of delta.tool_calls) {
+                if (toolCall.id) {
+                  // Close active block first if there is one
+                  if (blockStarted) {
+                    controller.enqueue(encoder.encode(sseEvent('content_block_stop', { type: 'content_block_stop', index: blockIndex })));
+                    blockIndex++;
+                  }
+                  
+                  currentBlockType = 'tool_use';
+                  blockStarted = true;
 
-            if (delta.reasoning_content) {
-              if (!startedReasoning) {
-                startedReasoning = true;
+                  controller.enqueue(encoder.encode(sseEvent('content_block_start', {
+                    type: 'content_block_start',
+                    index: blockIndex,
+                    content_block: {
+                      type: 'tool_use',
+                      id: toolCall.id,
+                      name: toolCall.function?.name || '',
+                      input: {}
+                    }
+                  })));
+                }
+
+                if (toolCall.function?.arguments) {
+                  controller.enqueue(encoder.encode(sseEvent('content_block_delta', {
+                    type: 'content_block_delta',
+                    index: blockIndex,
+                    delta: {
+                      type: 'input_json_delta',
+                      partial_json: toolCall.function.arguments
+                    }
+                  })));
+                }
+              }
+            }
+            // 2. Handle text content / reasoning streaming
+            else if (delta.content || delta.reasoning_content) {
+              if (blockStarted && currentBlockType === 'tool_use') {
+                controller.enqueue(encoder.encode(sseEvent('content_block_stop', { type: 'content_block_stop', index: blockIndex })));
+                blockIndex++;
+                blockStarted = false;
+              }
+
+              if (!blockStarted) {
+                controller.enqueue(encoder.encode(sseEvent('content_block_start', {
+                  type: 'content_block_start',
+                  index: blockIndex,
+                  content_block: { type: 'text', text: '' },
+                })));
+                currentBlockType = 'text';
+                blockStarted = true;
+              }
+
+              if (delta.reasoning_content) {
+                if (!startedReasoning) {
+                  startedReasoning = true;
+                  controller.enqueue(encoder.encode(sseEvent('content_block_delta', {
+                    type: 'content_block_delta',
+                    index: blockIndex,
+                    delta: { type: 'text_delta', text: '<thinking>\n' },
+                  })));
+                }
                 controller.enqueue(encoder.encode(sseEvent('content_block_delta', {
                   type: 'content_block_delta',
                   index: blockIndex,
-                  delta: { type: 'text_delta', text: '<thinking>\n' },
+                  delta: { type: 'text_delta', text: delta.reasoning_content },
                 })));
-              }
-              controller.enqueue(encoder.encode(sseEvent('content_block_delta', {
-                type: 'content_block_delta',
-                index: blockIndex,
-                delta: { type: 'text_delta', text: delta.reasoning_content },
-              })));
-            } else if (delta.content) {
-              if (startedReasoning) {
-                startedReasoning = false;
+              } else if (delta.content) {
+                if (startedReasoning) {
+                  startedReasoning = false;
+                  controller.enqueue(encoder.encode(sseEvent('content_block_delta', {
+                    type: 'content_block_delta',
+                    index: blockIndex,
+                    delta: { type: 'text_delta', text: '\n</thinking>\n\n' },
+                  })));
+                }
                 controller.enqueue(encoder.encode(sseEvent('content_block_delta', {
                   type: 'content_block_delta',
                   index: blockIndex,
-                  delta: { type: 'text_delta', text: '\n</thinking>\n\n' },
+                  delta: { type: 'text_delta', text: delta.content },
                 })));
               }
-              controller.enqueue(encoder.encode(sseEvent('content_block_delta', {
-                type: 'content_block_delta',
-                index: blockIndex,
-                delta: { type: 'text_delta', text: delta.content },
-              })));
             }
           }
 
@@ -259,7 +306,8 @@ export function createOpenAIToAnthropicStreamTransformer(model: string, messageI
               controller.enqueue(encoder.encode(sseEvent('content_block_stop', { type: 'content_block_stop', index: blockIndex })));
               blockStarted = false;
             }
-            const stopReason = finishReason === 'stop' ? 'end_turn'
+            const stopReason = finishReason === 'tool_calls' ? 'tool_use'
+              : finishReason === 'stop' ? 'end_turn'
               : finishReason === 'length' ? 'max_tokens'
               : 'end_turn';
             controller.enqueue(encoder.encode(sseEvent('message_delta', {
@@ -295,8 +343,10 @@ export function createOpenAIToAnthropicStreamTransformer(model: string, messageI
 export async function finalizeOpenAIToAnthropicResponse(openaiRes: Response, model: string, messageId: string): Promise<Response> {
   const data = await openaiRes.json();
   const choice = data.choices?.[0];
-  const content = choice?.message?.content || '';
-  const reasoning = choice?.message?.reasoning_content || '';
+  const message = choice?.message;
+  const content = message?.content || '';
+  const reasoning = message?.reasoning_content || '';
+  const toolCalls = message?.tool_calls;
 
   const finalContent: any[] = [];
   if (reasoning) {
@@ -311,7 +361,19 @@ export async function finalizeOpenAIToAnthropicResponse(openaiRes: Response, mod
     });
   }
 
-  const stopReason = choice?.finish_reason === 'stop' ? 'end_turn'
+  if (Array.isArray(toolCalls)) {
+    for (const tc of toolCalls) {
+      finalContent.push({
+        type: 'tool_use',
+        id: tc.id,
+        name: tc.function.name,
+        input: typeof tc.function.arguments === 'string' ? JSON.parse(tc.function.arguments || '{}') : (tc.function.arguments || {})
+      });
+    }
+  }
+
+  const stopReason = choice?.finish_reason === 'tool_calls' ? 'tool_use'
+    : choice?.finish_reason === 'stop' ? 'end_turn'
     : choice?.finish_reason === 'length' ? 'max_tokens'
     : 'end_turn';
 
