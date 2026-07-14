@@ -25,6 +25,7 @@ import { copilotModelRegistry, loadModelSpecOverrides } from './config/model-spe
 import { getGitHubProfile } from './auth/token-exchange';
 import { startDeviceFlow, pollDeviceFlow } from './auth/device-flow';
 import { CopilotExecutor } from './upstream/executor';
+import { loadCopilotConfig, getCopilotConfig, updateCopilotConfig } from './config/provider-config';
 import { mapAnthropicToOpenAI, createOpenAIToAnthropicStreamTransformer, finalizeOpenAIToAnthropicResponse } from './mappers/anthropic';
 import { createOpenAIStreamTransformer, finalizeOpenAIResponse } from './mappers/openai';
 
@@ -33,6 +34,7 @@ export class CopilotProvider implements IProvider {
   readonly displayName = 'GitHub Copilot';
 
   async init(): Promise<void> {
+    await loadCopilotConfig();
     await loadModelSpecOverrides();
     await initManager();
   }
@@ -162,11 +164,12 @@ export class CopilotProvider implements IProvider {
   }
 
   getConfig(): any {
-    return {};
+    return getCopilotConfig();
   }
 
   async updateConfig(updates: any): Promise<any> {
-    return {};
+    await updateCopilotConfig(updates);
+    return getCopilotConfig();
   }
 
   async resetAllAccounts(): Promise<void> {

@@ -3,6 +3,7 @@ import { type CopilotAccount } from '../auth/types';
 import { getBestAccount, updateAccountUsage, markCooldown } from '../auth/manager';
 import { getCopilotHeaders } from './headers';
 import { getProxyConfig } from '@/config/manager';
+import { getCopilotConfig } from '../config/provider-config';
 
 export interface CopilotExecuteOptions {
   body: any;
@@ -52,6 +53,14 @@ export class CopilotExecutor {
       };
 
       try {
+        const copilotConfig = getCopilotConfig();
+        if (copilotConfig.features.jitterEnabled) {
+          const jitterMs =
+            copilotConfig.features.jitterMinMs +
+            Math.random() * (copilotConfig.features.jitterMaxMs - copilotConfig.features.jitterMinMs);
+          await new Promise((resolve) => setTimeout(resolve, jitterMs));
+        }
+
         const response = await fetch('https://api.githubcopilot.com/chat/completions', {
           method: 'POST',
           headers: getCopilotHeaders(account.sessionToken),
