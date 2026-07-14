@@ -23,57 +23,46 @@ export function CopilotAccountsTab({ accounts, refreshQueries }: Props) {
   const [pastedUrl, setPastedUrl] = useState('');
   const [isAuthenticating, setIsAuthenticating] = useState(false);
 
-  const pollIntervalRef = useRef<any>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
 
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(null), 3000);
   };
 
-  const cleanPoll = () => {
-    if (pollIntervalRef.current) {
-      clearInterval(pollIntervalRef.current);
-      pollIntervalRef.current = null;
-    }
-  };
-
   const handleCloseAuthModal = () => {
-    cleanPoll();
     setShowAuthModal(false);
     setDeviceFlowData(null);
     setAuthError(null);
     setPastedUrl('');
   };
 
-  useEffect(() => {
-    if (deviceFlowData && showAuthModal) {
-      cleanPoll();
+  const handleVerifyDeviceLogin = async () => {
+    if (!deviceFlowData) return;
+    setIsVerifying(true);
+    setAuthError(null);
 
-      const intervalSec = deviceFlowData.interval || 5;
-      pollIntervalRef.current = setInterval(async () => {
-        try {
-          const res = await api.get<{ status: string; error?: string; account?: any }>(
-            `/api/providers/copilot/device-status?device_code=${deviceFlowData.device_code}`
-          );
+    try {
+      const res = await api.get<{ status: string; error?: string; account?: any }>(
+        `/api/providers/copilot/device-status?device_code=${deviceFlowData.device_code}`
+      );
 
-          if (res?.status === 'success') {
-            cleanPoll();
-            showToast(`Account ${res.account?.email || ''} added successfully!`);
-            setShowAuthModal(false);
-            setDeviceFlowData(null);
-            refreshQueries();
-          } else if (res?.status === 'error') {
-            cleanPoll();
-            setAuthError(res.error || 'Device flow expired or failed.');
-          }
-        } catch (err: any) {
-          console.warn('Polling error:', err);
-        }
-      }, intervalSec * 1000);
+      if (res?.status === 'success') {
+        showToast(`Account ${res.account?.email || ''} added successfully!`);
+        setShowAuthModal(false);
+        setDeviceFlowData(null);
+        refreshQueries();
+      } else if (res?.status === 'pending') {
+        setAuthError('Authentication is still pending on GitHub. Please make sure you have approved the activation code in your browser first.');
+      } else {
+        setAuthError(res.error || 'Device flow expired or failed.');
+      }
+    } catch (err: any) {
+      setAuthError(err.message || 'Failed to verify authentication.');
+    } finally {
+      setIsVerifying(false);
     }
-
-    return () => cleanPoll();
-  }, [deviceFlowData, showAuthModal]);
+  };
 
   const handleOpenAuthModal = async () => {
     try {
@@ -242,10 +231,18 @@ export function CopilotAccountsTab({ accounts, refreshQueries }: Props) {
                   Click the button above and paste the activation code.
                 </p>
 
-                <div className="flex items-center justify-center gap-2 pt-2 text-[11px] font-semibold text-primary">
-                  <span className="loading loading-spinner loading-xs" />
-                  <span>Waiting for authorization...</span>
-                </div>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-secondary rounded-xl font-bold w-full gap-1.5 flex items-center justify-center shadow mt-2"
+                  onClick={handleVerifyDeviceLogin}
+                  disabled={isVerifying}
+                >
+                  {isVerifying ? (
+                    <span className="loading loading-spinner loading-xs" />
+                  ) : (
+                    '2. Verify Activation'
+                  )}
+                </button>
               </div>
             )}
 
