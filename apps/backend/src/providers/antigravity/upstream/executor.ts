@@ -225,13 +225,16 @@ export class AntigravityExecutor {
       inPlaceRetry = false;
 
       if (!account || !account.accessToken) {
-        if (attempts < maxAttempts) {
-          console.log(`[Switch] Exhausted all accounts in ${pool} pool, retrying...`);
-          triedEmails.length = 0;
+          // Reset triedEmails once to give all accounts a second chance,
+          // but only if we haven't already done a full second pass.
+          if (triedEmails.length > 0 && attempts < maxAttempts) {
+            console.log(`[Switch] Exhausted all accounts in ${pool} pool, retrying once from start...`);
+            triedEmails.length = 0;
+          } else {
+            break;
+          }
           continue;
         }
-        break;
-      }
 
       const googleUrl = selectGoogleUrl(endpoints, useCliPool, attempts, isClaudeModel);
       if (lastStatus === 503) {
@@ -422,7 +425,9 @@ export class AntigravityExecutor {
               `[Schema] Detected tool schema error for ${account.email}, retrying with aggressive cleaning...`,
             );
             aggressive = true;
-            attempts--;
+            // Do NOT decrement attempts — we still consumed one attempt slot.
+            // Just retry in-place with the same account and aggressive=true.
+            inPlaceRetry = true;
             continue;
           }
 
@@ -430,6 +435,25 @@ export class AntigravityExecutor {
           await updateAccountUsage(account.email, false, modelId, pool, options.clientId, status);
           if (status === 429) {
             markCooldown(account.email, pool, getFamilyName(modelId));
+          }
+          // For non-retryable 400 errors (bad request that won't change across accounts), break immediately.
+          if (status === 400) {
+            console.error(`[Error] Non-retryable 400 error, breaking retry loop.`);
+            return {
+              response: createJsonResponse(
+                {
+                  error: {
+                    message: `Bad request: ${parsedError.message || parsedError.reason}`,
+                    type: "invalid_request_error",
+                    code: "bad_request",
+                  },
+                },
+                400,
+                attempts,
+              ),
+              accountId: account.email,
+              attempts,
+            };
           }
           continue;
         }

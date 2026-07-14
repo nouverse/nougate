@@ -460,10 +460,12 @@ function buildGoogleContents(
   googleModel: string,
   sessionId: string | undefined,
   keepThinking: boolean,
+  isThinking?: boolean,
 ): any[] {
   const toolCallNameMap = buildToolCallNameMap(messages);
   const currentTurnStartIndex = findCurrentTurnStartIndex(messages);
-  const thinkingEnabled = googleModel.includes("thinking");
+  // Use modelSpec.isThinking when available; fall back to name-based check for backward compat
+  const thinkingEnabled = isThinking ?? googleModel.includes("thinking");
   const unsignedCallIds = collectUnsignedCallIds(messages, thinkingEnabled);
   const toolResponseMap = buildToolResponseMap(messages, unsignedCallIds, toolCallNameMap);
 
@@ -634,7 +636,7 @@ export function mapOpenAIToGoogle(
   const isCliPool = modelSpec.useCliPool ?? modelSpec.pool === "cli";
   const systemMessage = (openaiBody.messages || []).find((message: any) => message.role === "system");
   const otherMessages = (openaiBody.messages || []).filter((message: any) => message.role !== "system");
-  const contents = buildGoogleContents(otherMessages, googleModel, sessionId, keepThinking);
+  const contents = buildGoogleContents(otherMessages, googleModel, sessionId, keepThinking, modelSpec.isThinking);
   const explicitThinkingBudget =
     openaiBody.thinking_budget !== undefined ||
     openaiBody.thinking?.budget_tokens !== undefined ||

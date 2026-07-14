@@ -492,10 +492,12 @@ function buildGoogleContents(
   googleModel: string,
   sessionId: string | undefined,
   keepThinking: boolean,
+  isThinking?: boolean,
 ): any[] {
   const nameMap = buildToolUseNameMap(messages);
   const currentTurnStartIndex = findCurrentTurnStartIndex(messages);
-  const thinkingEnabled = googleModel.includes("thinking");
+  // Use modelSpec.isThinking when available; fall back to name-based check for backward compat
+  const thinkingEnabled = isThinking ?? googleModel.includes("thinking");
   const unsignedIds = collectUnsignedToolUseIds(messages, thinkingEnabled);
   const resultMap = buildToolResultMap(messages, unsignedIds, nameMap);
 
@@ -641,7 +643,7 @@ export function mapAnthropicToGoogle(
   const isCliPool = modelSpec.useCliPool ?? modelSpec.pool === "cli";
 
   const systemText = extractSystemText(body.system);
-  const contents = buildGoogleContents(body.messages, googleModel, sessionId, keepThinking);
+  const contents = buildGoogleContents(body.messages, googleModel, sessionId, keepThinking, modelSpec.isThinking);
 
   const explicitThinking =
     body.thinking?.type === "enabled" && body.thinking.budget_tokens !== undefined;
