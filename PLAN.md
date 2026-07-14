@@ -144,13 +144,13 @@ Dokumen ini menjelaskan rencana implementasi untuk mengintegrasikan **GitHub Cop
 ### Phase 4: Model Registry
 - [x] Implement `config/model-specs.ts` dengan model mapping:
   ```
-  copilot:gpt-4o          → gpt-4o (pool: cli)
-  copilot:gpt-4.1         → gpt-4.1 (pool: cli)
-  copilot:claude-sonnet-4 → claude-sonnet-4 (pool: cli)
-  copilot:claude-3.5-sonnet → claude-3.5-sonnet (pool: cli)
-  copilot:gemini-2.5-pro  → gemini-2.5-pro (pool: cli)
-  copilot:o3              → o3 (pool: cli, thinking: true)
-  copilot:o4-mini         → o4-mini (pool: cli, thinking: true)
+  copilot:gpt-4o            → gpt-4o (pool: cli)
+  copilot:gpt-4.1           → gpt-4.1 (pool: cli)
+  copilot:gpt-5-mini        → gpt-5-mini (pool: cli)
+  copilot:claude-sonnet-4.5 → claude-sonnet-4.5 (pool: cli)
+  copilot:claude-opus-4.5   → claude-opus-4.5 (pool: cli)
+  copilot:claude-opus-4.6   → claude-opus-4.6 (pool: cli)
+  copilot:gemini-2.5-pro    → gemini-2.5-pro (pool: cli)
   ```
   > Note: Model list bisa berubah seiring update Copilot. Fetch dari `/models` endpoint jika memungkinkan.
 
@@ -167,14 +167,14 @@ Dokumen ini menjelaskan rencana implementasi untuk mengintegrasikan **GitHub Cop
 - [x] Pastikan `model-resolver` bisa resolve prefix `copilot:` dengan benar.
 
 ### Phase 6: Testing & Verifikasi
-- [ ] Integration test: kirim request dengan model `copilot:gpt-4o` dan verifikasi response stream.
-- [ ] Test token exchange lifecycle: fresh token → cache → expiry → auto-refresh.
-- [ ] Test error scenarios:
+- [x] Integration test: kirim request dengan model `copilot:gpt-4o` dan verifikasi response stream.
+- [x] Test token exchange lifecycle: fresh token → cache → expiry → auto-refresh.
+- [x] Test error scenarios:
   - Token invalid (401) → account marked invalid.
   - Rate limit (429) → cooldown triggered, rotate ke akun lain.
   - Session token expired mid-request → re-exchange dan retry.
-- [ ] Test device flow end-to-end dari dashboard.
-- [ ] Verifikasi format SSE output kompatibel dengan OpenClaw/client.
+- [x] Test device flow end-to-end dari dashboard.
+- [x] Verifikasi format SSE output kompatibel dengan OpenClaw/client.
 
 ---
 
