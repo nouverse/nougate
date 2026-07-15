@@ -6,6 +6,7 @@ import {
 import type { IProtocolHandler } from "@/core/interfaces";
 import type { RequestContext } from "@/core/request-context";
 import { compressPayload } from "@/core/compressor";
+import { applyRtk } from "@/core/rtk";
 
 /**
  * Build a JSON response with the shared OpenAI proxy headers.
@@ -131,8 +132,11 @@ export class OpenAIProtocolHandler implements IProtocolHandler {
       );
     }
 
+    // RTK: compress tool_result content inline (fast, no network)
+    const rtkBody = applyRtk(openaiBody);
+
     // Compress payload if Headroom is enabled
-    const compressedBody = await compressPayload(openaiBody);
+    const compressedBody = await compressPayload(rtkBody);
 
     // Delegate upstream execution dynamically to the resolved provider
     return ctx.provider.execute({

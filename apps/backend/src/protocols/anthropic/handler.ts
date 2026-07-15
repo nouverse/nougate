@@ -6,6 +6,7 @@ import {
 import type { IProtocolHandler } from "@/core/interfaces";
 import type { RequestContext } from "@/core/request-context";
 import { compressPayload } from "@/core/compressor";
+import { applyRtk } from "@/core/rtk";
 
 /**
  * Build a JSON response with the shared CORS and proxy headers.
@@ -99,8 +100,11 @@ export class AnthropicProtocolHandler implements IProtocolHandler {
       return createErrorResponse(`Unknown model "${anthropicBody.model}"`, "invalid_request_error", 400);
     }
 
+    // RTK: compress tool_result content inline (fast, no network)
+    const rtkBody = applyRtk(anthropicBody);
+
     // Compress payload if Headroom is enabled
-    const compressedBody = await compressPayload(anthropicBody);
+    const compressedBody = await compressPayload(rtkBody);
 
     // Delegate upstream execution dynamically to the resolved provider
     return ctx.provider.execute({

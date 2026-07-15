@@ -61,6 +61,15 @@ function ConfigPage() {
         enabled: formData.get('headroom.enabled') === 'on',
         url: (formData.get('headroom.url') as string) || undefined,
         timeoutMs: parseInt(formData.get('headroom.timeoutMs') as string, 10) || 5000,
+      },
+      rtk: {
+        ...config.rtk,
+        enabled: formData.get('rtk.enabled') === 'on',
+      },
+      caveman: {
+        ...config.caveman,
+        enabled: formData.get('caveman.enabled') === 'on',
+        level: parseInt(formData.get('caveman.level') as string, 10) || 3,
       }
     };
 
@@ -254,52 +263,120 @@ function ConfigPage() {
             <div className="card-body p-5 space-y-4">
               <h3 className="card-title text-sm font-bold tracking-wide flex items-center gap-2">
                 <Zap className="w-4 h-4 text-warning" />
-                HEADROOM COMPRESSION
+                TOKEN COMPRESSION
               </h3>
               <p className="text-xs text-base-content/60 -mt-2">
-                Enable token compression via Headroom service to reduce input token usage.
-                Service URL is auto-configured from docker-compose (HEADROOM_URL env).
+                Reduce token usage with RTK (tool result compression), Headroom (semantic compression), and Caveman (terse output).
               </p>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="form-control w-full">
-                  <label className="label cursor-pointer justify-start gap-3">
+              {/* RTK */}
+              <div className="border border-base-300 rounded-lg p-3 space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="badge badge-sm badge-success font-bold">RTK</span>
+                  <span className="text-xs text-base-content/70">Tool Result Compression — lossless, inline, zero overhead</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="form-control w-full">
+                    <label className="label cursor-pointer justify-start gap-3">
+                      <input
+                        type="checkbox"
+                        name="rtk.enabled"
+                        className="toggle toggle-sm toggle-success"
+                        defaultChecked={config.rtk?.enabled ?? true}
+                      />
+                      <span className="label-text font-semibold text-xs text-base-content/75">Enable RTK</span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Headroom */}
+              <div className="border border-base-300 rounded-lg p-3 space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="badge badge-sm badge-primary font-bold">Headroom</span>
+                  <span className="text-xs text-base-content/70">Semantic compression via external service</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="form-control w-full">
+                    <label className="label cursor-pointer justify-start gap-3">
+                      <input
+                        type="checkbox"
+                        name="headroom.enabled"
+                        className="toggle toggle-sm toggle-primary"
+                        defaultChecked={config.headroom?.enabled ?? false}
+                      />
+                      <span className="label-text font-semibold text-xs text-base-content/75">Enable Headroom</span>
+                    </label>
+                  </div>
+
+                  <div className="form-control w-full">
+                    <label className="label">
+                      <span className="label-text font-semibold text-xs text-base-content/75">Service URL</span>
+                    </label>
                     <input
-                      type="checkbox"
-                      name="headroom.enabled"
-                      className="toggle toggle-sm toggle-primary"
-                      defaultChecked={config.headroom?.enabled ?? false}
+                      type="text"
+                      name="headroom.url"
+                      placeholder="http://headroom:8787"
+                      className="input input-bordered input-sm w-full bg-base-100 font-mono text-xs"
+                      defaultValue={config.headroom?.url || ''}
                     />
-                    <span className="label-text font-semibold text-xs text-base-content/75">Enable Compression</span>
-                  </label>
-                </div>
+                    <label className="label">
+                      <span className="label-text-alt text-[10px] text-base-content/50">Auto-detected from HEADROOM_URL env</span>
+                    </label>
+                  </div>
 
-                <div className="form-control w-full">
-                  <label className="label">
-                    <span className="label-text font-semibold text-xs text-base-content/75">Service URL (optional)</span>
-                  </label>
-                  <input
-                    type="text"
-                    name="headroom.url"
-                    placeholder="http://headroom:8787 (from docker)"
-                    className="input input-bordered input-sm w-full bg-base-100 font-mono text-xs"
-                    defaultValue={config.headroom?.url || ''}
-                  />
-                  <label className="label">
-                    <span className="label-text-alt text-[10px] text-base-content/50">Auto-detected from HEADROOM_URL env (docker-compose)</span>
-                  </label>
+                  <div className="form-control w-full">
+                    <label className="label">
+                      <span className="label-text font-semibold text-xs text-base-content/75">Base Timeout (ms)</span>
+                    </label>
+                    <input
+                      type="number"
+                      name="headroom.timeoutMs"
+                      className="input input-bordered input-sm w-full bg-base-100 font-mono text-xs"
+                      defaultValue={config.headroom?.timeoutMs ?? 5000}
+                    />
+                    <label className="label">
+                      <span className="label-text-alt text-[10px] text-base-content/50">Adaptive: scales up with message count</span>
+                    </label>
+                  </div>
                 </div>
+              </div>
 
-                <div className="form-control w-full">
-                  <label className="label">
-                    <span className="label-text font-semibold text-xs text-base-content/75">Timeout (ms)</span>
-                  </label>
-                  <input
-                    type="number"
-                    name="headroom.timeoutMs"
-                    className="input input-bordered input-sm w-full bg-base-100 font-mono text-xs"
-                    defaultValue={config.headroom?.timeoutMs ?? 5000}
-                  />
+              {/* Caveman */}
+              <div className="border border-base-300 rounded-lg p-3 space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="badge badge-sm badge-warning font-bold">Caveman</span>
+                  <span className="text-xs text-base-content/70">Terse output mode — reduce output tokens</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="form-control w-full">
+                    <label className="label cursor-pointer justify-start gap-3">
+                      <input
+                        type="checkbox"
+                        name="caveman.enabled"
+                        className="toggle toggle-sm toggle-warning"
+                        defaultChecked={config.caveman?.enabled ?? false}
+                      />
+                      <span className="label-text font-semibold text-xs text-base-content/75">Enable Caveman</span>
+                    </label>
+                  </div>
+
+                  <div className="form-control w-full">
+                    <label className="label">
+                      <span className="label-text font-semibold text-xs text-base-content/75">Intensity Level (1-5)</span>
+                    </label>
+                    <select
+                      name="caveman.level"
+                      className="select select-bordered select-sm w-full bg-base-100 text-xs"
+                      defaultValue={config.caveman?.level ?? 3}
+                    >
+                      <option value="1">1 — Mild (concise)</option>
+                      <option value="2">2 — Moderate (short sentences)</option>
+                      <option value="3">3 — Strong (telegraphic)</option>
+                      <option value="4">4 — Extreme (bullet points)</option>
+                      <option value="5">5 — Maximum (raw output only)</option>
+                    </select>
+                  </div>
                 </div>
               </div>
             </div>

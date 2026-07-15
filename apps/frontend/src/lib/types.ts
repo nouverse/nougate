@@ -57,6 +57,18 @@ export interface ProxyConfig {
   endpoints?: Record<string, any>;
   features?: Record<string, any>;
   scheduling?: Record<string, any>;
+  headroom?: {
+    enabled?: boolean;
+    url?: string;
+    timeoutMs?: number;
+  };
+  rtk?: {
+    enabled?: boolean;
+  };
+  caveman?: {
+    enabled?: boolean;
+    level?: number;
+  };
   [key: string]: any;
 }
 

@@ -1,4 +1,5 @@
 import { type IModelSpec } from '@/core/interfaces';
+import { getCavemanPrompt } from '@/core/caveman';
 
 export function mapAnthropicToOpenAI(anthropicBody: any, upstreamModelId: string) {
   const messages: any[] = [];
@@ -17,6 +18,14 @@ export function mapAnthropicToOpenAI(anthropicBody: any, upstreamModelId: string
         .join('\n');
       messages.push({ role: 'system', content });
     }
+  }
+
+  // Caveman mode: inject terse-style prompt
+  const cavemanPrefix = getCavemanPrompt();
+  if (cavemanPrefix && messages.length > 0 && messages[0].role === 'system') {
+    messages[0].content = `${cavemanPrefix}\n\n${messages[0].content}`;
+  } else if (cavemanPrefix) {
+    messages.unshift({ role: 'system', content: cavemanPrefix });
   }
 
   // 2. Map chat messages

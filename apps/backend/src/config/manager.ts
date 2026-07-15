@@ -57,6 +57,13 @@ const DEFAULT_CONFIG: ProxyConfig = {
     enabled: false,
     url: process.env.HEADROOM_URL || undefined,
     timeoutMs: 5000
+  },
+  caveman: {
+    enabled: false,
+    level: 3
+  },
+  rtk: {
+    enabled: true
   }
 };
 

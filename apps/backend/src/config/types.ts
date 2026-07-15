@@ -7,6 +7,8 @@ export interface ProxyConfig {
   tokens: TokensConfig;
   logging: LoggingConfig;
   headroom?: HeadroomConfig;
+  caveman?: CavemanConfig;
+  rtk?: RtkConfig;
 }
 
 export interface RotationConfig {
@@ -56,4 +58,14 @@ export interface HeadroomConfig {
   enabled: boolean;
   url?: string;
   timeoutMs?: number;
+}
+
+export interface CavemanConfig {
+  enabled: boolean;
+  /** Intensity level: 1 (mild) to 5 (extreme) */
+  level: number;
+}
+
+export interface RtkConfig {
+  enabled: boolean;
 }

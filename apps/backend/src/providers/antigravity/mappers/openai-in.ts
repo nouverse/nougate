@@ -2,6 +2,7 @@ import type { IModelSpec } from "@/core/interfaces";
 import { getSignature, getSignatureByCallId, getSignatureFamily } from "@/providers/antigravity/utils/signature-cache";
 import { cleanJSONSchemaForAntigravity } from "@/providers/antigravity/utils/schema";
 import { getFamilyName } from "@/providers/antigravity/auth/manager";
+import { getCavemanPrompt } from "@/core/caveman";
 
 /**
  * Provider-injected configuration for the OpenAI mapper.
@@ -579,19 +580,25 @@ function buildSystemInstruction(openaiBody: any, isCliPool: boolean, instruction
     return undefined;
   }
 
+  const cavemanPrefix = getCavemanPrompt();
+  let systemText = getMessageText(systemMessage.content);
+  if (cavemanPrefix) {
+    systemText = `${cavemanPrefix}\n\n${systemText}`;
+  }
+
   if (!isCliPool && instructionPrefix) {
     return {
       role: "user",
       parts: [
         {
-          text: `${instructionPrefix}\n\n${getMessageText(systemMessage.content)}`.trim(),
+          text: `${instructionPrefix}\n\n${systemText}`.trim(),
         },
       ],
     };
   }
 
   return {
-    parts: [{ text: getMessageText(systemMessage.content) }],
+    parts: [{ text: systemText }],
   };
 }
 

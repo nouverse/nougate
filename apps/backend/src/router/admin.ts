@@ -49,7 +49,7 @@ function splitConfigUpdates(updates: any) {
   const proxyUpdates: any = {};
   const providerUpdates: any = {};
 
-  for (const key of ["rotation", "scoring", "retry", "tokens", "logging", "headroom"]) {
+  for (const key of ["rotation", "scoring", "retry", "tokens", "logging", "headroom", "caveman"]) {
     if (key in updates) {
       proxyUpdates[key] = updates[key];
     }

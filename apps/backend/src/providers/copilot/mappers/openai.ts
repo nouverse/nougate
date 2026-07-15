@@ -1,3 +1,5 @@
+import { getCavemanPrompt } from '@/core/caveman';
+
 export function mapOpenAIToCopilot(openaiBody: any, upstreamModelId: string) {
   const allowedKeys = [
     'messages',
@@ -20,6 +22,17 @@ export function mapOpenAIToCopilot(openaiBody: any, upstreamModelId: string) {
   for (const key of allowedKeys) {
     if (key in openaiBody && openaiBody[key] !== undefined) {
       sanitizedBody[key] = openaiBody[key];
+    }
+  }
+
+  // Caveman mode: inject terse-style prompt
+  const cavemanPrefix = getCavemanPrompt();
+  if (cavemanPrefix && Array.isArray(sanitizedBody.messages)) {
+    const firstMsg = sanitizedBody.messages[0];
+    if (firstMsg && firstMsg.role === 'system') {
+      firstMsg.content = `${cavemanPrefix}\n\n${firstMsg.content}`;
+    } else {
+      sanitizedBody.messages.unshift({ role: 'system', content: cavemanPrefix });
     }
   }
 

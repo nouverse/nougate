@@ -1,5 +1,6 @@
 import type { IModelSpec } from "@/core/interfaces";
 import { getSignature, getSignatureByCallId, getSignatureFamily } from "@/providers/antigravity/utils/signature-cache";
+import { getCavemanPrompt } from "@/core/caveman";
 import { cleanJSONSchemaForAntigravity } from "@/providers/antigravity/utils/schema";
 import { getFamilyName } from "@/providers/antigravity/auth/manager";
 
@@ -672,7 +673,9 @@ export function mapAnthropicToGoogle(
   const googleModel = modelSpec.upstreamModelId ?? modelSpec.modelId;
   const isCliPool = modelSpec.useCliPool ?? modelSpec.pool === "cli";
 
-  const systemText = extractSystemText(body.system);
+  const cavemanPrefix = getCavemanPrompt();
+  const rawSystemText = extractSystemText(body.system);
+  const systemText = cavemanPrefix ? `${cavemanPrefix}\n\n${rawSystemText}` : rawSystemText;
   const contents = buildGoogleContents(body.messages, googleModel, sessionId, keepThinking, modelSpec.isThinking);
 
   const explicitThinking =
