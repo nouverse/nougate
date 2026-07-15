@@ -576,14 +576,19 @@ function buildGoogleContents(
  */
 function buildSystemInstruction(openaiBody: any, isCliPool: boolean, instructionPrefix?: string): any {
   const systemMessage = (openaiBody.messages || []).find((message: any) => message.role === "system");
-  if (!systemMessage) {
+  const cavemanPrefix = getCavemanPrompt();
+
+  if (!systemMessage && !cavemanPrefix) {
     return undefined;
   }
 
-  const cavemanPrefix = getCavemanPrompt();
-  let systemText = getMessageText(systemMessage.content);
+  let systemText = systemMessage ? getMessageText(systemMessage.content) : '';
   if (cavemanPrefix) {
-    systemText = `${cavemanPrefix}\n\n${systemText}`;
+    systemText = systemText ? `${cavemanPrefix}\n\n${systemText}` : cavemanPrefix;
+  }
+
+  if (!systemText) {
+    return undefined;
   }
 
   if (!isCliPool && instructionPrefix) {
