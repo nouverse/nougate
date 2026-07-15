@@ -21,7 +21,16 @@ export async function compressPayload(body: any): Promise<any> {
     return body;
   }
 
-  const timeoutMs = config.headroom.timeoutMs ?? 5000;
+  const messageCount = body.messages?.length ?? 0;
+
+  // Skip compression for small payloads — not worth the overhead
+  if (messageCount <= 2 && !body.tools) {
+    return body;
+  }
+
+  // Adaptive timeout: base + extra per message (large payloads need more time)
+  const baseTimeoutMs = config.headroom.timeoutMs ?? 5000;
+  const timeoutMs = Math.min(baseTimeoutMs + Math.max(0, messageCount - 5) * 500, 15000);
   
   console.log('[Compressor] Sending payload to Headroom:', {
     url: `${headroomUrl}/v1/compress`,
