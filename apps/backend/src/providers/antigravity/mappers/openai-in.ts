@@ -230,8 +230,14 @@ function buildToolResponseParts(
   isInCurrentTurn: boolean,
   unsignedCallIds: Set<string>,
   toolCallNameMap: Map<string, string>,
+  keepThinking: boolean,
 ): any[] {
   if (unsignedCallIds.size > 0 && unsignedCallIds.has(message.tool_call_id) && !isInCurrentTurn) {
+    return [{ text: "." }];
+  }
+
+  // Current-turn tool response for an unsigned call — skip as functionResponse
+  if (isInCurrentTurn && keepThinking && !getSignatureByCallId(message.tool_call_id)) {
     return [{ text: "." }];
   }
 
@@ -342,8 +348,9 @@ function appendToolCallParts(params: {
   isInCurrentTurn: boolean;
   unsignedCallIds: Set<string>;
   toolResponseMap: Map<string, { name: string; content: string }>;
+  keepThinking: boolean;
 }): void {
-  const { parts, message, googleModel, isInCurrentTurn, unsignedCallIds, toolResponseMap } =
+  const { parts, message, googleModel, isInCurrentTurn, unsignedCallIds, toolResponseMap, keepThinking } =
     params;
   let isFirstFunctionCallInStep = true;
 
@@ -407,6 +414,31 @@ function appendToolCallParts(params: {
       if (signature) {
         functionPart.thoughtSignature = signature;
         functionPart.thought_signature = signature;
+      } else if (keepThinking) {
+        // No signature available — fall back to text summary to avoid Google 400 error
+        console.log(
+          `[Signature] Current-turn tool_call ${cleanId} (${toolCall.function.name}) has no cached signature, converting to text summary`,
+        );
+        let argsString: string;
+        try {
+          argsString = typeof toolCall.function.arguments === "string"
+            ? toolCall.function.arguments
+            : JSON.stringify(toolCall.function.arguments ?? {});
+        } catch {
+          argsString = "{}";
+        }
+        if (argsString.length > 300) {
+          argsString = `${argsString.substring(0, 300)}...`;
+        }
+
+        let summary = `[Tool Call: ${toolCall.function.name}(${argsString})]`;
+        const response = toolResponseMap.get(toolCall.id) || toolResponseMap.get(cleanId);
+        if (response) {
+          summary += `\n[Tool Result: ${response.content}]`;
+        }
+        parts.push({ text: summary });
+        isFirstFunctionCallInStep = false;
+        continue;
       }
       isFirstFunctionCallInStep = false;
     }
@@ -443,6 +475,7 @@ function buildStandardParts(params: {
     isInCurrentTurn,
     unsignedCallIds,
     toolResponseMap,
+    keepThinking,
   });
 
   if (parts.length === 0) {
@@ -479,6 +512,7 @@ function buildGoogleContents(
             isInCurrentTurn,
             unsignedCallIds,
             toolCallNameMap,
+            keepThinking,
           )
         : buildStandardParts({
             message,

@@ -246,10 +246,11 @@ function buildToolResultMap(
   messages: AnthropicMessage[],
   unsignedIds: Set<string>,
   nameMap: Map<string, string>,
+  includeAll = false,
 ): Map<string, { name: string; content: string }> {
   const resultMap = new Map<string, { name: string; content: string }>();
 
-  if (unsignedIds.size === 0) {
+  if (!includeAll && unsignedIds.size === 0) {
     return resultMap;
   }
 
@@ -356,6 +357,28 @@ function transformContentBlock(
         if (signature) {
           functionPart.thoughtSignature = signature;
           functionPart.thought_signature = signature;
+        } else if (keepThinking) {
+          // No signature available — fall back to text summary to avoid Google 400 error
+          console.log(
+            `[Signature] Current-turn tool_use ${block.id} (${block.name}) has no cached signature, converting to text summary`,
+          );
+          let argsString: string;
+          try {
+            argsString = JSON.stringify(block.input ?? {});
+          } catch {
+            argsString = "{}";
+          }
+          if (argsString.length > 300) {
+            argsString = `${argsString.substring(0, 300)}...`;
+          }
+
+          let summary = `[Tool Call: ${block.name}(${argsString})]`;
+          const response = resultMap.get(block.id);
+          if (response) {
+            summary += `\n[Tool Result: ${response.content}]`;
+          }
+          parts.push({ text: summary });
+          break;
         }
       }
 
@@ -366,6 +389,13 @@ function transformContentBlock(
     case "tool_result": {
       // If unsigned and not in current turn, emit a placeholder
       if (!isInCurrentTurn && unsignedIds.has(block.tool_use_id)) {
+        parts.push({ text: "." });
+        break;
+      }
+
+      // If this tool_result's corresponding tool_use was converted to text summary
+      // in the current turn (no signature), skip emitting a functionResponse
+      if (isInCurrentTurn && keepThinking && !getSignatureByCallId(block.tool_use_id)) {
         parts.push({ text: "." });
         break;
       }
@@ -499,7 +529,7 @@ function buildGoogleContents(
   // Use modelSpec.isThinking when available; fall back to name-based check for backward compat
   const thinkingEnabled = isThinking ?? googleModel.includes("thinking");
   const unsignedIds = collectUnsignedToolUseIds(messages, thinkingEnabled);
-  const resultMap = buildToolResultMap(messages, unsignedIds, nameMap);
+  const resultMap = buildToolResultMap(messages, unsignedIds, nameMap, thinkingEnabled);
 
   const rawContents = messages.map((message, messageIndex) => {
     const isInCurrentTurn = messageIndex >= currentTurnStartIndex;
