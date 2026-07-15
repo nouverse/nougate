@@ -22,7 +22,7 @@
 
 ---
 
-## 2. Built-in RTK (Tool Result Compression)
+## ~~2. Built-in RTK (Tool Result Compression)~~ ✅ Implemented
 
 **What:** Auto-compress `tool_result` content (git diff, grep, ls, tree, file reads) before sending to LLM. Lossless, filter-based.
 
@@ -38,7 +38,7 @@
 
 ---
 
-## 3. Caveman Mode (Terse Output Injection)
+## ~~3. Caveman Mode (Terse Output Injection)~~ ✅ Implemented
 
 **What:** Inject a system prompt that makes LLM reply compact. 5 intensity levels. Claims -65% output tokens.
 
