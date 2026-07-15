@@ -5,6 +5,7 @@ import {
 } from "@/core/model-resolver";
 import type { IProtocolHandler } from "@/core/interfaces";
 import type { RequestContext } from "@/core/request-context";
+import { compressPayload } from "@/core/compressor";
 
 /**
  * Build a JSON response with the shared OpenAI proxy headers.
@@ -130,10 +131,13 @@ export class OpenAIProtocolHandler implements IProtocolHandler {
       );
     }
 
+    // Compress payload if Headroom is enabled
+    const compressedBody = await compressPayload(openaiBody);
+
     // Delegate upstream execution dynamically to the resolved provider
     return ctx.provider.execute({
       protocol: "openai",
-      body: openaiBody,
+      body: compressedBody,
       resolvedModel: ctx.resolvedModel,
       modelSpec,
       ctx,

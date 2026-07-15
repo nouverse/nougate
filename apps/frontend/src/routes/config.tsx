@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useConfig } from '@/hooks/useQueries';
 import { JsonEditor } from '@/components/shared/JsonEditor';
 import { useState } from 'react';
-import { Settings, Code, ShieldCheck } from 'lucide-react';
+import { Settings, Code, ShieldCheck, Zap } from 'lucide-react';
 
 export const Route = createFileRoute('/config')({
   component: ConfigPage,
@@ -55,6 +55,12 @@ function ConfigPage() {
       logging: {
         ...config.logging,
         level: formData.get('logging.level') as string,
+      },
+      headroom: {
+        ...config.headroom,
+        enabled: formData.get('headroom.enabled') === 'on',
+        url: (formData.get('headroom.url') as string) || undefined,
+        timeoutMs: parseInt(formData.get('headroom.timeoutMs') as string, 10) || 5000,
       }
     };
 
@@ -239,6 +245,61 @@ function ConfigPage() {
                     <option value="info">Info (Default events)</option>
                     <option value="warn">Warn (Only failures)</option>
                   </select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="card bg-base-200 border border-base-300 shadow-sm">
+            <div className="card-body p-5 space-y-4">
+              <h3 className="card-title text-sm font-bold tracking-wide flex items-center gap-2">
+                <Zap className="w-4 h-4 text-warning" />
+                HEADROOM COMPRESSION (BETA)
+              </h3>
+              <p className="text-xs text-base-content/60 -mt-2">
+                Enable token compression via Headroom service to reduce input token usage.
+                Service URL is auto-configured from docker-compose (HEADROOM_URL env).
+              </p>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="form-control w-full">
+                  <label className="label cursor-pointer justify-start gap-3">
+                    <input
+                      type="checkbox"
+                      name="headroom.enabled"
+                      className="toggle toggle-sm toggle-primary"
+                      defaultChecked={config.headroom?.enabled ?? false}
+                    />
+                    <span className="label-text font-semibold text-xs text-base-content/75">Enable Compression</span>
+                  </label>
+                </div>
+
+                <div className="form-control w-full">
+                  <label className="label">
+                    <span className="label-text font-semibold text-xs text-base-content/75">Service URL (optional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    name="headroom.url"
+                    placeholder="http://headroom:8787 (from docker)"
+                    className="input input-bordered input-sm w-full bg-base-100 font-mono text-xs"
+                    defaultValue={config.headroom?.url || ''}
+                  />
+                  <label className="label">
+                    <span className="label-text-alt text-[10px] text-base-content/50">Auto-detected from HEADROOM_URL env (docker-compose)</span>
+                  </label>
+                </div>
+
+                <div className="form-control w-full">
+                  <label className="label">
+                    <span className="label-text font-semibold text-xs text-base-content/75">Timeout (ms)</span>
+                  </label>
+                  <input
+                    type="number"
+                    name="headroom.timeoutMs"
+                    className="input input-bordered input-sm w-full bg-base-100 font-mono text-xs"
+                    defaultValue={config.headroom?.timeoutMs ?? 5000}
+                  />
                 </div>
               </div>
             </div>
