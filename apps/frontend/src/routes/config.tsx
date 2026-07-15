@@ -33,7 +33,7 @@ function ConfigPage() {
   const handleFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    
+
     const updated = {
       ...config,
       rotation: {
@@ -110,14 +110,14 @@ function ConfigPage() {
       </div>
 
       {activeTab === 'form' ? (
-        <form onSubmit={handleFormSubmit} className="space-y-6 text-base-content">
+        <form onSubmit={handleFormSubmit} className="space-y-6 text-base-content pb-24">
           <div className="card bg-base-200 border border-base-300 shadow-sm">
             <div className="card-body p-5 space-y-4">
               <h3 className="card-title text-sm font-bold tracking-wide flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-primary" />
                 ROTATION & QUOTA SCHEDULING
               </h3>
-              
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="form-control w-full">
                   <label className="label">
@@ -157,7 +157,7 @@ function ConfigPage() {
               <h3 className="card-title text-sm font-bold tracking-wide">
                 SCORING ALGORITHM WEIGHTS
               </h3>
-              
+
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="form-control w-full">
                   <label className="label">
@@ -206,7 +206,7 @@ function ConfigPage() {
               <h3 className="card-title text-sm font-bold tracking-wide">
                 RETRIES & LOGS PARAMETERS
               </h3>
-              
+
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="form-control w-full">
                   <label className="label">
@@ -260,7 +260,7 @@ function ConfigPage() {
                 Enable token compression via Headroom service to reduce input token usage.
                 Service URL is auto-configured from docker-compose (HEADROOM_URL env).
               </p>
-              
+
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="form-control w-full">
                   <label className="label cursor-pointer justify-start gap-3">
