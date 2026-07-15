@@ -3,20 +3,53 @@ import { existsSync, mkdirSync } from "fs";
 
 const MIN_SIGNATURE_LENGTH = 50;
 
+/**
+ * LRU Map: on get(), re-inserts the entry so it moves to the end.
+ * On set(), evicts the oldest (first) entry when capacity is exceeded.
+ * Uses native Map insertion order — zero dependencies.
+ */
+class LRUMap<K, V> extends Map<K, V> {
+  constructor(private capacity: number) {
+    super();
+  }
+
+  get(key: K): V | undefined {
+    const value = super.get(key);
+    if (value !== undefined) {
+      // Move to end (most recently used)
+      super.delete(key);
+      super.set(key, value);
+    }
+    return value;
+  }
+
+  set(key: K, value: V): this {
+    if (super.has(key)) {
+      super.delete(key);
+    }
+    super.set(key, value);
+    if (super.size > this.capacity) {
+      const first = super.keys().next().value;
+      if (first !== undefined) super.delete(first);
+    }
+    return this;
+  }
+}
+
 // Layer 1: Map<conversation_id + thought_text_hash, signature>
-const signatureCache = new Map<string, string>();
+const signatureCache = new LRUMap<string, string>(5_000);
 
 // Layer 1.5: Map<tool_call_id, signature>
-const signatureByCallIdCache = new Map<string, string>();
+const signatureByCallIdCache = new LRUMap<string, string>(50_000);
 
 // Layer 2: Map<signature, modelFamily> (prevent cross-model signature contamination)
-const signatureFamilyCache = new Map<string, string>();
+const signatureFamilyCache = new LRUMap<string, string>(5_000);
 
 // Layer 3: Map<session_id, { signature: string, messageCount: number }>
-const sessionSignatureCache = new Map<string, { signature: string; messageCount: number }>();
+const sessionSignatureCache = new LRUMap<string, { signature: string; messageCount: number }>(5_000);
 
 // Layer 4: Map<session_id, string[]> (assistant reasoning text per turn)
-const sessionReasoningCache = new Map<string, string[]>();
+const sessionReasoningCache = new LRUMap<string, string[]>(5_000);
 
 const CACHE_DIR = existsSync("/app/data")
   ? "/app/data"
@@ -88,11 +121,6 @@ export function cacheSignature(conversationId: string, thought: string, signatur
   if (signature.length < MIN_SIGNATURE_LENGTH) return;
   const key = `${conversationId}:${Bun.hash(thought)}`; 
   signatureCache.set(key, signature);
-  
-  if (signatureCache.size > 1000) {
-    const first = signatureCache.keys().next().value;
-    if (first) signatureCache.delete(first);
-  }
   saveCacheToDisk();
 }
 
@@ -104,10 +132,6 @@ export function getSignature(conversationId: string, thought: string): string | 
 export function cacheSignatureByCallId(callId: string, signature: string) {
   if (signature.length < MIN_SIGNATURE_LENGTH) return;
   signatureByCallIdCache.set(callId, signature);
-  if (signatureByCallIdCache.size > 10000) {
-    const first = signatureByCallIdCache.keys().next().value;
-    if (first) signatureByCallIdCache.delete(first);
-  }
   saveCacheToDisk();
 }
 
@@ -120,10 +144,6 @@ export function getSignatureByCallId(callId: string): string | undefined {
 export function cacheThinkingFamily(signature: string, family: string) {
   if (signature.length < MIN_SIGNATURE_LENGTH) return;
   signatureFamilyCache.set(signature, family);
-  if (signatureFamilyCache.size > 1000) {
-    const first = signatureFamilyCache.keys().next().value;
-    if (first) signatureFamilyCache.delete(first);
-  }
   saveCacheToDisk();
 }
 
