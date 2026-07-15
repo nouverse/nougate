@@ -254,7 +254,7 @@ function ConfigPage() {
             <div className="card-body p-5 space-y-4">
               <h3 className="card-title text-sm font-bold tracking-wide flex items-center gap-2">
                 <Zap className="w-4 h-4 text-warning" />
-                HEADROOM COMPRESSION (BETA)
+                HEADROOM COMPRESSION
               </h3>
               <p className="text-xs text-base-content/60 -mt-2">
                 Enable token compression via Headroom service to reduce input token usage.

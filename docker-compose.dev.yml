@@ -47,6 +47,7 @@ services:
     environment:
       - PORT=${PORT:-3000}
       - BASE_URL=${BASE_URL:-http://localhost:3000}
+      - HEADROOM_URL=http://headroom:8787
       - NODE_ENV=development
     volumes:
       # ── Backend ──
@@ -67,4 +68,13 @@ services:
       - ./package.json:/app/package.json:ro
       # ── Persistent data ──
       - ./data:/app/data:z
+    depends_on:
+      - headroom
     restart: unless-stopped
+
+  headroom:
+    image: ghcr.io/chopratejas/headroom:latest
+    container_name: headroom-dev
+    restart: unless-stopped
+    ports:
+      - "8787:8787"

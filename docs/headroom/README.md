@@ -50,7 +50,7 @@ export HEADROOM_URL=http://localhost:8080
 You can enable/disable Headroom via the Admin Dashboard:
 
 1. Navigate to **Config** page (`http://localhost:3000/frontend/config`)
-2. Scroll to **HEADROOM COMPRESSION (BETA)** section
+2. Scroll to **HEADROOM COMPRESSION** section
 3. Toggle **Enable Compression**
 4. (Optional) Override the Service URL if not using docker-compose
 5. (Optional) Adjust the timeout (default: 5000ms)

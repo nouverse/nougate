@@ -23,6 +23,13 @@ export async function compressPayload(body: any): Promise<any> {
 
   const timeoutMs = config.headroom.timeoutMs ?? 5000;
   
+  console.log('[Compressor] Sending payload to Headroom:', {
+    url: `${headroomUrl}/v1/compress`,
+    messageCount: body.messages?.length,
+    model: body.model,
+    hasTools: !!body.tools,
+  });
+  
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -45,7 +52,23 @@ export async function compressPayload(body: any): Promise<any> {
     const compressed = await response.json();
     
     console.log('[Compressor] Successfully compressed payload via Headroom');
-    return compressed;
+    console.log('[Compressor] Original payload keys:', Object.keys(body));
+    console.log('[Compressor] Compressed payload keys:', Object.keys(compressed));
+    console.log('[Compressor] Compressed payload sample:', JSON.stringify(compressed).slice(0, 200));
+    
+    // Headroom only returns compressed messages + metadata
+    // We need to merge it back with original payload fields (model, stream, tools, etc)
+    const mergedPayload = {
+      ...body,  // Keep original fields (model, stream, tools, etc)
+      messages: compressed.messages || body.messages,  // Use compressed messages
+    };
+    
+    // Log compression stats if available
+    if (compressed.tokens_saved) {
+      console.log(`[Compressor] Tokens saved: ${compressed.tokens_saved} (${compressed.compression_ratio}x compression)`);
+    }
+    
+    return mergedPayload;
     
   } catch (error: any) {
     const errorMsg = error.name === 'AbortError' 

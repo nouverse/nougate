@@ -74,7 +74,7 @@ interface HeadroomConfig {
 
 **Docker Deployment (Recommended):**
 1. Navigate to: `http://localhost:3000/frontend/config`
-2. Scroll to: **HEADROOM COMPRESSION (BETA)**
+2. Scroll to: **HEADROOM COMPRESSION**
 3. Toggle: **Enable Compression** ✅
 4. Click: **Save Configurations**
 5. Done! URL is auto-detected from docker-compose

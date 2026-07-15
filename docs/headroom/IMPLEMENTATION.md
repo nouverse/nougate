@@ -77,7 +77,7 @@ docker-compose up -d
 
 3. **Enable via Admin Dashboard:**
    - Buka `/config` di dashboard
-   - Scroll ke section **HEADROOM COMPRESSION (BETA)**
+   - Scroll ke section **HEADROOM COMPRESSION**
    - Toggle **Enable Compression**
    - Save
 

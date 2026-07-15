@@ -37,7 +37,7 @@ Added support for **Headroom** token compression service integration. Admin can 
 #### Frontend Changes
 
 1. **Config UI** (`apps/frontend/src/routes/config.tsx`)
-   - New section: **HEADROOM COMPRESSION (BETA)**
+   - New section: **HEADROOM COMPRESSION**
    - Toggle switch for enable/disable
    - URL input field (optional, with env fallback hint)
    - Timeout configuration (milliseconds)
