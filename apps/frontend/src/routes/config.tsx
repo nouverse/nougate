@@ -370,11 +370,11 @@ function ConfigPage() {
                       className="select select-bordered select-sm w-full bg-base-100 text-xs"
                       defaultValue={config.caveman?.level ?? 3}
                     >
-                      <option value="1">1 — Mild (concise)</option>
-                      <option value="2">2 — Moderate (short sentences)</option>
-                      <option value="3">3 — Strong (telegraphic)</option>
-                      <option value="4">4 — Extreme (bullet points)</option>
-                      <option value="5">5 — Maximum (raw output only)</option>
+                      <option value="1">1 — Mild (concise) ✅ safe for tool calls</option>
+                      <option value="2">2 — Moderate (short sentences) ✅ safe for tool calls</option>
+                      <option value="3">3 — Strong (telegraphic) ⚠️ may affect planning</option>
+                      <option value="4">4 — Extreme (bullet points) ❌ risky for agents</option>
+                      <option value="5">5 — Maximum (raw output) ❌ not for agentic use</option>
                     </select>
                   </div>
                 </div>

@@ -218,13 +218,15 @@ The injection happens inside the **format mapper** (Anthropic to Google, OpenAI 
 
 ### Intensity Levels
 
-| Level | Style | Example Instruction |
-|---|---|---|
-| **1** | Mild | Be concise. Avoid filler words. Get to the point. |
-| **2** | Moderate | Short sentences. No pleasantries. Technical substance only. |
-| **3** | Strong | Telegraphic style. No filler. No preamble. Code speaks louder than words. |
-| **4** | Extreme | Bullet points over paragraphs. Skip "here is what I did" — just show the result. |
-| **5** | Maximum | No prose. No greetings. Raw output only. Code diff over explanation. |
+| Level | Style | Example Instruction | Tool Calling Safety |
+|---|---|---|---|
+| **1** | Mild | Be concise. Avoid filler words. Get to the point. | ✅ Safe |
+| **2** | Moderate | Short sentences. No pleasantries. Technical substance only. | ✅ Safe |
+| **3** | Strong | Telegraphic style. No filler. No preamble. Code speaks louder than words. | ⚠️ May reduce planning quality on non-thinking models |
+| **4** | Extreme | Bullet points over paragraphs. Skip "here is what I did" — just show the result. | ❌ Risky for multi-step tool workflows |
+| **5** | Maximum | No prose. No greetings. Raw output only. Code diff over explanation. | ❌ Not recommended for agentic use |
+
+> **Warning:** Caveman level 3+ can degrade tool calling quality. LLMs may skip reasoning before tool selection, produce incomplete tool arguments, or make suboptimal multi-step plans. For agentic coding workflows (tool calls, multi-file edits), use level 1-2 or keep Caveman OFF.
 
 ### Edge Cases
 
