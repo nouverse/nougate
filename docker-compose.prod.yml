@@ -12,11 +12,21 @@ services:
       - BASE_URL=https://nougate.nouverse.tech
       # Set the listening port (default: 3000)
       - PORT=3000
+      - HEADROOM_URL=http://headroom:8787
     volumes:
       # Persistent data directory storing config.json and provider account databases
       - ./nougate-data:/app/data:z
+    depends_on:
+      - headroom
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
+
+  headroom:
+    image: ghcr.io/chopratejas/headroom:latest
+    container_name: headroom
+    restart: always
+    ports:
+      - "8787:8787"

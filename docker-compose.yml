@@ -8,7 +8,17 @@ services:
       - "3000:3000"
     environment:
       - BASE_URL=http://127.0.0.1:3000
+      - HEADROOM_URL=http://headroom:8787
     volumes:
       - ./data:/app/data:z
+    depends_on:
+      - headroom
     restart: unless-stopped
+
+  headroom:
+    image: ghcr.io/chopratejas/headroom:latest
+    container_name: headroom
+    restart: always
+    ports:
+      - "8787:8787"
 
