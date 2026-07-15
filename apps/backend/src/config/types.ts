@@ -6,6 +6,7 @@ export interface ProxyConfig {
   retry: RetryConfig;
   tokens: TokensConfig;
   logging: LoggingConfig;
+  headroom?: HeadroomConfig;
 }
 
 export interface RotationConfig {
@@ -49,4 +50,10 @@ export interface TokensConfig {
 export interface LoggingConfig {
   maxBufferSize: number;
   enableConsoleCapture: boolean;
+}
+
+export interface HeadroomConfig {
+  enabled: boolean;
+  url?: string;
+  timeoutMs?: number;
 }

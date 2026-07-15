@@ -52,6 +52,11 @@ const DEFAULT_CONFIG: ProxyConfig = {
   logging: {
     maxBufferSize: 200,
     enableConsoleCapture: true
+  },
+  headroom: {
+    enabled: false,
+    url: process.env.HEADROOM_URL || undefined,
+    timeoutMs: 5000
   }
 };
 
@@ -76,6 +81,11 @@ export async function loadProxyConfig(): Promise<ProxyConfig> {
 
   if (process.env.BASE_URL) {
     config.baseUrl = process.env.BASE_URL;
+  }
+
+  // Always use HEADROOM_URL from env if available (docker-first approach)
+  if (process.env.HEADROOM_URL && config.headroom) {
+    config.headroom.url = process.env.HEADROOM_URL;
   }
 
   console.log(`[Config] Loaded configuration: strategy=${config.rotation.strategy}`);

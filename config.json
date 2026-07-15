@@ -1,5 +1,6 @@
 {
   "baseUrl": "http://localhost:3000",
+  "bypassModelValidation": false,
   "rotation": {
     "strategy": "hybrid",
     "cooldown": {
@@ -37,5 +38,10 @@
   "logging": {
     "maxBufferSize": 200,
     "enableConsoleCapture": true
+  },
+  "headroom": {
+    "enabled": false,
+    "url": "http://localhost:9999",
+    "timeoutMs": 5000
   }
 }
