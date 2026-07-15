@@ -24,76 +24,98 @@ graph TD
 
 ---
 
-## 2. Struktur Database (PostgreSQL)
+## 2. Struktur Database & Skema Drizzle ORM
 
-Kita akan menggunakan PostgreSQL untuk menyimpan data historis dengan retensi maksimum 90 hari. Untuk memastikan query dashboard berjalan dalam hitungan milidetik bahkan dengan jutaan request, kita menggunakan **dua tabel**: satu untuk log detail jangka pendek, dan satu lagi untuk data agregat jangka panjang (*rollup*).
+Kita akan menggunakan PostgreSQL untuk menyimpan data historis dengan retensi maksimum 90 hari, dimodelkan menggunakan **Drizzle ORM**. Untuk memastikan query dashboard berjalan dalam hitungan milidetik bahkan dengan jutaan request, kita menggunakan **dua tabel**: satu untuk log detail jangka pendek, dan satu lagi untuk data agregat jangka panjang (*rollup*).
 
-### 2.1. Tabel Detail Request (`token_usage_logs`)
-Menyimpan detail setiap transaksi API. Tabel ini berguna untuk analisis jangka pendek (misalnya, melihat request terbaru) dan di-prune secara agresif.
+### 2.1. Skema Tabel Drizzle ORM (`schema.ts`)
+Definisi skema tabel menggunakan Drizzle schema builder untuk PostgreSQL:
 
-```sql
-CREATE TABLE token_usage_logs (
-    id BIGSERIAL PRIMARY KEY,
-    timestamp TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    session_id VARCHAR(64),
-    client_id VARCHAR(64) NOT NULL DEFAULT 'unknown',
-    provider VARCHAR(32) NOT NULL,             -- e.g. 'antigravity', 'copilot'
-    model VARCHAR(64) NOT NULL,                -- e.g. 'gemini-3-flash', 'gpt-4o'
-    full_model_name VARCHAR(128) NOT NULL,     -- e.g. 'antigravity:gemini-3-flash'
-    
-    -- Token Counts
-    input_tokens INT NOT NULL DEFAULT 0,
-    output_tokens INT NOT NULL DEFAULT 0,
-    tokens_before_compression INT,             -- NULL jika headroom tidak aktif/bypassed
-    tokens_after_compression INT,              -- NULL jika headroom tidak aktif/bypassed
-    tokens_saved INT NOT NULL DEFAULT 0,       -- Selisih token berkat headroom
-    
-    -- Cost Estimation (USD)
-    input_cost NUMERIC(12, 6) NOT NULL DEFAULT 0.000000,
-    output_cost NUMERIC(12, 6) NOT NULL DEFAULT 0.000000,
-    cost_saved NUMERIC(12, 6) NOT NULL DEFAULT 0.000000
-);
+```typescript
+import { pgTable, serial, timestamp, varchar, integer, numeric, date, bigint, primaryKey, index } from 'drizzle-orm/pg-core';
 
--- Indexing untuk mempercepat agregasi dan filter dashboard
-CREATE INDEX idx_token_logs_timestamp ON token_usage_logs(timestamp DESC);
-CREATE INDEX idx_token_logs_model ON token_usage_logs(full_model_name);
-CREATE INDEX idx_token_logs_client ON token_usage_logs(client_id);
+// Tabel Detail Request
+export const tokenUsageLogs = pgTable('token_usage_logs', {
+  id: serial('id').primaryKey(),
+  timestamp: timestamp('timestamp', { withTimezone: true }).defaultNow().notNull(),
+  sessionId: varchar('session_id', { length: 64 }),
+  clientId: varchar('client_id', { length: 64 }).default('unknown').notNull(),
+  provider: varchar('provider', { length: 32 }).notNull(),
+  model: varchar('model', { length: 64 }).notNull(),
+  fullModelName: varchar('full_model_name', { length: 128 }).notNull(),
+  
+  // Token Counts
+  inputTokens: integer('input_tokens').default(0).notNull(),
+  outputTokens: integer('output_tokens').default(0).notNull(),
+  tokensBeforeCompression: integer('tokens_before_compression'),
+  tokensAfterCompression: integer('tokens_after_compression'),
+  tokensSaved: integer('tokens_saved').default(0).notNull(),
+  
+  // Cost Estimation (USD)
+  inputCost: numeric('input_cost', { precision: 12, scale: 6 }).default('0.000000').notNull(),
+  outputCost: numeric('output_cost', { precision: 12, scale: 6 }).default('0.000000').notNull(),
+  costSaved: numeric('cost_saved', { precision: 12, scale: 6 }).default('0.000000').notNull(),
+}, (table) => [
+  index('idx_token_logs_timestamp').on(table.timestamp),
+  index('idx_token_logs_model').on(table.fullModelName),
+  index('idx_token_logs_client').on(table.clientId),
+]);
+
+// Tabel Agregasi Harian (Rollup)
+export const tokenUsageDailyRollups = pgTable('token_usage_daily_rollups', {
+  date: date('date').notNull(),
+  provider: varchar('provider', { length: 32 }).notNull(),
+  model: varchar('model', { length: 64 }).notNull(),
+  fullModelName: varchar('full_model_name', { length: 128 }).notNull(),
+  clientId: varchar('client_id', { length: 64 }).notNull(),
+  
+  totalRequests: integer('total_requests').default(0).notNull(),
+  totalInputTokens: bigint('total_input_tokens', { mode: 'number' }).default(0).notNull(),
+  totalOutputTokens: bigint('total_output_tokens', { mode: 'number' }).default(0).notNull(),
+  totalTokensSaved: bigint('total_tokens_saved', { mode: 'number' }).default(0).notNull(),
+  
+  totalInputCost: numeric('total_input_cost', { precision: 15, scale: 6 }).default('0.000000').notNull(),
+  totalOutputCost: numeric('total_output_cost', { precision: 15, scale: 6 }).default('0.000000').notNull(),
+  totalCostSaved: numeric('total_cost_saved', { precision: 15, scale: 6 }).default('0.000000').notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.date, table.fullModelName, table.clientId] })
+]);
 ```
 
-### 2.2. Tabel Agregasi Harian (`token_usage_daily_rollups`)
-Menyimpan rangkuman harian dari token dan biaya per model dan client. Query grafik rentang waktu 30d/60d/90d akan diarahkan ke tabel ini untuk optimalisasi performa.
+### 2.2. Konfigurasi Migrasi Drizzle (`drizzle.config.ts`)
+Gunakan `drizzle-kit` untuk mengelola pembuatan dan eksekusi migrasi skema database:
 
-```sql
-CREATE TABLE token_usage_daily_rollups (
-    date DATE NOT NULL,
-    provider VARCHAR(32) NOT NULL,
-    model VARCHAR(64) NOT NULL,
-    full_model_name VARCHAR(128) NOT NULL,
-    client_id VARCHAR(64) NOT NULL,
-    
-    total_requests INT NOT NULL DEFAULT 0,
-    total_input_tokens BIGINT NOT NULL DEFAULT 0,
-    total_output_tokens BIGINT NOT NULL DEFAULT 0,
-    total_tokens_saved BIGINT NOT NULL DEFAULT 0,
-    
-    total_input_cost NUMERIC(15, 6) NOT NULL DEFAULT 0.000000,
-    total_output_cost NUMERIC(15, 6) NOT NULL DEFAULT 0.000000,
-    total_cost_saved NUMERIC(15, 6) NOT NULL DEFAULT 0.000000,
-    
-    PRIMARY KEY (date, full_model_name, client_id)
-);
+```typescript
+import { defineConfig } from 'drizzle-kit';
+
+export default defineConfig({
+  schema: './apps/backend/src/core/schema.ts',
+  out: './apps/backend/src/core/migrations',
+  dialect: 'postgresql',
+  dbCredentials: {
+    url: process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/nougate',
+  },
+});
 ```
 
 ### 2.3. Mekanisme Retensi & Pruning (90 Hari)
-Untuk menghemat kapasitas DB, database runner akan menjalankan pembersihan otomatis terjadwal (CRON) setiap malam:
-1. **Aggregasi/Rollup**: Menghitung total token harian dari `token_usage_logs` untuk hari kemarin dan menyimpannya ke `token_usage_daily_rollups` (menggunakan `INSERT ... ON CONFLICT DO UPDATE`).
-2. **Pruning Detail Log**: Menghapus baris dari `token_usage_logs` yang lebih tua dari **14 hari** (atau tetap **90 hari** tergantung kebutuhan visualisasi request detail). Data grafik tren jangka panjang hingga 90 hari akan tetap aman karena dilayani oleh tabel rollup.
+Untuk menghemat kapasitas DB, database runner akan menjalankan pembersihan otomatis terjadwal (CRON) setiap malam menggunakan Drizzle Query/SQL:
+1. **Aggregasi/Rollup**: Menghitung total token harian dari `token_usage_logs` untuk hari kemarin dan menyimpannya ke `token_usage_daily_rollups`.
+2. **Pruning Detail Log**: Menghapus baris dari `token_usage_logs` yang lebih tua dari **14 hari**. Data grafik tren jangka panjang hingga 90 hari akan tetap aman karena dilayani oleh tabel rollup.
 3. **Pruning Rollup Log**: Menghapus data dari `token_usage_daily_rollups` yang umurnya melebihi **90 hari**.
 
-```sql
--- DDL Query untuk Pruning Job
-DELETE FROM token_usage_logs WHERE timestamp < NOW() - INTERVAL '14 days';
-DELETE FROM token_usage_daily_rollups WHERE date < CURRENT_DATE - INTERVAL '90 days';
+```typescript
+// Script Pruning Job via Drizzle (menggunakan raw sql template)
+import { db } from './db';
+import { sql } from 'drizzle-orm';
+
+async function runPruningJob() {
+  // Pruning log detail > 14 hari
+  await db.execute(sql`DELETE FROM token_usage_logs WHERE timestamp < NOW() - INTERVAL '14 days'`);
+  
+  // Pruning rollup harian > 90 hari
+  await db.execute(sql`DELETE FROM token_usage_daily_rollups WHERE date < CURRENT_DATE - INTERVAL '90 days'`);
+}
 ```
 
 ---
@@ -254,28 +276,32 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
 
 ## 5. Implementasi Backend
 
-### 5.1. File Koneksi Database (`apps/backend/src/core/db.ts`)
-Menggunakan library `postgres` (npm package) yang sangat cepat dan kompatibel dengan Bun.
+### 5.1. File Koneksi Database Drizzle (`apps/backend/src/core/db.ts`)
+Menggunakan library Drizzle ORM berbasis driver `postgres` (npm package) yang sangat cepat dan kompatibel dengan Bun.
 
 ```typescript
+import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
+import * as schema from './schema';
 
 const dbUrl = process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/nougate';
 
 // Inisialisasi pool koneksi
-export const sql = postgres(dbUrl, {
+export const client = postgres(dbUrl, {
   max: 10,                 // Maksimum koneksi di pool
   idle_timeout: 20,        // Tutup koneksi jika idle setelah 20 detik
   connect_timeout: 10,     // Timeout koneksi 10 detik
 });
+
+export const db = drizzle(client, { schema });
 ```
 
 ### 5.2. Metrics Storage Queue (`apps/backend/src/core/metrics-logger.ts`)
-Mengatur penyimpanan log asinkron dengan konsep pooling & batch insert.
+Mengatur penyimpanan log asinkron dengan konsep pooling & batch insert menggunakan Drizzle ORM.
 
 ```typescript
-import { sql } from './db';
-import { getProxyConfig } from '@/config/manager';
+import { db } from './db';
+import { tokenUsageLogs } from './schema';
 
 interface TokenLogEntry {
   sessionId?: string;
@@ -321,15 +347,8 @@ class TokenMetricsLogger {
     this.queue = [];
 
     try {
-      // Melakukan bulk insert secara efisien dalam satu query
-      await sql`
-        INSERT INTO token_usage_logs ${sql(
-          batch,
-          'sessionId', 'clientId', 'provider', 'model', 'fullModelName',
-          'inputTokens', 'outputTokens', 'tokensBeforeCompression',
-          'tokensAfterCompression', 'tokensSaved', 'inputCost', 'outputCost', 'costSaved'
-        )}
-      `;
+      // Melakukan bulk insert secara efisien dengan Drizzle ORM
+      await db.insert(tokenUsageLogs).values(batch);
     } catch (error) {
       console.error('[MetricsLogger] Gagal menyimpan log token ke DB:', error);
       // Fallback: Kembalikan log ke antrean agar tidak hilang jika database down sementara
@@ -347,83 +366,99 @@ export const tokenMetricsLogger = new TokenMetricsLogger();
 ```
 
 ### 5.3. API Endpoint untuk Dashboard (`apps/backend/src/router/admin.ts`)
-Endpoint ini akan melayani data agregat untuk chart dan statistik berdasarkan lookback period.
+Endpoint ini akan melayani data agregat untuk chart dan statistik menggunakan Drizzle query builder.
 
 ```typescript
+import { db } from "@/core/db";
+import { tokenUsageLogs, tokenUsageDailyRollups } from "@/core/schema";
+import { sql, desc, asc, gte, and, eq } from "drizzle-orm";
+
 // GET /api/metrics/token-usage?lookback=7d&clientId=all
 if (url.pathname === "/api/metrics/token-usage" && req.method === "GET") {
   const lookback = url.searchParams.get("lookback") || "24h"; // 24h, 7d, 14d, 30d, 60d, 90d
   const clientId = url.searchParams.get("clientId") || "all";
   
-  // Tentukan interval waktu untuk SQL query
-  let interval = '1 day';
+  let intervalVal = '1 day';
   let useRollup = false;
   
   switch(lookback) {
-    case '24h': interval = '1 day'; break;
-    case '7d': interval = '7 days'; break;
-    case '14d': interval = '14 days'; break;
-    case '30d': interval = '30 days'; useRollup = true; break;
-    case '60d': interval = '60 days'; useRollup = true; break;
-    case '90d': interval = '90 days'; useRollup = true; break;
+    case '24h': intervalVal = '1 day'; break;
+    case '7d': intervalVal = '7 days'; break;
+    case '14d': intervalVal = '14 days'; break;
+    case '30d': intervalVal = '30 days'; useRollup = true; break;
+    case '60d': intervalVal = '60 days'; useRollup = true; break;
+    case '90d': intervalVal = '90 days'; useRollup = true; break;
   }
 
   try {
     let usageData;
     let modelStats;
-    
+    const filterInterval = sql`CURRENT_DATE - ${sql.raw(`INTERVAL '${intervalVal}'`)}`;
+    const filterIntervalLogs = sql`NOW() - ${sql.raw(`INTERVAL '${intervalVal}'`)}`;
+
     if (useRollup) {
-      // Query dari tabel rollup untuk rentang waktu yang lama
-      usageData = await sql`
-        SELECT 
-          date_trunc('day', date) as period,
-          SUM(total_input_tokens + total_output_tokens) as total_tokens,
-          SUM(total_tokens_saved) as tokens_saved,
-          SUM(total_input_cost + total_output_cost) as total_cost,
-          SUM(total_cost_saved) as cost_saved
-        FROM token_usage_daily_rollups
-        WHERE date >= CURRENT_DATE - ${sql(interval)}::interval
-        GROUP BY period ORDER BY period ASC
-      `;
+      // Query dari tabel rollup dengan Drizzle ORM
+      let rollupConditions = gte(tokenUsageDailyRollups.date, filterInterval);
+      if (clientId !== 'all') {
+        rollupConditions = and(rollupConditions, eq(tokenUsageDailyRollups.clientId, clientId))!;
+      }
+
+      usageData = await db
+        .select({
+          period: sql`date_trunc('day', ${tokenUsageDailyRollups.date})`.as('period'),
+          totalTokens: sql`SUM(${tokenUsageDailyRollups.totalInputTokens} + ${tokenUsageDailyRollups.totalOutputTokens})`.as('total_tokens'),
+          tokensSaved: sql`SUM(${tokenUsageDailyRollups.totalTokensSaved})`.as('tokens_saved'),
+          totalCost: sql`SUM(${tokenUsageDailyRollups.totalInputCost} + ${tokenUsageDailyRollups.totalOutputCost})`.as('total_cost'),
+          costSaved: sql`SUM(${tokenUsageDailyRollups.totalCostSaved})`.as('cost_saved')
+        })
+        .from(tokenUsageDailyRollups)
+        .where(rollupConditions)
+        .groupBy(sql`period`)
+        .orderBy(asc(sql`period`));
       
-      modelStats = await sql`
-        SELECT 
-          full_model_name,
-          SUM(total_requests) as requests,
-          SUM(total_input_tokens + total_output_tokens) as total_tokens,
-          SUM(total_input_cost + total_output_cost) as total_cost
-        FROM token_usage_daily_rollups
-        WHERE date >= CURRENT_DATE - ${sql(interval)}::interval
-        GROUP BY full_model_name
-        ORDER BY total_tokens DESC
-      `;
+      modelStats = await db
+        .select({
+          fullModelName: tokenUsageDailyRollups.fullModelName,
+          requests: sql`SUM(${tokenUsageDailyRollups.totalRequests})`.as('requests'),
+          totalTokens: sql`SUM(${tokenUsageDailyRollups.totalInputTokens} + ${tokenUsageDailyRollups.totalOutputTokens})`.as('total_tokens'),
+          totalCost: sql`SUM(${tokenUsageDailyRollups.totalInputCost} + ${tokenUsageDailyRollups.totalOutputCost})`.as('total_cost')
+        })
+        .from(tokenUsageDailyRollups)
+        .where(rollupConditions)
+        .groupBy(tokenUsageDailyRollups.fullModelName)
+        .orderBy(desc(sql`total_tokens`));
     } else {
-      // Query dari data log mentah untuk grafik 24 jam / jangka pendek yang membutuhkan presisi tinggi
+      // Query dari tabel log mentah untuk grafik 24 jam / jangka pendek yang presisi
       const timeGroup = lookback === '24h' ? 'hour' : 'day';
+      let logConditions = gte(tokenUsageLogs.timestamp, filterIntervalLogs);
+      if (clientId !== 'all') {
+        logConditions = and(logConditions, eq(tokenUsageLogs.clientId, clientId))!;
+      }
+
+      usageData = await db
+        .select({
+          period: sql`date_trunc(${timeGroup}, ${tokenUsageLogs.timestamp})`.as('period'),
+          totalTokens: sql`SUM(${tokenUsageLogs.inputTokens} + ${tokenUsageLogs.outputTokens})`.as('total_tokens'),
+          tokensSaved: sql`SUM(${tokenUsageLogs.tokensSaved})`.as('tokens_saved'),
+          totalCost: sql`SUM(${tokenUsageLogs.inputCost} + ${tokenUsageLogs.outputCost})`.as('total_cost'),
+          costSaved: sql`SUM(${tokenUsageLogs.costSaved})`.as('cost_saved')
+        })
+        .from(tokenUsageLogs)
+        .where(logConditions)
+        .groupBy(sql`period`)
+        .orderBy(asc(sql`period`));
       
-      usageData = await sql`
-        SELECT 
-          date_trunc(${timeGroup}, timestamp) as period,
-          SUM(input_tokens + output_tokens) as total_tokens,
-          SUM(tokens_saved) as tokens_saved,
-          SUM(input_cost + output_cost) as total_cost,
-          SUM(cost_saved) as cost_saved
-        FROM token_usage_logs
-        WHERE timestamp >= NOW() - ${sql(interval)}::interval
-        GROUP BY period ORDER BY period ASC
-      `;
-      
-      modelStats = await sql`
-        SELECT 
-          full_model_name,
-          COUNT(*) as requests,
-          SUM(input_tokens + output_tokens) as total_tokens,
-          SUM(input_cost + output_cost) as total_cost
-        FROM token_usage_logs
-        WHERE timestamp >= NOW() - ${sql(interval)}::interval
-        GROUP BY full_model_name
-        ORDER BY total_tokens DESC
-      `;
+      modelStats = await db
+        .select({
+          fullModelName: tokenUsageLogs.fullModelName,
+          requests: sql`COUNT(*)`.as('requests'),
+          totalTokens: sql`SUM(${tokenUsageLogs.inputTokens} + ${tokenUsageLogs.outputTokens})`.as('total_tokens'),
+          totalCost: sql`SUM(${tokenUsageLogs.inputCost} + ${tokenUsageLogs.outputCost})`.as('total_cost')
+        })
+        .from(tokenUsageLogs)
+        .where(logConditions)
+        .groupBy(tokenUsageLogs.fullModelName)
+        .orderBy(desc(sql`total_tokens`));
     }
 
     return createJsonResponse({ usageData, modelStats });
@@ -513,17 +548,19 @@ export function SparklineChart({ data, width = 600, height = 200 }) {
 
 ## 7. Checklist Implementasi & Rencana Rilis
 
-### Tahap 1: Setup Database & Perubahan Spesifikasi
-- [ ] Buat file migrasi SQL untuk membuat tabel `token_usage_logs` dan `token_usage_daily_rollups`.
-- [ ] Daftarkan dependensi `"postgres"` pada `apps/backend/package.json`.
+### Tahap 1: Setup Database, Drizzle ORM & Perubahan Spesifikasi
+- [ ] Daftarkan dependensi `"drizzle-orm"`, `"postgres"` dan devDependensi `"drizzle-kit"` di `apps/backend/package.json`.
+- [ ] Buat file skema Drizzle `schema.ts` di `apps/backend/src/core/schema.ts` yang berisi `tokenUsageLogs` dan `tokenUsageDailyRollups`.
+- [ ] Buat file konfigurasi Drizzle `drizzle.config.ts` di root backend.
+- [ ] Lakukan inisialisasi & migrasi database menggunakan `drizzle-kit generate` dan `drizzle-kit migrate` (atau script sinkronisasi manual jika di production).
 - [ ] Ubah interface `IModelSpec` di `src/core/interfaces.ts` untuk mendukung properti `inputPricePer1M` dan `outputPricePer1M`.
 - [ ] Tambahkan data pricing ke file `model-specs.ts` milik Copilot dan Antigravity provider.
 
-### Tahap 2: Backend Data Collection & Logging
-- [ ] Buat file `db.ts` dan modul logger asinkron `metrics-logger.ts`.
+### Tahap 2: Backend Data Collection & Logging (Drizzle)
+- [ ] Buat file koneksi database `db.ts` dan modul logger asinkron `metrics-logger.ts` menggunakan Drizzle ORM.
 - [ ] Modifikasi Response Finalizer di provider Copilot (`finalizeOpenAIResponse` & stream transformer) untuk mengekstrak token pemakaian dan memicu penyimpanan metrics.
 - [ ] Modifikasi Response Finalizer di provider Antigravity (`finalizeOpenAIResponse` / `finalizeAnthropicResponse` & stream) untuk mencatat pemakaian.
-- [ ] Implementasi scheduler / cron di Bun untuk proses daily rollup agregasi data dan pruning logs di atas 90 hari.
+- [ ] Implementasi scheduler / cron di Bun untuk proses daily rollup agregasi data dan pruning logs di atas 90 hari via Drizzle SQL execution.
 
 ### Tahap 3: API & Dashboard UI
 - [ ] Tambahkan endpoint admin GET `/api/metrics/token-usage` untuk melayani kebutuhan visualisasi data tren token.
