@@ -373,7 +373,11 @@ function calculatePriority(account: AntigravityAccount, now: number, model?: str
 
     if (score !== undefined) health = score;
   }
-  return (health * config.scoring.weights.health) + (secondsSinceUsed * config.scoring.weights.lru);
+
+  // Tier bonus: ultra gets +30, pro gets +15, free gets +0
+  const tierBonus = account.tier === 'ultra' ? 30 : account.tier === 'pro' ? 15 : 0;
+
+  return (health * config.scoring.weights.health) + (secondsSinceUsed * config.scoring.weights.lru) + tierBonus;
 }
 
 export async function updateAccountUsage(email: string, success: boolean, model?: string, pool?: string, clientId?: string, status?: number) {
@@ -474,6 +478,42 @@ export function ensureFingerprint(account: AntigravityAccount): void {
     account.fingerprint = generateFingerprint(account.email);
     saveAccounts(accounts);
   }
+}
+
+/**
+ * Set the tier for an account (ultra/pro/free).
+ */
+export async function setAccountTier(email: string, tier: 'ultra' | 'pro' | 'free'): Promise<boolean> {
+  const account = accounts.find(a => a.email === email);
+  if (!account) return false;
+  account.tier = tier;
+  await saveAccounts(accounts);
+  return true;
+}
+
+/**
+ * Auto-detect tier from quota data.
+ * Ultra: all quotas have remainingFraction > 0.7
+ * Pro: average remainingFraction > 0.3
+ * Free: everything else
+ */
+export function autoDetectTier(account: AntigravityAccount): 'ultra' | 'pro' | 'free' {
+  if (!account.quota || account.quota.length === 0) return 'free';
+  const avgRemaining = account.quota.reduce((sum, q) => sum + q.remainingFraction, 0) / account.quota.length;
+  const allHigh = account.quota.every(q => q.remainingFraction > 0.7);
+  if (allHigh) return 'ultra';
+  if (avgRemaining > 0.3) return 'pro';
+  return 'free';
+}
+
+/**
+ * Refresh tiers for all accounts based on their current quota data.
+ */
+export async function refreshAllTiers(): Promise<void> {
+  for (const account of accounts) {
+    account.tier = autoDetectTier(account);
+  }
+  await saveAccounts(accounts);
 }
 
 export function regenerateFingerprint(email: string): void {

@@ -64,6 +64,10 @@ const DEFAULT_CONFIG: ProxyConfig = {
   },
   rtk: {
     enabled: true
+  },
+  debugLogger: {
+    enabled: false,
+    outputDir: './tmp/debug-payloads'
   }
 };
 

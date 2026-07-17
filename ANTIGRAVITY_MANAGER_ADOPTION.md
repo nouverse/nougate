@@ -17,7 +17,7 @@ Dokumen ini merangkum fitur-fitur inti dari [Antigravity-Manager](https://github
 | OpenAI-compatible endpoint | ✅ | ✅ | ✅ | — | 🟰 Setara | — |
 | Anthropic native `/v1/messages` | ✅ | ✅ | ✅ | 🔴 High | 🟰 Setara | [§2.1](#21--native-anthropic-endpoint-v1messages) |
 | Multi-layer signature cache | ✅ (4-layer: tool, family, session, reasoning) | ✅ (4-layer: tool, family, session, reasoning) | ✅ | 🔴 High | 🟰 Setara | [§2.2](#22--multi-layer-signature-cache) |
-| Tiered account sorting (Ultra/Pro/Free) | ❌ | ✅ | ❌ | 🔴 High | ⬇️ Worse | [§2.3](#23--tiered-account-sorting) |
+| Tiered account sorting (Ultra/Pro/Free) | ✅ (tier bonus + auto-detect from quota) | ✅ | ✅ | 🔴 High | 🟰 Setara | [§2.3](#23--tiered-account-sorting) |
 | Model-level rate limiting | 🟡 Basic (family-level) | ✅ (account + model level) | 🟡 Basic | 🔴 High | ⬇️ Worse | [§2.4](#24--model-level-rate-limiting) |
 | Rate limit tracker with exponential backoff | ✅ (with backoff) | ✅ (per-account failure counter + backoff) | ✅ | 🔴 High | 🟰 Setara | [§2.4](#24--model-level-rate-limiting) |
 | **JSON Schema cleaning for Gemini** | ✅ | ✅ ($ref flatten, anyOf, constraint→desc) | ✅ | 🔴 **High** | 🟰 Setara | [§2.5](#25--json-schema-cleaning-for-gemini) |
@@ -30,7 +30,7 @@ Dokumen ini merangkum fitur-fitur inti dari [Antigravity-Manager](https://github
 | **Session fingerprinting** | ✅ (SHA256 first msg) | ✅ (SHA256 of first user message) | ✅ | 🟡 **Medium** | 🟰 Setara | [§3.6](#36--session-fingerprinting) |
 | **Client adapter system** | ❌ | ✅ (per-IDE behavior via User-Agent) | ❌ | 🟡 **Medium** | ⬇️ Worse | [§3.7](#37--client-adapter-system) |
 | **Multi-level context compression** | 🟡 (L1: RTK, L2: Headroom) | ✅ (L1: tool trim, L2: thinking, L3: fork) | 🟡 Partial | 🟡 **Medium** | ⬇️ Worse | [§3.8](#38--multi-level-context-compression) |
-| **Global system prompt injection** | ✅ (ANTIGRAVITY_SYSTEM_INSTRUCTION + caveman) | ✅ (auto-inject to all requests) | ✅ | 🟡 **Medium** | ⬆️ Better | [§3.9](#39--global-system-prompt-injection) |
+| **Global system prompt injection** | ✅ (configurable + caveman) | ✅ (auto-inject to all requests) | ✅ | 🟡 **Medium** | ⬆️ Better | [§3.9](#39--global-system-prompt-injection) |
 | **Estimation calibrator** | ❌ | ✅ (self-learning token estimation) | ❌ | 🟡 **Medium** | ⬇️ Worse | [§3.10](#310--estimation-calibrator-self-learning-token-estimation) |
 | **Thinking budget config** | ✅ (per-model budget/level/mode) | ✅ (Auto/Passthrough/Custom/Adaptive modes) | ✅ | 🟡 **Medium** | 🟰 Setara | [§3.11](#311--thinking-budget-config) |
 | **Model specs from JSON** | ✅ (model-specs.ts registry) | ✅ (per-model max_output_tokens, thinking_budget) | ✅ | 🟡 **Medium** | 🟰 Setara | [§3.12](#312--model-specs-from-json-config) |
@@ -44,7 +44,7 @@ Dokumen ini merangkum fitur-fitur inti dari [Antigravity-Manager](https://github
 | Proxy pool (outbound HTTP proxy rotation) | ❌ | ✅ | ❌ | 🟢 Low | ⬇️ Worse | [§4.6](#46--outbound-proxy-pool) |
 | **Tool artifact store** | ❌ | ✅ (sidecar store for large tool outputs) | ❌ | 🟢 **Low** | ⬇️ Worse | [§4.7](#47--tool-artifact-store) |
 | **Error classifier** | ❌ | ✅ (categorize stream errors with i18n) | ❌ | 🟢 **Low** | ⬇️ Worse | [§4.8](#48--error-classifier) |
-| **Debug payload logger** | ❌ | ✅ (dump req/res JSON to disk) | ❌ | 🟢 **Low** | ⬇️ Worse | [§4.9](#49--debug-payload-logger) |
+| **Debug payload logger** | ✅ (req/res JSON to disk, model filter) | ✅ (dump req/res JSON to disk) | ✅ | 🟢 **Low** | 🟰 Setara | [§4.9](#49--debug-payload-logger) |
 | **Quota scheduler** | ❌ | ✅ (auto-scan 100% quota, trigger warmup) | ❌ | 🟢 **Low** | ⬇️ Worse | [§4.10](#410--quota-scheduler) |
 | HTTP Session Store (Codex) | ❌ | ✅ (multi-turn via previous_response_id) | ❌ | 🟢 Low | ⬇️ Worse | [§4.11](#411--http-session-store-codex) |
 | OAuth browser flow | ✅ | ✅ (callback handler) | ✅ | 🟢 Low | 🟰 Setara | — |

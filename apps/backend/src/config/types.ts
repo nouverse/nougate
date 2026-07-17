@@ -9,6 +9,7 @@ export interface ProxyConfig {
   headroom?: HeadroomConfig;
   caveman?: CavemanConfig;
   rtk?: RtkConfig;
+  debugLogger?: DebugLoggerConfig;
 }
 
 export interface RotationConfig {
@@ -68,4 +69,12 @@ export interface CavemanConfig {
 
 export interface RtkConfig {
   enabled: boolean;
+}
+
+export interface DebugLoggerConfig {
+  enabled: boolean;
+  /** Directory to write debug payloads */
+  outputDir?: string;
+  /** Only log requests matching these model patterns (glob-like). Empty = all */
+  modelFilter?: string[];
 }

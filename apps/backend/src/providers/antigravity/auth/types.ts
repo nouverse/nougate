@@ -22,6 +22,8 @@ export interface DeviceFingerprint {
   createdAt?: number;
 }
 
+export type AccountTier = 'ultra' | 'pro' | 'free';
+
 export interface AntigravityAccount {
   email: string;
   refreshToken: string;
@@ -29,6 +31,9 @@ export interface AntigravityAccount {
   expiresAt?: number; // timestamp
   projectId?: string;
   managedProjectId?: string;
+
+  // Tier classification (affects priority sorting)
+  tier?: AccountTier;
 
   // Rotation stats
   healthScore: number;

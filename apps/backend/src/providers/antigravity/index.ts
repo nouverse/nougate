@@ -25,7 +25,7 @@ import type { AntigravityAccount } from '@/providers/antigravity/auth/types';
 import { antigravityModelRegistry, loadModelSpecOverrides } from '@/providers/antigravity/config/model-specs';
 import { supportedModelsCache, refreshAllQuotas, fetchQuota } from '@/providers/antigravity/api/quota';
 import {
-  ANTIGRAVITY_SYSTEM_INSTRUCTION,
+  getSystemInstruction,
   getAntigravityConfig,
   loadAntigravityConfig,
   saveAntigravityConfig,
@@ -389,7 +389,7 @@ export class AntigravityProvider implements IProvider {
           const providerConfig = getAntigravityConfig();
           return mapOpenAIToGoogle(body, modelSpec, ctx.sessionId, {
             aggressive,
-            systemInstructionPrefix: ANTIGRAVITY_SYSTEM_INSTRUCTION,
+            systemInstructionPrefix: getSystemInstruction(),
             features: {
               sanitizeToolNames: providerConfig.features.sanitizeToolNames,
               keepThinking: providerConfig.features.keepThinking,
@@ -430,7 +430,7 @@ export class AntigravityProvider implements IProvider {
           const providerConfig = getAntigravityConfig();
           return mapAnthropicToGoogle(body, modelSpec, ctx.sessionId, {
             aggressive,
-            systemInstructionPrefix: ANTIGRAVITY_SYSTEM_INSTRUCTION,
+            systemInstructionPrefix: getSystemInstruction(),
             features: {
               sanitizeToolNames: providerConfig.features.sanitizeToolNames,
               keepThinking: providerConfig.features.keepThinking,
@@ -591,7 +591,7 @@ export class AntigravityProvider implements IProvider {
 }
 
 export {
-  ANTIGRAVITY_SYSTEM_INSTRUCTION,
+  getSystemInstruction,
   getAntigravityConfig,
   loadAntigravityConfig,
   saveAntigravityConfig,
