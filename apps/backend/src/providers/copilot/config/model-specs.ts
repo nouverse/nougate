@@ -36,6 +36,8 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
     displayName: 'Claude Opus 4.6',
     pool: 'cli',
     isThinking: true,
+    thinkingMode: 'budget',
+    thinkingBudget: 32768,
     maxOutputTokens: 16384,
     upstreamModelId: 'claude-opus-4.6',
     timeoutMs: 60000,
