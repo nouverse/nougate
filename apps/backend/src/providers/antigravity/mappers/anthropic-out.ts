@@ -141,7 +141,10 @@ export function createAnthropicStreamTransformer(model: string, messageId: strin
             controller.enqueue(encoder.encode(sseEvent("message_delta", {
               type: "message_delta",
               delta: { stop_reason: stopReason, stop_sequence: null },
-              usage: { output_tokens: usage?.candidatesTokenCount ?? 0 },
+              usage: {
+                input_tokens: usage?.promptTokenCount ?? 0,
+                output_tokens: usage?.candidatesTokenCount ?? 0,
+              },
             })));
           }
         } catch (e) {
@@ -256,7 +259,10 @@ export function createAnthropicStreamTransformer(model: string, messageId: strin
               controller.enqueue(encoder.encode(sseEvent("message_delta", {
                 type: "message_delta",
                 delta: { stop_reason: stopReason, stop_sequence: null },
-                usage: { output_tokens: usage?.candidatesTokenCount ?? 0 },
+                usage: {
+                  input_tokens: usage?.promptTokenCount ?? 0,
+                  output_tokens: usage?.candidatesTokenCount ?? 0,
+                },
               })));
             }
           } catch (e) {

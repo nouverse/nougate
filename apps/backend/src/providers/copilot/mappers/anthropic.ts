@@ -113,14 +113,20 @@ export function mapAnthropicToOpenAI(anthropicBody: any, upstreamModelId: string
     }
   }
 
+  const isStream = anthropicBody.stream ?? false;
   const openaiBody: any = {
     model: upstreamModelId,
     messages,
-    stream: anthropicBody.stream ?? false,
+    stream: isStream,
     temperature: anthropicBody.temperature,
     top_p: anthropicBody.top_p,
     max_tokens: anthropicBody.max_tokens,
   };
+
+  // Request usage stats in streaming mode so we can forward them
+  if (isStream) {
+    openaiBody.stream_options = { include_usage: true };
+  }
 
   // 3. Map tools
   if (Array.isArray(anthropicBody.tools)) {
@@ -168,6 +174,8 @@ export function createOpenAIToAnthropicStreamTransformer(model: string, messageI
   let startedReasoning = false;
   let finished = false;
   let currentBlockType: 'text' | 'tool_use' | null = null;
+  let inputTokens = 0;
+  let outputTokens = 0;
 
   return new TransformStream({
     start(controller) {
@@ -206,7 +214,7 @@ export function createOpenAIToAnthropicStreamTransformer(model: string, messageI
             controller.enqueue(encoder.encode(sseEvent('message_delta', {
               type: 'message_delta',
               delta: { stop_reason: 'end_turn', stop_sequence: null },
-              usage: { output_tokens: 0 },
+              usage: { input_tokens: inputTokens, output_tokens: outputTokens },
             })));
             controller.enqueue(encoder.encode(sseEvent('message_stop', { type: 'message_stop' })));
           }
@@ -215,6 +223,13 @@ export function createOpenAIToAnthropicStreamTransformer(model: string, messageI
 
         try {
           const openAIEvent = JSON.parse(dataStr);
+
+          // Capture usage from the final chunk (sent when stream_options.include_usage is true)
+          if (openAIEvent.usage) {
+            inputTokens = openAIEvent.usage.prompt_tokens || 0;
+            outputTokens = openAIEvent.usage.completion_tokens || 0;
+          }
+
           const choice = openAIEvent.choices?.[0];
           if (!choice) continue;
 
@@ -322,7 +337,7 @@ export function createOpenAIToAnthropicStreamTransformer(model: string, messageI
             controller.enqueue(encoder.encode(sseEvent('message_delta', {
               type: 'message_delta',
               delta: { stop_reason: stopReason, stop_sequence: null },
-              usage: { output_tokens: 0 },
+              usage: { output_tokens: outputTokens },
             })));
             controller.enqueue(encoder.encode(sseEvent('message_stop', { type: 'message_stop' })));
           }
@@ -341,7 +356,7 @@ export function createOpenAIToAnthropicStreamTransformer(model: string, messageI
         controller.enqueue(encoder.encode(sseEvent('message_delta', {
           type: 'message_delta',
           delta: { stop_reason: 'end_turn', stop_sequence: null },
-          usage: { output_tokens: 0 },
+          usage: { output_tokens: outputTokens },
         })));
         controller.enqueue(encoder.encode(sseEvent('message_stop', { type: 'message_stop' })));
       }

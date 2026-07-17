@@ -12,6 +12,7 @@ export function mapOpenAIToCopilot(openaiBody: any, upstreamModelId: string) {
     'tools',
     'tool_choice',
     'response_format',
+    'stream_options',
     'n'
   ];
 
