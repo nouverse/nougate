@@ -8,78 +8,102 @@
 
 ## Features
 
+### Core
 - **Multi-Protocol**: Expose providers via OpenAI (`/openai/v1/`) and Anthropic (`/anthropic/v1/`) compatible APIs simultaneously.
-- **Multi-Provider**: Pluggable provider system — each provider owns its auth, accounts, config, and model registry. No shared global state.
-- **Strict Model Namespacing**: All models use `provider:model-id` format (e.g. `antigravity:gemini-3.5-flash-low`). No ambiguity, no silent re-routing.
-- **Per-Provider Auth Isolation**: Provider credentials, tokens, and account storage are fully isolated. `antigravity` provider uses Google OAuth.
-- **Account Rotation & Health Scoring**: Automatically rotates accounts, penalizes on errors, and applies cooldowns on quota exhaustion.
-- **Real-time Responsive Dashboard**: Monitor accounts, view live logs, and manage configuration via a built-in React + Tailwind CSS v4 + daisyUI v5 web UI.
+- **Multi-Provider**: Pluggable provider system — each provider owns its auth, accounts, config, and model registry.
+- **Strict Model Namespacing**: All models use `provider:model-id` format (e.g. `antigravity:gemini-3.5-flash-low`, `copilot:claude-opus-4.6`).
+- **Per-Provider Auth Isolation**: Credentials and account storage are fully isolated per provider.
+
+### Account Management
+- **Hybrid Intelligent Routing**: Sticky by default (preserves prompt cache), auto-failover on rate limit/error.
+- **Health Scoring & Cooldowns**: Penalizes on errors, applies family-level cooldowns on quota exhaustion.
+- **Tiered Account Sorting**: Accounts classified as Ultra/Pro/Free (auto-detected from quota). Higher tiers get priority in fallback selection.
+- **Device Fingerprinting**: Full impersonation headers + CLI pool variant per account.
+
+### Token Optimization
+- **RTK (Tool Result Compression)**: Inline, zero-network compression of tool_result content (git diff, grep, file reads). Runs before Headroom.
+- **Headroom Service**: External compression service for large payloads (optional, fail-safe).
+- **Multi-Layer Signature Cache**: 4-layer LRU cache (tool, family, session, reasoning) for thinking signature continuity.
+
+### Resilience
+- **Smart Retry with Delay Parsing**: Parses structured error payloads for retry delays, exponential backoff, max 5 attempts.
+- **Per-Model Timeout**: Configurable timeout per model spec (default 60s) with AbortController.
+- **JSON Schema Cleaning**: Strips unsupported fields for Gemini compatibility ($ref, anyOf, constraints).
+
+### Intelligence
+- **Thinking Budget Config**: Per-model thinking mode (budget/level), passthrough from client or model defaults.
+- **Model Specs Registry**: Per-model maxOutputTokens, thinkingBudget, pool assignment, timeout — configurable via JSON overrides.
+- **Configurable System Prompt**: Global system instruction injection, overridable via provider config without redeploy.
+- **Caveman Mode**: Adjustable conciseness levels (1-5) prepended to system prompts.
+
+### Observability
+- **Real-time Dashboard**: Monitor accounts, quotas, cooldowns, health scores via React + daisyUI web UI.
+- **Live System Logs**: Console capture with level filtering, search, auto-scroll.
+- **Debug Payload Logger**: Dump request/response JSON to disk (configurable, model-filterable, fail-safe).
+
+### Providers
+
+| Provider | Auth | Models |
+|----------|------|--------|
+| **Antigravity** | Google OAuth (multi-account) | Gemini 3/3.1/3.5 Flash, Gemini 3.1 Pro, Claude Sonnet/Opus 4.6 via Gemini |
+| **Copilot** | GitHub Device Flow (multi-account) | Claude Sonnet 4.5, Claude Opus 4.5/4.6, Gemini 2.5 Pro, GPT-4o/4.1/5-mini |
 
 ---
 
-## Workspace Directory Structure
+## Workspace Structure
 
-The repository is structured as a Bun workspaces monorepo:
 ```
 ├── apps/
 │   ├── backend/          # Bun API backend & routing gateway
-│   │   ├── src/          # API & Proxy source files
-│   │   └── package.json  # Backend dependencies
-│   └── frontend/         # React SPA dashboard UI
-│       ├── src/          # React components, hooks, & routing tree
-│       ├── dist/         # Production build output (served by backend)
-│       └── package.json  # Frontend dependencies
+│   │   ├── src/
+│   │   │   ├── core/        # RTK, compressor, signature cache, debug logger
+│   │   │   ├── protocols/   # OpenAI & Anthropic protocol handlers
+│   │   │   ├── providers/   # antigravity/, copilot/ (isolated)
+│   │   │   ├── config/      # Global config types & manager
+│   │   │   └── router/      # Admin API & SSE events
+│   │   └── package.json
+│   └── frontend/         # React SPA dashboard (Vite + TanStack Router)
+│       ├── src/
+│       └── package.json
+├── providers/            # Runtime config & account storage (per-provider)
+│   ├── antigravity/
+│   └── copilot/
 ├── config.json           # Global gateway configuration
 ├── docker-compose.yml    # Docker services orchestration
-├── Dockerfile            # Multi-stage production build container
-└── package.json          # Root workspace configuration
+├── Dockerfile            # Multi-stage production build
+└── package.json          # Root workspace (Bun workspaces)
 ```
 
 ---
 
-## Setup & Running Locally
+## Setup & Running
 
 ### Requirements
 - [Bun](https://bun.sh) v1.0.0+
 
-### 1. Install Workspace Dependencies
-Run the install command from the root workspace directory:
+### Development
 ```bash
 bun install
-```
 
-### 2. Running in Development Mode
-To develop locally, run both backend and frontend servers:
-```bash
-# Start backend server (starts on http://localhost:3000)
+# Backend (http://localhost:3000)
 bun run dev
 
-# In a separate terminal tab, start frontend dev server (runs on http://localhost:5173 with API proxy)
+# Frontend dev server (http://localhost:5173, proxies API)
 bun run dev:frontend
 ```
 
-*Tip: If your backend is running on a different port or host, launch the frontend dev server by passing the `VITE_BACKEND_URL` environment variable:*
+To point frontend at remote backend:
 ```bash
 VITE_BACKEND_URL=https://nougate.nouverse.tech bun run dev:frontend
 ```
 
-### 3. Production Build & Local Serve
-To compile the frontend and run the production backend:
+### Production
 ```bash
-# 1. Compile the React assets into apps/frontend/dist
 bun run build:frontend
-
-# 2. Start the production backend server
 bun run start
 ```
 
----
-
-## Docker Production Deployment
-
-For containerized environments, the gateway runs inside a Docker container managed by Docker Compose. The `Dockerfile` uses a multi-stage compilation pipeline to build the frontend assets and host the final runtime image securely.
-
-To build and launch the container:
+### Docker
 ```bash
 docker compose up -d --build
 ```
@@ -88,55 +112,37 @@ docker compose up -d --build
 
 ## Configuration
 
-### Global Config (`config.json` / `/app/data/config.json`)
+### Global Config (`config.json`)
 
-The global gateway configuration file controls general behavior and domain redirection rules:
-
-```json
+```jsonc
 {
   "baseUrl": "http://localhost:3000",
+  "bypassModelValidation": false,
   "rotation": {
-    "strategy": "hybrid",
-    "cooldown": {
-      "defaultDurationMs": 60000,
-      "maxDurationMs": 3600000
-    }
+    "strategy": "hybrid",  // hybrid | sticky | round-robin | least-used | random
+    "cooldown": { "defaultDurationMs": 60000, "maxDurationMs": 3600000 }
   },
   "scoring": {
     "healthRange": { "min": 0, "max": 100, "initial": 100 },
-    "penalties": {
-      "apiError": -10,
-      "refreshError": -20,
-      "fatalError": -50,
-      "systemicError": -5
-    },
+    "penalties": { "apiError": -10, "refreshError": -20, "fatalError": -50, "systemicError": -5 },
     "rewards": { "success": 1 },
     "weights": { "health": 2.0, "lru": 0.1 }
   },
   "retry": { "maxAttempts": 5, "transientRetryThresholdSeconds": 5 },
   "tokens": { "expiryBufferMs": 60000 },
-  "logging": { "maxBufferSize": 200, "enableConsoleCapture": true }
+  "logging": { "maxBufferSize": 200, "enableConsoleCapture": true },
+  "headroom": { "enabled": false, "url": "http://localhost:9999", "timeoutMs": 5000 },
+  "caveman": { "enabled": false, "level": 3 },
+  "rtk": { "enabled": true },
+  "debugLogger": { "enabled": false, "outputDir": "./tmp/debug-payloads", "modelFilter": [] }
 }
 ```
 
-*Note: Change the `baseUrl` field to match your reverse proxy domain (e.g. `https://nougate.nouverse.tech`) to ensure Google OAuth redirects are routed back correctly.*
+*`BASE_URL` env var overrides `baseUrl`. Required for OAuth redirect routing.*
 
-### Environment Variables (`.env`)
+### Per-Provider Config (`providers/antigravity/config.json`)
 
-You can configure port bindings and override base URL mappings dynamically by placing a `.env` file in the root workspace directory:
-
-```env
-PORT=3000
-BASE_URL=https://nougate.nouverse.tech
-```
-
-*Note: Bun automatically loads environment variables from `.env` files at startup. The `BASE_URL` value provided in `.env` will dynamically override any `"baseUrl"` setting inside `config.json`.*
-
-### Per-Provider Config (`providers/antigravity/config.json` / `/app/data/providers/antigravity/config.json`)
-
-Provider-specific config (endpoints, features, quota):
-
-```json
+```jsonc
 {
   "endpoints": {
     "sandbox": ["https://us-central1-cloudaicompanion-pa.cloud.google.com"],
@@ -144,58 +150,152 @@ Provider-specific config (endpoints, features, quota):
   },
   "features": {
     "keepThinking": false,
-    "jitterEnabled": true
+    "sanitizeToolNames": true,
+    "googleSearchGrounding": false,
+    "jitterEnabled": true,
+    "jitterMinMs": 100,
+    "jitterMaxMs": 500
   },
-  "quota": {
-    "refreshIntervalMs": 300000
+  "scheduling": {
+    "mode": "cache_first",
+    "maxCacheFirstWaitSeconds": 60,
+    "maxRateLimitWaitSeconds": 30
+  },
+  "quota": { "refreshIntervalMs": 300000 },
+  "systemInstruction": ""  // empty = use default, or override here
+}
+```
+
+### Model Spec Overrides (`providers/antigravity/model-specs.json`)
+
+Override or add models at runtime without code changes:
+```jsonc
+{
+  "gemini-3.5-flash-low": {
+    "maxOutputTokens": 64000,
+    "thinkingMode": "level",
+    "thinkingLevel": "medium"
   }
 }
 ```
 
-### Accounts Storage (`providers/antigravity/accounts.json` / `/app/data/providers/antigravity/accounts.json`)
+### Environment Variables
 
-Contains active Google OAuth credentials, current usage statistics, and local cooldown statuses. **Do not commit this file.**
+```env
+PORT=3000
+BASE_URL=https://nougate.nouverse.tech
+HEADROOM_URL=http://headroom:9999
+```
 
 ---
 
-## Model Naming & APIs
+## APIs
 
-All models follow the `provider:model-id` format (e.g., `antigravity:gemini-3.5-flash-low`). OpenAI and Anthropic protocol compatibility APIs are exposed at:
+All models follow `provider:model-id` format.
 
-- **OpenAI Protocol compatible endpoints**:
-  - `GET  /openai/v1/models`
-  - `POST /openai/v1/chat/completions`
-- **Anthropic Protocol compatible endpoints**:
-  - `GET  /anthropic/v1/models`
-  - `POST /anthropic/v1/messages`
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/openai/v1/models` | GET | List available models (OpenAI format) |
+| `/openai/v1/chat/completions` | POST | Chat completions (OpenAI protocol) |
+| `/anthropic/v1/models` | GET | List available models (Anthropic format) |
+| `/anthropic/v1/messages` | POST | Messages (Anthropic protocol) |
 
 ---
 
 ## Integration Guides
 
+### Zed Editor
+
+In `~/.config/zed/settings.json`:
+```jsonc
+{
+  "language_models": {
+    "anthropic_compatible": {
+      "nougate": {
+        "api_url": "https://nougate.nouverse.tech/anthropic",
+        "available_models": [
+          {
+            "name": "antigravity:gemini-3.5-flash-low",
+            "display_name": "(Nougate) Gemini 3.5 Flash Medium",
+            "max_tokens": 1048576,
+            "max_output_tokens": 64000,
+            "capabilities": { "prompt_caching": false, "tools": true, "images": true }
+          }
+        ]
+      }
+    }
+  },
+  "agent": {
+    "default_model": {
+      "provider": "nougate",
+      "model": "copilot:claude-opus-4.6"
+    }
+  }
+}
+```
+
 ### Claude Code CLI
 
 ```bash
-export ANTHROPIC_BASE_URL="http://localhost:3000/anthropic"
+export ANTHROPIC_BASE_URL="https://nougate.nouverse.tech/anthropic"
 claude --model antigravity:claude-sonnet-4-6
 ```
 
 ### OpenCode
 
-```json
-"provider": {
-  "nougate": {
-    "npm": "@ai-sdk/openai-compatible",
-    "name": "Nougate",
-    "options": {
-      "baseURL": "http://localhost:3000/openai/v1"
-    },
-    "models": {
-      "antigravity:gemini-3.5-flash-low": {
-        "name": "Gemini 3.5 Flash Low",
-        "limit": { "context": 1048576, "output": 65535 }
+```jsonc
+{
+  "provider": {
+    "nougate": {
+      "npm": "@ai-sdk/openai-compatible",
+      "options": { "baseURL": "https://nougate.nouverse.tech/openai/v1" },
+      "models": {
+        "antigravity:gemini-3.5-flash-low": {
+          "name": "Gemini 3.5 Flash Medium",
+          "limit": { "context": 1048576, "output": 65535 }
+        }
       }
     }
   }
 }
 ```
+
+### Generic OpenAI-Compatible Client
+
+```bash
+curl https://nougate.nouverse.tech/openai/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "antigravity:gemini-3.5-flash-low",
+    "messages": [{"role": "user", "content": "Hello"}],
+    "stream": true
+  }'
+```
+
+---
+
+## Account Management
+
+### Antigravity (Google OAuth)
+1. Navigate to dashboard → Providers → Antigravity
+2. Click "Add Account" → OAuth flow opens in browser
+3. Accounts auto-discover project ID and start quota polling
+
+### Copilot (GitHub Device Flow)
+1. Navigate to dashboard → Providers → Copilot
+2. Click "Add Account" → Device code displayed
+3. Enter code at github.com/login/device → token auto-exchanges
+
+### Tier System
+Accounts are automatically classified based on quota remaining:
+- **Ultra**: All quotas > 70% remaining (priority +30)
+- **Pro**: Average quota > 30% (priority +15)
+- **Free**: Everything else (no bonus)
+
+Tiers refresh automatically on quota poll. Manual override available via admin API.
+
+---
+
+## License
+
+Internal use only — Nouverse.
