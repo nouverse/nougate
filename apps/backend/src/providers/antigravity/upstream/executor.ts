@@ -200,11 +200,14 @@ export class AntigravityExecutor {
 
     let account: AntigravityAccount | null = null;
     let inPlaceRetry = false;
+    let graceRetries = 0;
+    const maxGraceRetries = 3;
     let pool: "cli" | "sandbox" = useCliPool ? "cli" : "sandbox";
 
     while (attempts < maxAttempts) {
       if (!inPlaceRetry) {
         attempts++;
+        graceRetries = 0;
 
         if (attempts > 1) {
           const delayMs = Math.min(500 * attempts, 3000);
@@ -371,10 +374,11 @@ export class AntigravityExecutor {
           const resetSeconds = resetMs / 1000;
 
           if (status === 429) {
-            if (resetMs > 0 && resetMs <= 2000) {
+            if (resetMs > 0 && resetMs <= 2000 && graceRetries < maxGraceRetries) {
               const sleepMs = resetMs + 1500;
+              graceRetries++;
               console.log(
-                `[GraceRetry] Account ${account.email} transiently limited. Sleeping for ${sleepMs}ms and retrying in-place...`,
+                `[GraceRetry] Account ${account.email} transiently limited. Sleeping for ${sleepMs}ms and retrying in-place (${graceRetries}/${maxGraceRetries})...`,
               );
               await new Promise((resolve) => setTimeout(resolve, sleepMs));
               inPlaceRetry = true;

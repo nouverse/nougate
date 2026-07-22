@@ -7,10 +7,14 @@ export function parseRetryDelay(errorText: string): number {
     const details = errorJson.error?.details || [];
 
     for (const detail of details) {
-      // 1. Check detail.metadata fields
+      // 1. Check detail.metadata fields.
+      // These are Go-style duration strings (e.g. "1h58m19.217857537s"),
+      // so they must be parsed with parseDurationToMs — NOT parseFloat, which
+      // would read only the leading number ("1h..." -> 1 -> 1000ms) and wrongly
+      // classify a multi-hour quota reset as a sub-2s transient limit.
       if (detail.metadata) {
         if (detail.metadata.quotaResetDelay) {
-          return parseFloat(detail.metadata.quotaResetDelay) * 1000;
+          return parseDurationToMs(detail.metadata.quotaResetDelay);
         }
         if (detail.metadata.retryDelay) {
           return parseDurationToMs(detail.metadata.retryDelay);

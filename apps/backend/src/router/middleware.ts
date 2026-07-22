@@ -16,9 +16,14 @@ let consoleCaptureSetup = false;
 function captureLog(level: "info" | "warn" | "error", args: unknown[]): void {
   try {
     const message = args
-      .map((value) =>
-        typeof value === "object" ? JSON.stringify(value, null, 2) : String(value),
-      )
+      .map((value) => {
+        // Error objects serialize to "{}" via JSON.stringify because their
+        // message/stack are non-enumerable — render them explicitly instead.
+        if (value instanceof Error) {
+          return value.stack || `${value.name}: ${value.message}`;
+        }
+        return typeof value === "object" ? JSON.stringify(value, null, 2) : String(value);
+      })
       .join(" ");
     const line = `[${new Date().toLocaleTimeString()}] [${level.toUpperCase()}] ${message}`;
     const maxLogs = getProxyConfig().logging.maxBufferSize;
