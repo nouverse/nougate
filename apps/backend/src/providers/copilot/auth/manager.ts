@@ -1,6 +1,6 @@
 import { getProxyConfig as getGlobalProxyConfig } from '@/config/manager';
 import { adminEventBus } from '@/core/events';
-import { ensureSessionToken } from './token-exchange';
+import { ensureSessionToken, TokenExchangeError } from './token-exchange';
 import { loadConfig, saveConfig, type SelectionStrategy } from './storage';
 import { type CopilotAccount } from './types';
 
@@ -8,6 +8,11 @@ let accounts: CopilotAccount[] = [];
 let currentStrategy: SelectionStrategy = 'hybrid';
 const clientStickyMap = new Map<string, string>();
 const cooldownMap = new Map<string, number>();
+
+// How long an account stays out of rotation after being marked 'invalid' before
+// it is re-probed (half-open). Keeps a genuinely-dead token from hot-looping
+// while ensuring a transiently-failed account heals itself automatically.
+const INVALID_PROBE_WINDOW_MS = 5 * 60 * 1000;
 
 const MODEL_FAMILIES = {
   'GPT': (n: string) => n.includes('gpt') || n.includes('o3') || n.includes('o4'),
@@ -131,8 +136,17 @@ export async function getBestAccount(
   if (accounts.length === 0) return null;
   const now = Date.now();
   
-  // Filter active/usable accounts
-  const usable = accounts.filter(a => a.personalToken && a.status !== 'invalid' && !excludeIds.includes(a.id));
+  // Filter active/usable accounts. Invalid accounts are normally excluded, but
+  // become eligible again as a "half-open" probe once the recovery window has
+  // elapsed, so a transient outage never bricks an account permanently.
+  const usable = accounts.filter(a => {
+    if (!a.personalToken || excludeIds.includes(a.id)) return false;
+    if (a.status === 'invalid') {
+      // Legacy invalid accounts (no invalidatedAt) are probed immediately.
+      return a.invalidatedAt === undefined || (now - a.invalidatedAt) >= INVALID_PROBE_WINDOW_MS;
+    }
+    return true;
+  });
   const family = model ? getFamilyName(model) : "Other";
 
   if (pool) {
@@ -184,12 +198,34 @@ export async function getBestAccount(
 async function ensureAccountReady(account: CopilotAccount): Promise<CopilotAccount | null> {
   try {
     await ensureSessionToken(account);
+    // Successful exchange: recover the account if it had been marked invalid
+    // (e.g. by a previous transient outage or an expired token that's now fresh).
+    if (account.status === 'invalid') {
+      console.log(`[Copilot Manager] Account ${account.id} recovered after successful token exchange.`);
+      account.status = 'active';
+      account.invalidatedAt = undefined;
+      account.healthScore = Math.max(account.healthScore, 50);
+    }
     await saveAccounts(accounts);
     return account;
-  } catch (e) {
-    console.error(`[Copilot Manager] Failed to exchange session token for ${account.id}:`, e);
-    account.healthScore = Math.max(0, account.healthScore - 20);
-    account.status = 'invalid';
+  } catch (e: any) {
+    const status: number | undefined = e instanceof TokenExchangeError ? e.status : undefined;
+    const isAuthFailure = status === 401 || status === 403;
+
+    if (isAuthFailure) {
+      // Token is genuinely bad (revoked/expired/no Copilot entitlement): only a
+      // re-login can fix it. Mark invalid, but stamp the time so it can still be
+      // re-probed later instead of staying dead forever.
+      console.error(`[Copilot Manager] Auth failure (${status}) exchanging token for ${account.id}. Marking invalid.`, e);
+      account.healthScore = Math.max(0, account.healthScore - 20);
+      account.status = 'invalid';
+      account.invalidatedAt = Date.now();
+    } else {
+      // Transient failure (network/timeout/5xx, e.g. GitHub's 502 "Unicorn").
+      // Do NOT brick the account — a single upstream hiccup must not take it out.
+      console.warn(`[Copilot Manager] Transient error exchanging token for ${account.id} (status=${status ?? 'network'}). Keeping account, will retry.`, e);
+      account.healthScore = Math.max(0, account.healthScore - 5);
+    }
     await saveAccounts(accounts);
     return null;
   }
@@ -234,6 +270,7 @@ export async function updateAccountUsage(
 
   if (status === 401) {
     account.status = 'invalid';
+    account.invalidatedAt = Date.now();
   }
 
   await saveAccounts(accounts);
@@ -264,7 +301,8 @@ export async function resetAccount(id: string) {
     account.cooldowns = {};
     account.modelScores = {};
     account.status = 'active';
-    
+    account.invalidatedAt = undefined;
+
     const keysToDelete = [];
     for (const [key] of cooldownMap) {
       if (key.startsWith(id + "|")) keysToDelete.push(key);

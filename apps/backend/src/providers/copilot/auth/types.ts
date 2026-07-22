@@ -19,6 +19,9 @@ export interface CopilotAccount extends IAccount {
   consecutiveFailures?: number;
   cooldowns?: Record<string, number>;
   status: 'active' | 'cooldown' | 'invalid';
+  // When the account was last marked 'invalid'. Used for half-open recovery:
+  // an invalid account is re-probed once this is older than the recovery window.
+  invalidatedAt?: number;
 }
 
 export interface GitHubDeviceCodeResponse {
