@@ -232,13 +232,10 @@ function buildToolResponseParts(
   unsignedCallIds: Set<string>,
   toolCallNameMap: Map<string, string>,
   keepThinking: boolean,
+  convertedCallIds: Set<string>,
 ): any[] {
-  if (unsignedCallIds.size > 0 && unsignedCallIds.has(message.tool_call_id) && !isInCurrentTurn) {
-    return [{ text: "." }];
-  }
-
-  // Current-turn tool response for an unsigned call — skip as functionResponse
-  if (isInCurrentTurn && keepThinking && !getSignatureByCallId(message.tool_call_id)) {
+  // If the corresponding tool_call was converted to a text summary, skip functionResponse
+  if (convertedCallIds.has(message.tool_call_id)) {
     return [{ text: "." }];
   }
 
@@ -350,8 +347,9 @@ function appendToolCallParts(params: {
   unsignedCallIds: Set<string>;
   toolResponseMap: Map<string, { name: string; content: string }>;
   keepThinking: boolean;
+  convertedCallIds: Set<string>;
 }): void {
-  const { parts, message, googleModel, isInCurrentTurn, unsignedCallIds, toolResponseMap, keepThinking } =
+  const { parts, message, googleModel, isInCurrentTurn, unsignedCallIds, toolResponseMap, keepThinking, convertedCallIds } =
     params;
   let isFirstFunctionCallInStep = true;
 
@@ -390,6 +388,8 @@ function appendToolCallParts(params: {
         summary += `\n[Tool Result: ${response.content}]`;
       }
 
+      convertedCallIds.add(toolCall.id);
+      convertedCallIds.add(cleanId);
       parts.push({ text: summary });
       continue;
     }
@@ -437,6 +437,8 @@ function appendToolCallParts(params: {
         if (response) {
           summary += `\n[Tool Result: ${response.content}]`;
         }
+        convertedCallIds.add(toolCall.id);
+        convertedCallIds.add(cleanId);
         parts.push({ text: summary });
         isFirstFunctionCallInStep = false;
         continue;
@@ -459,8 +461,9 @@ function buildStandardParts(params: {
   unsignedCallIds: Set<string>;
   toolResponseMap: Map<string, { name: string; content: string }>;
   keepThinking: boolean;
+  convertedCallIds: Set<string>;
 }): any[] {
-  const { message, googleModel, isInCurrentTurn, sessionId, unsignedCallIds, toolResponseMap, keepThinking } =
+  const { message, googleModel, isInCurrentTurn, sessionId, unsignedCallIds, toolResponseMap, keepThinking, convertedCallIds } =
     params;
   const parts: any[] = [];
 
@@ -477,6 +480,7 @@ function buildStandardParts(params: {
     unsignedCallIds,
     toolResponseMap,
     keepThinking,
+    convertedCallIds,
   });
 
   if (parts.length === 0) {
@@ -503,6 +507,7 @@ function buildGoogleContents(
   const unsignedCallIds = collectUnsignedCallIds(messages, thinkingEnabled);
   const toolResponseMap = buildToolResponseMap(messages, unsignedCallIds, toolCallNameMap);
 
+  const convertedCallIds = new Set<string>();
   const rawContents = messages.map((message, messageIndex) => {
     const isInCurrentTurn = messageIndex >= currentTurnStartIndex;
     const parts =
@@ -514,6 +519,7 @@ function buildGoogleContents(
             unsignedCallIds,
             toolCallNameMap,
             keepThinking,
+            convertedCallIds,
           )
         : buildStandardParts({
             message,
@@ -523,6 +529,7 @@ function buildGoogleContents(
             unsignedCallIds,
             toolResponseMap,
             keepThinking,
+            convertedCallIds,
           });
 
     return {

@@ -300,6 +300,7 @@ function transformContentBlock(
   nameMap: Map<string, string>,
   resultMap: Map<string, { name: string; content: string }>,
   keepThinking: boolean,
+  convertedToolUseIds: Set<string>,
 ): any[] {
   const parts: any[] = [];
 
@@ -337,6 +338,7 @@ function transformContentBlock(
         if (response) {
           summary += `\n[Tool Result: ${response.content}]`;
         }
+        convertedToolUseIds.add(block.id);
         parts.push({ text: summary });
         break;
       }
@@ -378,6 +380,7 @@ function transformContentBlock(
           if (response) {
             summary += `\n[Tool Result: ${response.content}]`;
           }
+          convertedToolUseIds.add(block.id);
           parts.push({ text: summary });
           break;
         }
@@ -388,15 +391,8 @@ function transformContentBlock(
     }
 
     case "tool_result": {
-      // If unsigned and not in current turn, emit a placeholder
-      if (!isInCurrentTurn && unsignedIds.has(block.tool_use_id)) {
-        parts.push({ text: "." });
-        break;
-      }
-
-      // If this tool_result's corresponding tool_use was converted to text summary
-      // in the current turn (no signature), skip emitting a functionResponse
-      if (isInCurrentTurn && keepThinking && !getSignatureByCallId(block.tool_use_id)) {
+      // If the corresponding tool_use was converted to a text summary, skip functionResponse
+      if (convertedToolUseIds.has(block.tool_use_id)) {
         parts.push({ text: "." });
         break;
       }
@@ -485,6 +481,7 @@ function transformMessage(
   nameMap: Map<string, string>,
   resultMap: Map<string, { name: string; content: string }>,
   keepThinking: boolean,
+  convertedToolUseIds: Set<string>,
 ): { role: string; parts: any[] } {
   const role = message.role === "assistant" ? "model" : "user";
   const parts: any[] = [];
@@ -504,6 +501,7 @@ function transformMessage(
       nameMap,
       resultMap,
       keepThinking,
+      convertedToolUseIds,
     );
     parts.push(...blockParts);
   }
@@ -532,6 +530,7 @@ function buildGoogleContents(
   const unsignedIds = collectUnsignedToolUseIds(messages, thinkingEnabled);
   const resultMap = buildToolResultMap(messages, unsignedIds, nameMap, thinkingEnabled);
 
+  const convertedToolUseIds = new Set<string>();
   const rawContents = messages.map((message, messageIndex) => {
     const isInCurrentTurn = messageIndex >= currentTurnStartIndex;
     return transformMessage(
@@ -543,6 +542,7 @@ function buildGoogleContents(
       nameMap,
       resultMap,
       keepThinking,
+      convertedToolUseIds,
     );
   });
 
