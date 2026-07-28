@@ -8,11 +8,11 @@ data/
 .npmrc
 tmp/
 
-# Backend runtime state
+# Runtime config & state (use config.example.json as template)
+config.json
 apps/backend/antigravity-accounts.json
 apps/backend/providers/antigravity/accounts.json
 apps/backend/providers/antigravity/config.json
-apps/backend/config.json
 
 # Frontend build output
 apps/frontend/dist/

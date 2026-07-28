@@ -39,6 +39,36 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
     maxOutputTokens: 8192, // max: 65536
     timeoutMs: 60000,
   },
+  'gemini-3.6-flash-low': {
+    modelId: 'gemini-3.6-flash-low',
+    displayName: 'Gemini 3.6 Flash Low',
+    pool: 'sandbox',
+    isThinking: true,
+    thinkingMode: 'level',
+    thinkingLevel: 'low',
+    maxOutputTokens: 64000, // max: 65536
+    timeoutMs: 60000,
+  },
+  'gemini-3.6-flash-medium': {
+    modelId: 'gemini-3.6-flash-medium',
+    displayName: 'Gemini 3.6 Flash Medium',
+    pool: 'sandbox',
+    isThinking: true,
+    thinkingMode: 'level',
+    thinkingLevel: 'medium',
+    maxOutputTokens: 64000, // max: 65536
+    timeoutMs: 60000,
+  },
+  'gemini-3.6-flash-high': {
+    modelId: 'gemini-3.6-flash-high',
+    displayName: 'Gemini 3.6 Flash High',
+    pool: 'sandbox',
+    isThinking: true,
+    thinkingMode: 'level',
+    thinkingLevel: 'high',
+    maxOutputTokens: 64000, // max: 65536
+    timeoutMs: 60000,
+  },
   'gemini-3.5-flash-extra-low': {
     modelId: 'gemini-3.5-flash-extra-low',
     displayName: 'Gemini 3.5 Flash Low',
@@ -198,4 +228,3 @@ export const antigravityModelRegistry: IModelRegistry = {
     return Object.keys(MODEL_REGISTRY).sort();
   },
 };
-
