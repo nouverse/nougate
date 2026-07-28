@@ -61,7 +61,8 @@ services:
       - ./apps/frontend/package.json:/app/apps/frontend/package.json:ro
       - ./apps/frontend/tsconfig.json:/app/apps/frontend/tsconfig.json:ro
       - ./apps/frontend/vite.config.ts:/app/apps/frontend/vite.config.ts:ro
-      - ./apps/frontend/bun.lock:/app/apps/frontend/bun.lock:ro
+      - ./apps/frontend/bun.lock:/app/apps/frontend/bun.lock
+      - frontend_node_modules:/app/apps/frontend/node_modules
       # ── Shared config ──
       - ./config.json:/app/config.json:ro
       - ./providers:/app/providers:ro
@@ -78,3 +79,6 @@ services:
     restart: unless-stopped
     ports:
       - "8787:8787"
+
+volumes:
+  frontend_node_modules:
