@@ -1,44 +1,58 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { ModelSpec } from '@/lib/types';
+import { CopyButton, ModelIdChip } from '@/components/shared/CopyButton';
 
 interface Props {
   models: ModelSpec[];
+  /** Prefix that clients must send — model IDs are shown as `providerId:modelId`. */
+  providerId: string;
 }
 
-export function ModelRegistryTable({ models }: Props) {
+export function ModelRegistryTable({ models, providerId }: Props) {
   const [search, setSearch] = useState('');
   const [poolFilter, setPoolFilter] = useState<'ALL' | 'cli' | 'sandbox'>('ALL');
 
   const filtered = models.filter((m) => {
-    const text = m.modelId.toLowerCase() + (m.displayName || '').toLowerCase() + (m.upstreamModelId || '').toLowerCase();
+    const text = `${providerId}:${m.modelId}`.toLowerCase() + (m.displayName || '').toLowerCase() + (m.upstreamModelId || '').toLowerCase();
     if (search && !text.includes(search.toLowerCase())) return false;
     if (poolFilter !== 'ALL' && m.pool !== poolFilter) return false;
     return true;
   });
+
+  const allIds = filtered.map((m) => `${providerId}:${m.modelId}`).join('\n');
 
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-base-200 p-3 rounded-xl border border-base-300">
         <input
           type="text"
-          placeholder="Search models..."
-          className="input input-sm input-bordered w-full sm:max-w-xs bg-base-100 text-base-content"
+          placeholder={`Search models... (call them as ${providerId}:model)`}
+          className="input input-sm input-bordered w-full sm:max-w-sm bg-base-100 text-base-content"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-base-content/50 font-medium">Pool:</span>
-          <div className="join border border-base-300 rounded-lg">
-            {(['ALL', 'cli', 'sandbox'] as const).map((p) => (
-              <button
-                key={p}
-                className={`join-item btn btn-xs px-3 ${poolFilter === p ? 'btn-primary' : 'btn-ghost text-base-content/65'}`}
-                onClick={() => setPoolFilter(p)}
-              >
-                {p}
-              </button>
-            ))}
+
+        <div className="flex items-center gap-3 flex-wrap">
+          <CopyButton
+            value={allIds}
+            label={`Copy ${filtered.length} ID${filtered.length === 1 ? '' : 's'}`}
+            className="border border-base-300"
+            title="Copy every visible model ID, one per line"
+          />
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-base-content/50 font-medium">Pool:</span>
+            <div className="join border border-base-300 rounded-lg">
+              {(['ALL', 'cli', 'sandbox'] as const).map((p) => (
+                <button
+                  key={p}
+                  className={`join-item btn btn-xs px-3 ${poolFilter === p ? 'btn-primary' : 'btn-ghost text-base-content/65'}`}
+                  onClick={() => setPoolFilter(p)}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -49,10 +63,12 @@ export function ModelRegistryTable({ models }: Props) {
         ) : (
           filtered.map((m) => (
             <div key={m.modelId} className="card bg-base-200 border border-base-300 shadow-sm p-4 space-y-3">
-              <div className="flex justify-between items-start">
-                <div>
-                  <h4 className="font-bold text-sm text-base-content">{m.displayName || m.modelId}</h4>
-                  <span className="text-[10px] font-mono text-base-content/40 block mt-0.5">{m.modelId}</span>
+              <div className="flex justify-between items-start gap-2">
+                <div className="min-w-0">
+                  <h4 className="font-bold text-sm text-base-content truncate">{m.displayName || m.modelId}</h4>
+                  <div className="mt-0.5">
+                    <ModelIdChip providerId={providerId} modelId={m.modelId} />
+                  </div>
                 </div>
                 <span className={`badge ${m.pool === 'cli' ? 'badge-secondary' : 'badge-accent'} badge-sm font-semibold uppercase`}>
                   {m.pool}
@@ -94,7 +110,7 @@ export function ModelRegistryTable({ models }: Props) {
         <table className="table table-sm w-full text-base-content">
           <thead>
             <tr className="border-b border-base-300 text-base-content/50">
-              <th>Model ID</th>
+              <th>Model ID (send this as `model`)</th>
               <th>Display Name</th>
               <th>Pool</th>
               <th>Max Output</th>
@@ -111,7 +127,9 @@ export function ModelRegistryTable({ models }: Props) {
             ) : (
               filtered.map((m) => (
                 <tr key={m.modelId} className="hover:bg-base-200/30 transition-colors border-b border-base-300/40">
-                  <td className="font-mono font-semibold select-all">{m.modelId}</td>
+                  <td>
+                    <ModelIdChip providerId={providerId} modelId={m.modelId} />
+                  </td>
                   <td>{m.displayName || <span className="text-base-content/35 italic">Same as ID</span>}</td>
                   <td>
                     <span className={`badge ${m.pool === 'cli' ? 'badge-secondary' : 'badge-accent'} badge-sm font-semibold uppercase`}>

@@ -2,12 +2,45 @@ import { type ProxyConfig } from '@/config/types';
 import { EventEmitter } from 'node:events';
 import { join } from 'path';
 import { existsSync } from 'fs';
+import { getProjectRoot } from '@/core/paths';
 
-const DEFAULT_PATH = existsSync("/app/data")
-  ? "/app/data/config.json"
-  : join(process.cwd(), "config.json");
+/**
+ * Resolve config.json without consulting `process.cwd()`.
+ *
+ * Launching from the repo root and launching from `apps/backend` used to read
+ * two different files, so a setting saved under one would silently not apply
+ * under the other. An existing file is always preferred so no one's settings
+ * move when they upgrade.
+ */
+function resolveConfigPath(): string {
+  if (process.env.CONFIG_FILE) {
+    return process.env.CONFIG_FILE;
+  }
 
-const CONFIG_PATH = process.env.CONFIG_FILE || DEFAULT_PATH;
+  if (existsSync('/app/data')) {
+    return '/app/data/config.json';
+  }
+
+  const root = getProjectRoot();
+  const candidates = [join(root, 'config.json'), join(root, 'data', 'config.json')];
+  return candidates.find((candidate) => existsSync(candidate)) ?? candidates[0];
+}
+
+const CONFIG_PATH = resolveConfigPath();
+
+/**
+ * Warn about a config file an earlier build may have written next to the
+ * backend package, which is no longer read.
+ */
+function warnAboutStrayConfig(): void {
+  const stray = join(getProjectRoot(), 'apps', 'backend', 'config.json');
+  if (stray !== CONFIG_PATH && existsSync(stray)) {
+    console.warn(
+      `[Config] Ignoring stray config at ${stray} — the active file is ${CONFIG_PATH}. ` +
+        'Delete the stray file to avoid confusion.',
+    );
+  }
+}
 export const configEventBus = new EventEmitter();
 
 let config: ProxyConfig;
@@ -109,7 +142,10 @@ export async function loadProxyConfig(): Promise<ProxyConfig> {
     config.headroom.url = process.env.HEADROOM_URL;
   }
 
-  console.log(`[Config] Loaded configuration: strategy=${config.rotation.strategy}`);
+  warnAboutStrayConfig();
+  console.log(
+    `[Config] Loaded configuration from ${CONFIG_PATH}: strategy=${config.rotation.strategy}`,
+  );
   return config;
 }
 

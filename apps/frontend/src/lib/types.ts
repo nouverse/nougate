@@ -150,6 +150,23 @@ export interface CustomProviderDetail extends CustomProviderSummary {
   models: CustomProviderModel[];
 }
 
+/** One callable model, keyed by the exact `provider:model` string a client sends. */
+export interface CatalogModel {
+  id: string;
+  providerId: string;
+  providerName: string;
+  modelId: string;
+  displayName: string;
+  isThinking: boolean;
+  maxOutputTokens: number;
+  /** Resolved price: the spec's own, else the price book, else the config default. */
+  inputPricePer1M: number;
+  outputPricePer1M: number;
+  /** True when the price is the flat config default rather than a known rate. */
+  pricingIsFallback: boolean;
+  isCustom: boolean;
+}
+
 export interface ModelSpec {
   modelId: string;
   displayName?: string;

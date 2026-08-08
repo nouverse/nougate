@@ -12,6 +12,7 @@ import {
   ApiKeysResponse,
   CustomProviderSummary,
   CustomProviderDetail,
+  CatalogModel,
 } from '@/lib/types';
 
 export function useProviders() {
@@ -43,6 +44,17 @@ export function useModels(id: string) {
     queryKey: ['providers', id, 'models'],
     queryFn: () => api.get<ModelSpec[]>(`/api/providers/${id}/models`),
     enabled: !!id,
+  });
+}
+
+/**
+ * Every callable model across all providers, already prefixed.
+ */
+export function useModelCatalog() {
+  return useQuery({
+    queryKey: ['models', 'catalog'],
+    queryFn: () => api.get<CatalogModel[]>('/api/models'),
+    staleTime: 30000,
   });
 }
 

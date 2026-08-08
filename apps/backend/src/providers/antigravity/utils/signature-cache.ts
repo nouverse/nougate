@@ -1,5 +1,6 @@
 import { join } from "path";
 import { existsSync, mkdirSync } from "fs";
+import { getDataDir } from '@/core/paths';
 
 const MIN_SIGNATURE_LENGTH = 50;
 
@@ -51,9 +52,7 @@ const sessionSignatureCache = new LRUMap<string, { signature: string; messageCou
 // Layer 4: Map<session_id, string[]> (assistant reasoning text per turn)
 const sessionReasoningCache = new LRUMap<string, string[]>(5_000);
 
-const CACHE_DIR = existsSync("/app/data")
-  ? "/app/data"
-  : join(process.cwd(), "tmp");
+const CACHE_DIR = getDataDir();
 const CACHE_FILE = join(CACHE_DIR, "signatures.json");
 
 // Helper to save cache to disk asynchronously

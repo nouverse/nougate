@@ -5,6 +5,7 @@ import { useCustomProviders, useCustomProvider, useInvalidateCustomProviders } f
 import { api } from '@/lib/api';
 import { CustomApiStyle, CustomProviderModel } from '@/lib/types';
 import { ConfirmModal } from '@/components/shared/ConfirmModal';
+import { CopyButton, ModelIdChip } from '@/components/shared/CopyButton';
 import { formatTimestamp } from '@/lib/format';
 import { Boxes, Plus, RefreshCw, Trash2, KeyRound, Save } from 'lucide-react';
 
@@ -181,7 +182,7 @@ function CustomProvidersPage() {
   }
 
   return (
-    <div className="space-y-6 text-base-content">
+    <div className="space-y-6 text-base-content min-w-0">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-base-300 pb-4">
         <div>
           <h1 className="text-xl font-extrabold tracking-tight">Custom Providers</h1>
@@ -203,7 +204,7 @@ function CustomProvidersPage() {
 
       {showCreate && (
         <div className="card bg-base-200 border border-primary/40 shadow-sm">
-          <div className="card-body p-5 space-y-4">
+          <div className="card-body p-5 space-y-4 min-w-0">
             <h3 className="card-title text-sm font-bold tracking-wide flex items-center gap-2">
               <Boxes className="w-4 h-4 text-primary" />
               ADD A PROVIDER
@@ -358,8 +359,11 @@ function CustomProvidersPage() {
       )}
 
       {(providers ?? []).length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-4">
-          <div className="card bg-base-200 border border-base-300 shadow-sm h-fit">
+        // min-w-0 on the grid children: without it a grid track defaults to
+        // min-width:auto, so the wide models table stretches the column and
+        // scrolls the whole page sideways instead of scrolling inside itself.
+        <div className="grid grid-cols-1 lg:grid-cols-[240px_minmax(0,1fr)] gap-4 min-w-0">
+          <div className="card bg-base-200 border border-base-300 shadow-sm h-fit min-w-0">
             <div className="card-body p-3 gap-1">
               {providers!.map((provider) => (
                 <button
@@ -389,7 +393,7 @@ function CustomProvidersPage() {
           </div>
 
           {detail && (
-            <div className="space-y-4">
+            <div className="space-y-4 min-w-0">
               <ProviderSettings
                 detail={detail}
                 onSave={(updates) => updateMutation.mutate(updates)}
@@ -398,7 +402,7 @@ function CustomProvidersPage() {
               />
 
               <div className="card bg-base-200 border border-base-300 shadow-sm">
-                <div className="card-body p-5 space-y-4">
+                <div className="card-body p-5 space-y-4 min-w-0">
                   <h3 className="card-title text-sm font-bold tracking-wide flex items-center gap-2">
                     <KeyRound className="w-4 h-4 text-primary" />
                     API KEYS ({detail.keys.length})
@@ -408,7 +412,7 @@ function CustomProvidersPage() {
                     the next key takes over.
                   </p>
 
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto min-w-0">
                     <table className="table table-sm">
                       <thead>
                         <tr className="text-base-content/50 text-[10px] uppercase tracking-wider">
@@ -582,13 +586,15 @@ function ProviderSettings({
 
   return (
     <div className="card bg-base-200 border border-base-300 shadow-sm">
-      <div className="card-body p-5 space-y-4">
+      <div className="card-body p-5 space-y-4 min-w-0">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <h3 className="card-title text-sm font-bold tracking-wide">
+          <h3 className="card-title text-sm font-bold tracking-wide flex-wrap">
             {detail.displayName}
-            <code className="ml-2 text-[11px] font-mono font-normal text-base-content/50">
-              {detail.id}:model
-            </code>
+            <span className="inline-flex items-center gap-1 ml-1">
+              <code className="text-[11px] font-mono font-bold text-primary">{detail.id}:</code>
+              <span className="text-[11px] font-normal text-base-content/40">model prefix</span>
+              <CopyButton value={`${detail.id}:`} title={`Copy the "${detail.id}:" prefix`} />
+            </span>
           </h3>
           <button type="button" className="btn btn-ghost btn-xs text-error gap-1.5" onClick={onDelete}>
             <Trash2 className="w-3.5 h-3.5" />
@@ -689,10 +695,16 @@ function ModelEditor({
 
   return (
     <div className="card bg-base-200 border border-base-300 shadow-sm">
-      <div className="card-body p-5 space-y-4">
+      <div className="card-body p-5 space-y-4 min-w-0">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <h3 className="card-title text-sm font-bold tracking-wide">MODELS ({draft.length})</h3>
           <div className="flex items-center gap-2">
+            <CopyButton
+              value={draft.map((model) => `${providerId}:${model.modelId}`).join('\n')}
+              label={`Copy ${draft.length} ID${draft.length === 1 ? '' : 's'}`}
+              className="border border-base-300"
+              title="Copy every model ID, one per line"
+            />
             <button
               type="button"
               className="btn btn-ghost btn-xs gap-1.5"
@@ -718,11 +730,11 @@ function ModelEditor({
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto min-w-0">
           <table className="table table-sm">
             <thead>
               <tr className="text-base-content/50 text-[10px] uppercase tracking-wider">
-                <th>Model ID (call as {providerId}:…)</th>
+                <th className="min-w-[16rem]">Model ID (send this as `model`)</th>
                 <th>Upstream ID</th>
                 <th className="text-right">Max out</th>
                 <th className="text-right">$ / 1M in</th>
@@ -734,7 +746,9 @@ function ModelEditor({
             <tbody>
               {draft.map((model) => (
                 <tr key={model.modelId}>
-                  <td className="font-mono text-xs font-semibold">{model.modelId}</td>
+                  <td>
+                    <ModelIdChip providerId={providerId} modelId={model.modelId} />
+                  </td>
                   <td>
                     <input
                       type="text"

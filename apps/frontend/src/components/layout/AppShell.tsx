@@ -7,7 +7,7 @@ import { useSSE } from '@/hooks/useSSE';
 import { api } from '@/lib/api';
 import { LogViewer } from '@/components/shared/LogViewer';
 import { useAuth, logout } from '@/hooks/useAuth';
-import { Menu, Settings, Terminal, Shield, ShieldAlert, List, Sun, Moon, LogOut, BarChart3, KeyRound, Boxes } from 'lucide-react';
+import { Menu, Settings, Terminal, Shield, ShieldAlert, List, Sun, Moon, LogOut, BarChart3, KeyRound, Boxes, FlaskConical } from 'lucide-react';
 
 interface Props {
   children: React.ReactNode;
@@ -60,6 +60,7 @@ export function AppShell({ children }: Props) {
 
   const menuItems = [
     { label: 'Overview', to: '/' as any, icon: <List className="w-4 h-4" /> },
+    { label: 'API Playground', to: '/playground' as any, icon: <FlaskConical className="w-4 h-4" /> },
     { label: 'Token Metrics', to: '/tokens' as any, icon: <BarChart3 className="w-4 h-4" /> },
     { label: 'API Keys', to: '/api-keys' as any, icon: <KeyRound className="w-4 h-4" /> },
     { label: 'Custom Providers', to: '/custom-providers' as any, icon: <Boxes className="w-4 h-4" /> },
@@ -129,11 +130,17 @@ export function AppShell({ children }: Props) {
               }`}
               onClick={handleNavClick}
             >
-              <div className="flex items-center gap-3">
-                <span className="w-2 h-2 rounded-full bg-success" />
-                <span className="capitalize">{prov.displayName}</span>
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="w-2 h-2 rounded-full bg-success shrink-0" />
+                <div className="min-w-0 leading-tight">
+                  <span className="capitalize block truncate">{prov.displayName}</span>
+                  {/* The prefix is what users actually type into a client. */}
+                  <span className="block font-mono text-[10px] opacity-60 truncate">
+                    {prov.id}:
+                  </span>
+                </div>
               </div>
-              <span className="badge badge-xs badge-neutral border-0 bg-base-300 text-base-content/60 font-mono font-bold px-1.5 py-1">
+              <span className="badge badge-xs badge-neutral border-0 bg-base-300 text-base-content/60 font-mono font-bold px-1.5 py-1 shrink-0">
                 {prov.accountCount}
               </span>
             </Link>

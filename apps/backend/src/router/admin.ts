@@ -12,8 +12,10 @@ import { handleMetricsRoute } from "@/router/metrics";
 import { handleApiKeysRoute } from "@/router/api-keys";
 import { handleCustomProvidersRoute } from "@/router/custom-providers";
 import { CustomProvider } from "@/providers/custom";
+import { resolvePricing } from "@/core/metrics/pricing";
+import { projectPath } from "@/core/paths";
 
-const pkg = await Bun.file("package.json").json();
+const pkg = await Bun.file(projectPath("package.json")).json();
 const APP_VERSION = pkg.version || "0.0.0";
 
 /**
@@ -160,8 +162,8 @@ function serveFrontendAsset(pathname: string): Response {
   
   const distDir = [
     join(import.meta.dir, "../../../frontend/dist"),
-    join(process.cwd(), "apps/frontend/dist"),
-    join(process.cwd(), "frontend/dist"),
+    projectPath("apps/frontend/dist"),
+    projectPath("frontend/dist"),
   ].find((dir) => existsSync(dir)) || join(import.meta.dir, "../../../frontend/dist");
   
   if (!isFile) {
@@ -260,6 +262,39 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
       strategy,
       supportedModels: allModels,
     });
+  }
+
+  // Full catalogue of callable models, prefixed exactly as a client must send
+  // them. Served from the admin side so the dashboard does not need a gateway
+  // API key to populate the playground's model picker.
+  if (url.pathname === "/api/models" && req.method === "GET") {
+    const models = getAllProviders().flatMap((p) => {
+      const registry = p.getModelRegistry();
+      return registry.listModelIds().map((modelId) => {
+        const spec = registry.getSpec(modelId);
+        // Resolved (not raw) pricing, so a cost shown here matches what the
+        // metrics dashboard bills the same request at.
+        const pricing = resolvePricing(spec);
+
+        return {
+          id: `${p.id}:${modelId}`,
+          providerId: p.id,
+          providerName: p.displayName,
+          modelId,
+          displayName: spec?.displayName || modelId,
+          isThinking: spec?.isThinking ?? false,
+          maxOutputTokens: spec?.maxOutputTokens ?? 8192,
+          inputPricePer1M: pricing.inputPricePer1M,
+          outputPricePer1M: pricing.outputPricePer1M,
+          /** True when neither the spec nor the price book knew this model. */
+          pricingIsFallback: pricing.isFallback,
+          isCustom: p instanceof CustomProvider,
+        };
+      });
+    });
+
+    models.sort((a, b) => a.id.localeCompare(b.id));
+    return createJsonResponse(models);
   }
 
   if (url.pathname === "/api/strategy" && req.method === "POST") {

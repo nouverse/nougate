@@ -3,15 +3,13 @@ import { mkdir } from 'fs/promises';
 import { dirname, join } from 'path';
 
 import { type AntigravityAccount, type SelectionStrategy } from '@/providers/antigravity/auth/types';
+import { resolveStateFile } from '@/core/paths';
 
-// In Docker, /app/data/ is the writable volume. Fallback to cwd for local dev.
-const DEFAULT_PATH = existsSync("/app/data")
-  ? '/app/data/providers/antigravity/accounts.json'
-  : join(process.cwd(), 'providers', 'antigravity', 'accounts.json');
+// Accounts live in the data directory (the Docker volume, or ./data locally)
+// so every launch method reads and writes the same file.
+const DEFAULT_PATH = resolveStateFile('providers', 'antigravity', 'accounts.json');
 
-const LEGACY_PATH = existsSync('/app/data')
-  ? '/app/data/antigravity-accounts.json'
-  : join(process.cwd(), 'antigravity-accounts.json');
+const LEGACY_PATH = resolveStateFile('antigravity-accounts.json');
 
 const ACCOUNTS_FILE = process.env.ACCOUNTS_FILE || DEFAULT_PATH;
 

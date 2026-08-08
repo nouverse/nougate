@@ -3,11 +3,11 @@ import { mkdir } from 'fs/promises';
 import { dirname, join } from 'path';
 
 import { type CopilotAccount } from '@/providers/copilot/auth/types';
+import { resolveStateFile } from '@/core/paths';
 
-// In Docker, /app/data/ is the writable volume. Fallback to cwd for local dev.
-const DEFAULT_PATH = existsSync("/app/data")
-  ? '/app/data/providers/copilot/accounts.json'
-  : join(process.cwd(), 'providers', 'copilot', 'accounts.json');
+// Accounts live in the data directory (the Docker volume, or ./data locally)
+// so every launch method reads and writes the same file.
+const DEFAULT_PATH = resolveStateFile('providers', 'copilot', 'accounts.json');
 
 const ACCOUNTS_FILE = process.env.COPILOT_ACCOUNTS_FILE || DEFAULT_PATH;
 

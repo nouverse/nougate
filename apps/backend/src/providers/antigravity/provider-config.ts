@@ -1,6 +1,7 @@
 import { existsSync } from 'fs';
 import { mkdir } from 'fs/promises';
 import { dirname, join } from 'path';
+import { resolveStateFile } from '@/core/paths';
 
 export interface AntigravityQuotaConfig {
   refreshIntervalMs: number;
@@ -100,13 +101,9 @@ const DEFAULT_ANTIGRAVITY_CONFIG: AntigravityConfig = {
   },
 };
 
-const DEFAULT_CONFIG_PATH = existsSync('/app/data')
-  ? '/app/data/providers/antigravity/config.json'
-  : join(process.cwd(), 'providers', 'antigravity', 'config.json');
+const DEFAULT_CONFIG_PATH = resolveStateFile('providers', 'antigravity', 'config.json');
 
-const LEGACY_PROXY_CONFIG_PATH = existsSync('/app/data')
-  ? '/app/data/config.json'
-  : join(process.cwd(), 'config.json');
+const LEGACY_PROXY_CONFIG_PATH = resolveStateFile('config.json');
 
 const CONFIG_PATH = process.env.ANTIGRAVITY_CONFIG_FILE || DEFAULT_CONFIG_PATH;
 

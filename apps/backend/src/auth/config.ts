@@ -2,16 +2,21 @@ import { join, dirname } from "path";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { randomBytes } from "node:crypto";
 import { type AuthConfig } from "@/auth/types";
+import { dataPath, projectPath } from "@/core/paths";
 
 /**
  * Locations checked for the allowlist, in order. Covers the Docker volume, the
  * host-side data directory that volume maps to, and a plain repo-root file — so
  * the guard finds it regardless of how the gateway was launched.
+ *
+ * Anchored to the project root rather than the working directory: launching
+ * from `apps/backend` used to miss the allowlist entirely, silently leaving the
+ * dashboard open.
  */
 const AUTH_PATH_CANDIDATES = [
   "/app/data/auth.json",
-  join(process.cwd(), "data", "auth.json"),
-  join(process.cwd(), "auth.json"),
+  dataPath("auth.json"),
+  projectPath("auth.json"),
 ];
 
 /**

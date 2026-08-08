@@ -12,6 +12,7 @@ import { initDb } from "@/core/db";
 import { initApiKeys } from "@/auth/api-keys";
 import { initCustomProviders } from "@/providers/custom/manager";
 import { startMetricsMaintenance } from "@/core/metrics/maintenance";
+import { projectPath } from "@/core/paths";
 
 await loadProxyConfig();
 loadAuthConfig();
@@ -34,7 +35,7 @@ startMetricsMaintenance();
 registerOpenAIProtocol();
 registerAnthropicProtocol();
 
-const pkg = await Bun.file("package.json").json();
+const pkg = await Bun.file(projectPath("package.json")).json();
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 

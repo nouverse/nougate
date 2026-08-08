@@ -114,6 +114,33 @@ docker compose up -d --build
 
 ---
 
+## Where State Lives
+
+All runtime state is anchored to the **project root**, never to the current working
+directory — so `bun run dev` (which runs from `apps/backend`), `bun run start`, and Docker
+(which runs from `/app`) all read and write the same files.
+
+| What | Docker | Local |
+|------|--------|-------|
+| Metrics, gateway API keys, custom providers | `/app/data/nougate.db` | `./data/nougate.db` |
+| Provider accounts | `/app/data/providers/<id>/accounts.json` | `./data/providers/<id>/accounts.json` |
+| Provider config | `/app/data/providers/<id>/config.json` | `./data/providers/<id>/config.json` |
+| Global config | `/app/data/config.json` | `./config.json` |
+| Dashboard allowlist | `/app/data/auth.json` | `./data/auth.json` |
+
+Only the SQLite database is new — provider accounts and configs stay plain JSON so they
+remain easy to inspect, diff, and hand-edit.
+
+Override with `NOUGATE_DB_PATH`, `CONFIG_FILE`, `ACCOUNTS_FILE`, `COPILOT_ACCOUNTS_FILE`,
+`ANTIGRAVITY_CONFIG_FILE`, `COPILOT_CONFIG_FILE`, or `AUTH_FILE`.
+
+> **Upgrading from an earlier build?** Paths used to be derived from the working directory,
+> so starting the server two different ways produced two separate sets of state. On boot the
+> gateway now logs the file it actually loaded and warns about any stray copy it is ignoring
+> — check the startup output and delete the leftovers (typically under `apps/backend/`).
+
+---
+
 ## Configuration
 
 ### Global Config (`config.json`)
@@ -303,6 +330,22 @@ provider. Disabling a provider unregisters its prefix without deleting its keys 
 
 ---
 
+## API Playground
+
+The **API Playground** page sends a real request through the gateway — the same routes, auth
+and metrics pipeline your clients hit, not a simulation.
+
+- Pick any model from the full catalogue (all providers, already prefixed) with a filter box.
+- Switch between the OpenAI and Anthropic protocol to check both translations.
+- Toggle streaming to watch tokens arrive live, or turn it off for a single JSON response.
+- See status, latency, input/output tokens and estimated cost after each run.
+- Copy the equivalent `curl` command, ready to paste into a terminal or a teammate's chat.
+
+When key enforcement is on, paste a gateway key into the playground's key field — the
+playground is deliberately subject to the same check as any other client.
+
+---
+
 ## Token Usage & Cost Monitoring
 
 Every request through the gateway is recorded to SQLite (`data/nougate.db`, or
@@ -377,6 +420,7 @@ Admin endpoints (behind the dashboard guard):
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
+| `/api/models` | GET | Full catalogue of callable `provider:model` IDs with resolved pricing |
 | `/api/metrics/token-usage` | GET | Summary, time series, and per-model/provider/client breakdowns. Query: `lookback`, `clientId`, `provider` |
 | `/api/metrics/recent` | GET | Most recent individual requests |
 | `/api/metrics/export` | GET | CSV export of the detail log for the selected window |

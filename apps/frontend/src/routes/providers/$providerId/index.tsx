@@ -8,6 +8,7 @@ import { AntigravityAccountsTab } from '@/components/providers/antigravity/Antig
 import { CopilotAccountsTab } from '@/components/providers/copilot/CopilotAccountsTab';
 import { JsonEditor } from '@/components/shared/JsonEditor';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { CopyButton } from '@/components/shared/CopyButton';
 import { Users, Cpu, Settings2, BarChart2 } from 'lucide-react';
 
 interface SearchParams {
@@ -102,13 +103,18 @@ function ProviderPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 bg-base-200 p-5 rounded-2xl border border-base-300 text-base-content">
-        <div>
+        <div className="min-w-0">
           <h1 className="text-xl font-extrabold capitalize tracking-tight flex items-center gap-2">
             {detail.displayName} Portal
           </h1>
-          <p className="text-xs text-base-content/50 mt-0.5 font-mono animate-pulse">
-            Provider Identifier: {detail.id}
-          </p>
+          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+            <span className="text-xs text-base-content/50">Model prefix:</span>
+            <code className="font-mono text-xs font-bold text-primary">{detail.id}:</code>
+            <span className="text-xs text-base-content/40">
+              — call any model below as <code className="font-mono">{detail.id}:model-id</code>
+            </span>
+            <CopyButton value={`${detail.id}:`} title={`Copy the "${detail.id}:" prefix`} />
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -185,7 +191,7 @@ function ProviderPage() {
             {detail.models.length === 0 ? (
               <EmptyState message="No models configured in the local provider registry." />
             ) : (
-              <ModelRegistryTable models={detail.models} />
+              <ModelRegistryTable models={detail.models} providerId={detail.id} />
             )}
           </div>
         )}

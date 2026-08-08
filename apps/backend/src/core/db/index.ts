@@ -1,21 +1,64 @@
 import { Database } from 'bun:sqlite';
-import { existsSync, mkdirSync } from 'fs';
+import { copyFileSync, existsSync, mkdirSync } from 'fs';
 import { dirname, join } from 'path';
+import { dataPath, getProjectRoot } from '@/core/paths';
 
 /**
  * Resolve the on-disk location of the SQLite database.
  *
- * Mirrors the config manager's convention: inside Docker the persistent volume
- * is mounted at /app/data, otherwise state lives in ./data next to the repo.
+ * Anchored to the project root rather than `process.cwd()` — see `core/paths`
+ * for why that distinction matters.
  */
 function resolveDbPath(): string {
-  if (process.env.NOUGATE_DB_PATH) {
-    return process.env.NOUGATE_DB_PATH;
+  return process.env.NOUGATE_DB_PATH || dataPath('nougate.db');
+}
+
+/**
+ * Locations an earlier build could have written the database to, back when the
+ * path was derived from the working directory.
+ */
+function legacyDbPaths(): string[] {
+  return [
+    join(getProjectRoot(), 'apps', 'backend', 'data', 'nougate.db'),
+    join(process.cwd(), 'data', 'nougate.db'),
+  ];
+}
+
+/**
+ * Adopt a database left behind at a working-directory-dependent path, so state
+ * saved before this fix is not stranded.
+ *
+ * Only ever runs when the canonical file does not exist yet, so it can never
+ * overwrite live data.
+ */
+function adoptLegacyDatabase(target: string): void {
+  if (existsSync(target)) {
+    return;
   }
 
-  return existsSync('/app/data')
-    ? '/app/data/nougate.db'
-    : join(process.cwd(), 'data', 'nougate.db');
+  const legacy = legacyDbPaths().find(
+    (candidate) => candidate !== target && existsSync(candidate),
+  );
+
+  if (!legacy) {
+    return;
+  }
+
+  try {
+    // The WAL may hold committed pages that are not in the main file yet;
+    // opening and closing the source checkpoints it before we copy.
+    const source = new Database(legacy, { readonly: false });
+    source.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+    source.close();
+
+    copyFileSync(legacy, target);
+    console.log(
+      `[DB] Migrated database from a legacy location: ${legacy} → ${target}\n` +
+        '[DB] The old file was left in place; delete it once you have confirmed your data is intact.',
+    );
+  } catch (error) {
+    console.warn(`[DB] Could not migrate the legacy database at ${legacy}:`, error);
+  }
 }
 
 let database: Database | null = null;
@@ -153,6 +196,8 @@ export function getDb(): Database {
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
+
+  adoptLegacyDatabase(resolvedPath);
 
   const db = new Database(resolvedPath, { create: true });
 
