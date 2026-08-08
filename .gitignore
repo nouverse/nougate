@@ -10,6 +10,8 @@ tmp/
 
 # Runtime config & state (use config.example.json as template)
 config.json
+auth.json
+.session-secret
 apps/backend/antigravity-accounts.json
 apps/backend/providers/antigravity/accounts.json
 apps/backend/providers/antigravity/config.json

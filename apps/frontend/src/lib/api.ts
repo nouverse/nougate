@@ -8,6 +8,12 @@ class ApiClient {
       },
     });
 
+    // Let the auth gate re-evaluate as soon as any call is rejected, so an
+    // expired or revoked session drops back to the login screen immediately.
+    if (res.status === 401 || res.status === 403) {
+      window.dispatchEvent(new Event('nougate:unauthorized'));
+    }
+
     if (!res.ok) {
       const text = await res.text();
       let message = 'An error occurred';

@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { registerProvider } from "@/core/registry";
 import { loadProxyConfig } from "@/config/manager";
+import { loadAuthConfig } from "@/auth/config";
 import { AntigravityProvider } from "@/providers/antigravity";
 import { CopilotProvider } from "@/providers/copilot";
 import { registerOpenAIProtocol } from "@/protocols/openai";
@@ -9,6 +10,7 @@ import { handleRequest } from "@/router";
 import { setupLogCapture } from "@/router/middleware";
 
 await loadProxyConfig();
+loadAuthConfig();
 setupLogCapture();
 
 const antigravityProvider = new AntigravityProvider();

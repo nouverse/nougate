@@ -43,5 +43,16 @@
     "enabled": false,
     "url": "http://localhost:9999",
     "timeoutMs": 5000
+  },
+  "caveman": {
+    "enabled": false,
+    "level": 3
+  },
+  "rtk": {
+    "enabled": true
+  },
+  "debugLogger": {
+    "enabled": false,
+    "outputDir": "./tmp/debug-payloads"
   }
 }

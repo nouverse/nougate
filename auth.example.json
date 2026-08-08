@@ -1,0 +1,8 @@
+{
+  "enabled": true,
+  "allowedEmails": [
+    "you@example.com"
+  ],
+  "hostedDomain": null,
+  "sessionTtlHours": 168
+}

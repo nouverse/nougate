@@ -185,7 +185,72 @@ Override or add models at runtime without code changes:
 PORT=3000
 BASE_URL=https://nougate.nouverse.tech
 HEADROOM_URL=http://headroom:9999
+
+# Dashboard authentication (all three required to activate it)
+GOOGLE_CLIENT_ID=xxxxxxxx.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=xxxxxxxx
+SESSION_SECRET=<openssl rand -base64 32>
 ```
+
+### Dashboard Authentication (`auth.json`)
+
+Restricts the dashboard to an allowlist of Google accounts. **Scope: the dashboard
+and the `/api/*` admin endpoints only.** The LLM proxy routes (`/openai/*`,
+`/anthropic/*`) are deliberately left open — CLI clients cannot hold a browser
+session, so they need a separate key-based guard.
+
+**`"enabled"` is the only switch.** When it is true the dashboard is closed —
+missing Google credentials, an empty allowlist, or a corrupt file all keep it
+closed and deny everyone, rather than silently reopening it. The startup banner
+says which state you are in.
+
+The file is looked up in this order, first match wins: `/app/data/auth.json`
+(Docker), `./data/auth.json`, `./auth.json`. Override with `AUTH_FILE`. Copy
+`auth.example.json` to whichever applies — under Docker Compose that is
+`./data/auth.json` for dev and `./nougate-data/auth.json` for prod:
+
+```json
+{
+  "enabled": true,
+  "allowedEmails": ["you@example.com"],
+  "hostedDomain": null,
+  "sessionTtlHours": 168
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `enabled` | The switch. True closes the dashboard; nothing else can reopen it |
+| `allowedEmails` | Google accounts permitted to sign in, matched case-insensitively |
+| `hostedDomain` | Optional Workspace domain; pre-filters the Google account chooser |
+| `sessionTtlHours` | Session cookie lifetime (default 168 = 7 days) |
+
+Setup:
+
+1. Create a **Web application** OAuth client at
+   [Google Cloud Console → Credentials](https://console.cloud.google.com/apis/credentials).
+2. Register `<BASE_URL>/api/auth/callback` as an authorized redirect URI.
+3. Put `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `.env`.
+4. List the allowed emails in `auth.json` and restart.
+
+Notes:
+
+- **No database required.** Sessions are stateless HMAC-signed cookies
+  (`HttpOnly`, `SameSite=Lax`, `Secure` when `BASE_URL` is https), so there is
+  nothing to store or clean up.
+- **No `SESSION_SECRET` needed.** If unset, one is generated on first use and
+  stored as `.session-secret` next to `auth.json`, so sessions survive restarts.
+- The dashboard shows an **Unprotected** badge in the header whenever the guard
+  is off, so an open gateway is visible without reading the logs.
+- The allowlist is read live on each dashboard request — adding or removing an
+  email takes effect immediately, and a removed email loses access on its very
+  next request rather than when its cookie expires.
+- `auth.json` is never writable through the admin API, so a compromised dashboard
+  cannot grant access to a new account.
+- Signing in with an unlisted account returns **403**.
+- If the file is missing, disabled, or the env vars are absent, the dashboard
+  stays open exactly as before — a half-finished setup will not lock you out.
+  Startup logs state which posture is active.
 
 ---
 
@@ -199,6 +264,15 @@ All models follow `provider:model-id` format.
 | `/openai/v1/chat/completions` | POST | Chat completions (OpenAI protocol) |
 | `/anthropic/v1/models` | GET | List available models (Anthropic format) |
 | `/anthropic/v1/messages` | POST | Messages (Anthropic protocol) |
+
+Dashboard authentication endpoints (only active when `auth.json` is configured):
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/auth/me` | GET | Current session, or 401 when signed out |
+| `/api/auth/login` | GET | Redirect to the Google consent screen |
+| `/api/auth/callback` | GET | OAuth redirect target; issues the session cookie |
+| `/api/auth/logout` | POST | Expire the session cookie |
 
 ---
 

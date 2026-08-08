@@ -49,6 +49,10 @@ services:
       - BASE_URL=${BASE_URL:-http://localhost:3000}
       - HEADROOM_URL=http://headroom:8787
       - NODE_ENV=development
+      # Dashboard Google sign-in — unset by default so local dev stays open.
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - SESSION_SECRET=${SESSION_SECRET:-}
     volumes:
       # ── Backend ──
       - ./apps/backend/src:/app/apps/backend/src

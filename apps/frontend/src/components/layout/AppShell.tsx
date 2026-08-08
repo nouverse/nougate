@@ -6,7 +6,8 @@ import { useTheme } from '@/hooks/useTheme';
 import { useSSE } from '@/hooks/useSSE';
 import { api } from '@/lib/api';
 import { LogViewer } from '@/components/shared/LogViewer';
-import { Menu, Settings, Terminal, Shield, List, Sun, Moon } from 'lucide-react';
+import { useAuth, logout } from '@/hooks/useAuth';
+import { Menu, Settings, Terminal, Shield, ShieldAlert, List, Sun, Moon, LogOut } from 'lucide-react';
 
 interface Props {
   children: React.ReactNode;
@@ -18,6 +19,7 @@ export function AppShell({ children }: Props) {
   const queryClient = useQueryClient();
   const { data: providers } = useProviders();
   const { data: config } = useConfig();
+  const { data: auth } = useAuth();
   const { theme, toggleTheme } = useTheme();
   
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -205,6 +207,34 @@ export function AppShell({ children }: Props) {
             >
               {theme === 'nougate' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
+
+            {auth && !auth.authEnabled && (
+              <span
+                className="badge badge-warning badge-sm gap-1 font-bold text-[10px] uppercase tracking-wider"
+                title="No sign-in required — anyone who can reach this port has admin access. See auth.json in the README."
+              >
+                <ShieldAlert className="w-3 h-3" />
+                <span className="hidden sm:inline">Unprotected</span>
+              </span>
+            )}
+
+            {auth?.email && (
+              <div className="flex items-center gap-2 pl-3 border-l border-base-300">
+                <span
+                  className="text-[10px] font-mono text-base-content/50 hidden md:block max-w-[14rem] truncate"
+                  title={auth.email}
+                >
+                  {auth.email}
+                </span>
+                <button
+                  onClick={logout}
+                  className="btn btn-ghost btn-xs px-2 text-base-content"
+                  title="Sign out"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
+            )}
           </div>
         </header>
 

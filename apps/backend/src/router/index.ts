@@ -2,6 +2,8 @@ import { getDefaultProvider, getProvider, findHandler } from "@/core/registry";
 import { resolveModel } from "@/core/model-resolver";
 import { buildSessionId } from "@/protocols/openai/handler";
 import { handleAdminRoute } from "@/router/admin";
+import { handleAuthRoute } from "@/router/auth";
+import { enforceDashboardAuth } from "@/auth/guard";
 import {
   handleCorsPreflight,
   logIncomingRequest,
@@ -51,6 +53,18 @@ export async function handleRequest(req: Request): Promise<Response> {
   const preflightResponse = handleCorsPreflight(req);
   if (preflightResponse) {
     return preflightResponse;
+  }
+
+  // Auth endpoints are same-origin browser navigations that set cookies, so they
+  // bypass withCorsHeaders to keep their Set-Cookie headers intact.
+  const authResponse = await handleAuthRoute(req, routedUrl);
+  if (authResponse) {
+    return authResponse;
+  }
+
+  const authDenial = enforceDashboardAuth(req, routedUrl);
+  if (authDenial) {
+    return withCorsHeaders(authDenial);
   }
 
   const handler = findHandler(cleanPath, req.method);
