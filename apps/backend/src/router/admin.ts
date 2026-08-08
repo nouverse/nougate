@@ -8,6 +8,10 @@ import type { AntigravityAccount } from "@/providers/antigravity/auth/types";
 import { fetchQuota } from "@/providers/antigravity/api/quota";
 import { getCapturedLogs } from "@/router/middleware";
 import { getAllProviders, getProvider, getDefaultProvider } from "@/core/registry";
+import { handleMetricsRoute } from "@/router/metrics";
+import { handleApiKeysRoute } from "@/router/api-keys";
+import { handleCustomProvidersRoute } from "@/router/custom-providers";
+import { CustomProvider } from "@/providers/custom";
 
 const pkg = await Bun.file("package.json").json();
 const APP_VERSION = pkg.version || "0.0.0";
@@ -218,6 +222,21 @@ async function handleOAuthCallback(url: URL): Promise<Response> {
  * Handle the non-protocol admin, OAuth, and frontend routes.
  */
 export async function handleAdminRoute(req: Request, url: URL): Promise<Response | null> {
+  const metricsResponse = await handleMetricsRoute(req, url);
+  if (metricsResponse) {
+    return metricsResponse;
+  }
+
+  const apiKeysResponse = await handleApiKeysRoute(req, url);
+  if (apiKeysResponse) {
+    return apiKeysResponse;
+  }
+
+  const customProvidersResponse = await handleCustomProvidersRoute(req, url);
+  if (customProvidersResponse) {
+    return customProvidersResponse;
+  }
+
   if (url.pathname === "/oauth/start") {
     return Response.redirect(generateAuthUrl());
   }
@@ -361,6 +380,8 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
         displayName: p.displayName,
         accountCount: accounts.length,
         modelCount: p.getSupportedModels().length,
+        // Lets the dashboard route custom providers to their own editor.
+        isCustom: p instanceof CustomProvider,
       };
     });
     return createJsonResponse(results);

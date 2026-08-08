@@ -7,7 +7,7 @@ import { useSSE } from '@/hooks/useSSE';
 import { api } from '@/lib/api';
 import { LogViewer } from '@/components/shared/LogViewer';
 import { useAuth, logout } from '@/hooks/useAuth';
-import { Menu, Settings, Terminal, Shield, ShieldAlert, List, Sun, Moon, LogOut } from 'lucide-react';
+import { Menu, Settings, Terminal, Shield, ShieldAlert, List, Sun, Moon, LogOut, BarChart3, KeyRound, Boxes } from 'lucide-react';
 
 interface Props {
   children: React.ReactNode;
@@ -60,6 +60,9 @@ export function AppShell({ children }: Props) {
 
   const menuItems = [
     { label: 'Overview', to: '/' as any, icon: <List className="w-4 h-4" /> },
+    { label: 'Token Metrics', to: '/tokens' as any, icon: <BarChart3 className="w-4 h-4" /> },
+    { label: 'API Keys', to: '/api-keys' as any, icon: <KeyRound className="w-4 h-4" /> },
+    { label: 'Custom Providers', to: '/custom-providers' as any, icon: <Boxes className="w-4 h-4" /> },
     { label: 'Global Config', to: '/config' as any, icon: <Settings className="w-4 h-4" /> },
     { label: 'System Logs', to: '/logs' as any, icon: <Terminal className="w-4 h-4 text-primary" /> },
   ];

@@ -6,6 +6,7 @@ import { loadAntigravityConfig } from "@/providers/antigravity";
 import type { IModelSpec } from "@/core/interfaces";
 import { resolveModel } from "@/core/model-resolver";
 import { OpenAIProtocolHandler } from "@/protocols/openai/handler";
+import { registerProvider, unregisterProvider } from "@/core/registry";
 
 beforeAll(async () => {
   await loadProxyConfig();
@@ -334,47 +335,60 @@ describe("Unit Tests: OpenAIProtocolHandler", () => {
     });
   });
 
-  test("Lists models with legacy_id, provider, sorted by ID", async () => {
-    const handler = new OpenAIProtocolHandler();
-    const req = new Request("http://localhost:3000/openai/v1/models", {
-      method: "GET",
+  test("Lists models from every registered provider, sorted by ID", async () => {
+    // Model listing reads the registry rather than the request's provider, so a
+    // client sees every prefix it can call — including custom providers.
+    const makeProvider = (id: string, modelIds: string[]) => ({
+      id,
+      displayName: id,
+      init: async () => {},
+      getBestAccount: async () => null,
+      updateAccountUsage: async () => {},
+      getAccounts: () => [],
+      getModelRegistry: () => ({
+        getSpec: () => null,
+        listModelIds: () => modelIds,
+      }),
+      getSupportedModels: () => modelIds,
+      execute: async () => new Response("Mock"),
     });
 
-    const response = await handler.handle({
-      req,
-      url: new URL(req.url),
-      protocol: "openai",
-      resolvedModel: resolveModel(""),
-      provider: {
-        id: "antigravity",
-        displayName: "Antigravity",
-        init: async () => {},
-        getBestAccount: async () => null,
-        updateAccountUsage: async () => {},
-        getAccounts: () => [],
-        getModelRegistry: () => ({
-          getSpec: () => null,
-          listModelIds: () => ["gemini-3.5-flash-low", "claude-sonnet-4-6"],
-        }),
-        getSupportedModels: () => [],
-        execute: async () => new Response("Mock"),
-      },
-      sessionId: "session-handler-test",
-      clientId: "client-handler-test",
-    });
+    registerProvider(makeProvider("antigravity", ["gemini-3.5-flash-low", "claude-sonnet-4-6"]));
+    registerProvider(makeProvider("deepseek", ["deepseek-v4-flash"]));
 
-    expect(response.status).toBe(200);
-    const body = await response.json();
-    expect(body.object).toBe("list");
-    expect(body.data).toHaveLength(2);
-    // Sorted by ID: "antigravity:claude-sonnet-4-6" comes before "antigravity:gemini-3.5-flash-low"
-    expect(body.data[0].id).toBe("antigravity:claude-sonnet-4-6");
-    expect(body.data[0].legacy_id).toBe("antigravity-claude-sonnet-4-6");
-    expect(body.data[0].provider).toBe("antigravity");
-    
-    expect(body.data[1].id).toBe("antigravity:gemini-3.5-flash-low");
-    expect(body.data[1].legacy_id).toBe("antigravity-gemini-3.5-flash-low");
-    expect(body.data[1].provider).toBe("antigravity");
+    try {
+      const handler = new OpenAIProtocolHandler();
+      const req = new Request("http://localhost:3000/openai/v1/models", {
+        method: "GET",
+      });
+
+      const response = await handler.handle({
+        req,
+        url: new URL(req.url),
+        protocol: "openai",
+        resolvedModel: resolveModel(""),
+        provider: makeProvider("antigravity", []),
+        sessionId: "session-handler-test",
+        clientId: "client-handler-test",
+      });
+
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body.object).toBe("list");
+      expect(body.data).toHaveLength(3);
+
+      expect(body.data.map((entry: any) => entry.id)).toEqual([
+        "antigravity:claude-sonnet-4-6",
+        "antigravity:gemini-3.5-flash-low",
+        "deepseek:deepseek-v4-flash",
+      ]);
+      expect(body.data[0].legacy_id).toBe("antigravity-claude-sonnet-4-6");
+      expect(body.data[0].provider).toBe("antigravity");
+      expect(body.data[2].provider).toBe("deepseek");
+    } finally {
+      unregisterProvider("antigravity");
+      unregisterProvider("deepseek");
+    }
   });
 });
 

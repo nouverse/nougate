@@ -10,6 +10,8 @@ export interface ProxyConfig {
   caveman?: CavemanConfig;
   rtk?: RtkConfig;
   debugLogger?: DebugLoggerConfig;
+  metrics?: MetricsConfig;
+  apiKeys?: ApiKeysConfig;
 }
 
 export interface RotationConfig {
@@ -68,6 +70,26 @@ export interface CavemanConfig {
 }
 
 export interface RtkConfig {
+  enabled: boolean;
+}
+
+export interface MetricsConfig {
+  /** Record token usage and cost per request into SQLite. */
+  enabled: boolean;
+  /** How long detailed per-request rows are kept before pruning. */
+  detailRetentionDays: number;
+  /** How long daily rollups are kept before pruning. */
+  rollupRetentionDays: number;
+  /** Price fallback for models without pricing (e.g. bypassModelValidation). */
+  defaultInputPricePer1M: number;
+  defaultOutputPricePer1M: number;
+}
+
+export interface ApiKeysConfig {
+  /**
+   * When true, /openai/v1/* and /anthropic/v1/* require a gateway key.
+   * Kept false by default so existing clients keep working after upgrade.
+   */
   enabled: boolean;
 }
 

@@ -2,10 +2,19 @@ import { getProxyConfig } from '@/config/manager';
 import { adminEventBus } from '@/core/events';
 
 /**
+ * Optional collector filled in with the savings Headroom reported for a call.
+ * Passed in per request so nothing is shared between concurrent requests.
+ */
+export interface CompressionReport {
+  tokensSaved?: number;
+  compressionRatio?: number;
+}
+
+/**
  * Compress the request payload using Headroom service if enabled.
  * Falls back to original payload on failure (fail-safe).
  */
-export async function compressPayload(body: any): Promise<any> {
+export async function compressPayload(body: any, report?: CompressionReport): Promise<any> {
   const config = getProxyConfig();
   
   // Early return if headroom is disabled
@@ -75,6 +84,10 @@ export async function compressPayload(body: any): Promise<any> {
     // Log compression stats if available
     if (compressed.tokens_saved) {
       console.log(`[Compressor] Tokens saved: ${compressed.tokens_saved} (${compressed.compression_ratio}x compression)`);
+      if (report) {
+        report.tokensSaved = Number(compressed.tokens_saved) || 0;
+        report.compressionRatio = Number(compressed.compression_ratio) || undefined;
+      }
     }
     
     return mergedPayload;

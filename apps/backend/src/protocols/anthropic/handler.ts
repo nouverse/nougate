@@ -5,8 +5,9 @@ import {
 } from "@/core/model-resolver";
 import type { IProtocolHandler } from "@/core/interfaces";
 import type { RequestContext } from "@/core/request-context";
-import { compressPayload } from "@/core/compressor";
-import { applyRtk } from "@/core/rtk";
+import { getAllProviders } from "@/core/registry";
+import { prepareRequestPayload } from "@/core/metrics/compression";
+import { instrumentResponse } from "@/core/metrics/tracker";
 
 /**
  * Build a JSON response with the shared CORS and proxy headers.
@@ -42,17 +43,21 @@ function createErrorResponse(message: string, type = "invalid_request_error", st
 
 /**
  * Handle Anthropic-compatible model listing responses.
+ *
+ * Every registered provider is listed, since a client picks the provider by
+ * sending the `provider:model` prefix — a list scoped to one provider would
+ * hide the rest from model pickers.
  */
-function handleListModels(ctx: RequestContext): Response {
-  const data = ctx.provider
-    .getModelRegistry()
-    .listModelIds()
-    .map((modelId) => ({
-      id: formatModelId(ctx.provider.id, modelId),
-      display_name: modelId,
-      created_at: "2024-01-01T00:00:00Z",
-      type: "model",
-    }))
+function handleListModels(): Response {
+  const data = getAllProviders()
+    .flatMap((provider) =>
+      provider.getModelRegistry().listModelIds().map((modelId) => ({
+        id: formatModelId(provider.id, modelId),
+        display_name: modelId,
+        created_at: "2024-01-01T00:00:00Z",
+        type: "model",
+      })),
+    )
     .sort((a, b) => a.id.localeCompare(b.id));
 
   return createJsonResponse(
@@ -76,7 +81,7 @@ export class AnthropicProtocolHandler implements IProtocolHandler {
    */
   async handle(ctx: RequestContext): Promise<Response> {
     if (ctx.url.pathname === "/anthropic/v1/models" && ctx.req.method === "GET") {
-      return handleListModels(ctx);
+      return handleListModels();
     }
 
     try {
@@ -100,19 +105,47 @@ export class AnthropicProtocolHandler implements IProtocolHandler {
       return createErrorResponse(`Unknown model "${anthropicBody.model}"`, "invalid_request_error", 400);
     }
 
-    // RTK: compress tool_result content inline (fast, no network)
-    const rtkBody = applyRtk(anthropicBody);
+    const startedAt = Date.now();
 
-    // Compress payload if Headroom is enabled
-    const compressedBody = await compressPayload(rtkBody);
+    // RTK (inline tool-result compression) then Headroom (semantic compression)
+    const { body: compressedBody, compression } = await prepareRequestPayload(anthropicBody);
 
-    // Delegate upstream execution dynamically to the resolved provider
-    return ctx.provider.execute({
+    // Delegate upstream execution dynamically to the resolved provider.
+    // A throw here (no usable account, upstream unreachable, exhausted retries)
+    // must still reach the client as a protocol-shaped JSON error rather than
+    // escaping into the server's default HTML error page.
+    let response: Response;
+    try {
+      response = await ctx.provider.execute({
+        protocol: "anthropic",
+        body: compressedBody,
+        resolvedModel: ctx.resolvedModel,
+        modelSpec,
+        ctx,
+      });
+    } catch (error: any) {
+      console.error(
+        `[Anthropic] Upstream execution failed for "${ctx.resolvedModel.raw}":`,
+        error,
+      );
+      return createErrorResponse(
+        error?.message || "Upstream request failed",
+        "api_error",
+        502,
+      );
+    }
+
+    return instrumentResponse(response, {
+      provider: ctx.provider.id,
+      model: modelSpec.modelId,
       protocol: "anthropic",
-      body: compressedBody,
-      resolvedModel: ctx.resolvedModel,
+      clientId: ctx.clientId,
+      sessionId: ctx.sessionId,
+      apiKeyId: ctx.apiKeyId ?? null,
       modelSpec,
-      ctx,
+      estimatedInputTokens: compression.tokensAfter,
+      compression,
+      startedAt,
     });
   }
 }

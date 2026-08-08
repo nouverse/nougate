@@ -11,4 +11,6 @@ export interface RequestContext {
   provider: IProvider;
   sessionId: string;
   clientId: string;
+  /** ID of the gateway API key that authorized this call, when key auth is on. */
+  apiKeyId?: string | null;
 }

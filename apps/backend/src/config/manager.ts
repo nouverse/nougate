@@ -68,6 +68,16 @@ const DEFAULT_CONFIG: ProxyConfig = {
   debugLogger: {
     enabled: false,
     outputDir: './tmp/debug-payloads'
+  },
+  metrics: {
+    enabled: true,
+    detailRetentionDays: 14,
+    rollupRetentionDays: 90,
+    defaultInputPricePer1M: Number(process.env.DEFAULT_INPUT_PRICE_1M ?? 2.5),
+    defaultOutputPricePer1M: Number(process.env.DEFAULT_OUTPUT_PRICE_1M ?? 10)
+  },
+  apiKeys: {
+    enabled: false
   }
 };
 

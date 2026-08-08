@@ -20,6 +20,11 @@
   --color-base-200: oklch(14% 0.01 240); /* zinc 900 */
   --color-base-300: oklch(18% 0.01 240); /* zinc 800 */
   --color-base-content: oklch(90% 0.01 240); /* clear light slate text */
+  /* Chart series. Stepped down from --color-primary so the pair sits inside the
+     dark-mode lightness band; validated for colour-vision deficiency against
+     --color-base-200. Never reuse status colours for a series. */
+  --color-chart-1: oklch(62% 0.20 162);
+  --color-chart-2: oklch(66% 0.20 269);
 }
 
 @plugin "daisyui/theme" {
@@ -36,6 +41,9 @@
   --color-base-200: oklch(97% 0.01 240);
   --color-base-300: oklch(92% 0.01 240);
   --color-base-content: oklch(15% 0.01 240);
+  /* Light-mode series steps are chosen for this surface, not flipped from dark. */
+  --color-chart-1: oklch(55% 0.20 162);
+  --color-chart-2: oklch(50% 0.20 269);
 }
 
 @plugin "daisyui" {

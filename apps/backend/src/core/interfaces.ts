@@ -59,6 +59,10 @@ export interface IModelSpec {
   upstreamModelId?: string;
   useCliPool?: boolean;
   timeoutMs?: number;
+  /** Upstream list price in USD per 1M input tokens, used for cost estimation. */
+  inputPricePer1M?: number;
+  /** Upstream list price in USD per 1M output tokens, used for cost estimation. */
+  outputPricePer1M?: number;
 }
 
 /**

@@ -8,10 +8,16 @@ import { registerOpenAIProtocol } from "@/protocols/openai";
 import { registerAnthropicProtocol } from "@/protocols/anthropic";
 import { handleRequest } from "@/router";
 import { setupLogCapture } from "@/router/middleware";
+import { initDb } from "@/core/db";
+import { initApiKeys } from "@/auth/api-keys";
+import { initCustomProviders } from "@/providers/custom/manager";
+import { startMetricsMaintenance } from "@/core/metrics/maintenance";
 
 await loadProxyConfig();
 loadAuthConfig();
 setupLogCapture();
+initDb();
+initApiKeys();
 
 const antigravityProvider = new AntigravityProvider();
 await antigravityProvider.init();
@@ -20,6 +26,10 @@ registerProvider(antigravityProvider);
 const copilotProvider = new CopilotProvider();
 await copilotProvider.init();
 registerProvider(copilotProvider);
+
+// Registered last so a custom provider can never shadow a built-in ID.
+initCustomProviders();
+startMetricsMaintenance();
 
 registerOpenAIProtocol();
 registerAnthropicProtocol();

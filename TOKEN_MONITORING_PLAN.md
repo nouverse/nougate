@@ -1,5 +1,24 @@
 # Rencana Implementasi: Token Usage & Cost Monitoring Dashboard
 
+> **Status: SUDAH DIIMPLEMENTASI.** Lihat bagian *Token Usage & Cost Monitoring* di
+> [README.md](./README.md) untuk dokumentasi hasil akhirnya.
+>
+> **Perbedaan dari rencana di bawah:** storage memakai **SQLite (`bun:sqlite`)**, bukan
+> PostgreSQL + Drizzle ORM — satu file `data/nougate.db`, tanpa dependensi eksternal, tanpa
+> langkah migrasi. Struktur tabel, strategi rollup harian, retensi 14/90 hari, in-memory
+> batch queue, dan semua edge case di dokumen ini tetap dipakai apa adanya.
+>
+> Beberapa hal yang berkembang saat implementasi:
+> - Instrumentasi dipasang di **protocol handler**, bukan di response finalizer tiap provider,
+>   jadi semua provider (termasuk custom provider) otomatis tercatat.
+> - Harga model memakai **price book** terpusat (`core/metrics/price-book.ts`) sebagai fallback
+>   sebelum harga default dari config, supaya model yang belum diberi harga tetap masuk akal.
+> - Database yang sama juga menyimpan **gateway API keys** dan **custom providers**.
+>
+> Dokumen ini disimpan sebagai catatan desain awal.
+
+---
+
 Dokumen ini menjelaskan rencana komprehensif untuk menambahkan **Token Usage Monitoring**, **Upstream Cost Tracking**, dan **Headroom Compression Savings** pada semua model di Nougate, yang didukung oleh penyimpanan database PostgreSQL.
 
 ---

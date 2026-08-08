@@ -13,6 +13,8 @@
 - **Multi-Provider**: Pluggable provider system — each provider owns its auth, accounts, config, and model registry.
 - **Strict Model Namespacing**: All models use `provider:model-id` format (e.g. `antigravity:gemini-3.5-flash-low`, `copilot:claude-opus-4.6`).
 - **Per-Provider Auth Isolation**: Credentials and account storage are fully isolated per provider.
+- **Custom Providers**: Define your own upstream from the dashboard — pick an ID, base URL, OpenAI or Anthropic API style, keys and pricing, then call it as `{provider_id}:{model}`.
+- **Gateway API Keys**: Issue `sk-nou-…` keys so clients authenticate against the proxy routes. Off by default; one toggle turns it on.
 
 ### Account Management
 - **Hybrid Intelligent Routing**: Sticky by default (preserves prompt cache), auto-failover on rate limit/error.
@@ -38,6 +40,7 @@
 
 ### Observability
 - **Real-time Dashboard**: Monitor accounts, quotas, cooldowns, health scores via React + daisyUI web UI.
+- **Token & Cost Analytics**: Per-request token usage and estimated spend recorded to SQLite, charted by model, provider and client, with the savings compression earned.
 - **Live System Logs**: Console capture with level filtering, search, auto-scroll.
 - **Debug Payload Logger**: Dump request/response JSON to disk (configurable, model-filterable, fail-safe).
 
@@ -47,6 +50,7 @@
 |----------|------|--------|
 | **Antigravity** | Google OAuth (multi-account) | Gemini 3/3.1/3.5 Flash, Gemini 3.1 Pro, Claude Sonnet/Opus 4.6 via Gemini |
 | **Copilot** | GitHub Device Flow (multi-account) | Claude Sonnet 4.5, Claude Opus 4.5/4.6, Gemini 2.5 Pro, GPT-4o/4.1/5-mini |
+| **Custom** | Your own API keys (multi-key rotation) | Anything the upstream exposes — auto-discovered from its `/models` endpoint |
 
 ---
 
@@ -134,7 +138,15 @@ docker compose up -d --build
   "headroom": { "enabled": false, "url": "http://localhost:9999", "timeoutMs": 5000 },
   "caveman": { "enabled": false, "level": 3 },
   "rtk": { "enabled": true },
-  "debugLogger": { "enabled": false, "outputDir": "./tmp/debug-payloads", "modelFilter": [] }
+  "debugLogger": { "enabled": false, "outputDir": "./tmp/debug-payloads", "modelFilter": [] },
+  "metrics": {
+    "enabled": true,
+    "detailRetentionDays": 14,   // per-request rows are pruned after this, rollups keep the trend
+    "rollupRetentionDays": 90,
+    "defaultInputPricePer1M": 2.5,   // used only when a model has no price and no price-book match
+    "defaultOutputPricePer1M": 10
+  },
+  "apiKeys": { "enabled": false }  // true = /openai/v1/* and /anthropic/v1/* require a gateway key
 }
 ```
 
@@ -185,6 +197,9 @@ Override or add models at runtime without code changes:
 PORT=3000
 BASE_URL=https://nougate.nouverse.tech
 HEADROOM_URL=http://headroom:9999
+NOUGATE_DB_PATH=./data/nougate.db   # metrics, API keys, custom providers (auto-resolved)
+DEFAULT_INPUT_PRICE_1M=2.5          # cost fallback for models with no known price
+DEFAULT_OUTPUT_PRICE_1M=10
 
 # Dashboard authentication (all three required to activate it)
 GOOGLE_CLIENT_ID=xxxxxxxx.apps.googleusercontent.com
@@ -254,16 +269,129 @@ Notes:
 
 ---
 
+## Custom Providers
+
+Point Nougate at any OpenAI- or Anthropic-compatible endpoint from the **Custom Providers**
+page in the dashboard. You choose the provider ID, and that ID becomes the model prefix.
+
+Adding `deepseek` with base URL `https://api.deepseek.com/v1` and the OpenAI API style makes
+its models callable immediately:
+
+```bash
+curl https://nougate.nouverse.tech/openai/v1/chat/completions \
+  -H "Authorization: Bearer sk-nou-..." \
+  -d '{"model": "deepseek:deepseek-v4-flash", "messages": [{"role":"user","content":"hi"}]}'
+```
+
+What a custom provider carries:
+
+- **API style** — `openai` (`/chat/completions`, `Authorization: Bearer`) or `anthropic`
+  (`/messages`, `x-api-key` + `anthropic-version`). Nougate translates between the client's
+  protocol and the upstream's style in both directions, so an Anthropic client can call an
+  OpenAI-style upstream and vice versa.
+- **Multiple API keys** — keys behave like accounts: health-scored, least-recently-used
+  rotation, automatic cooldown on `429`/`503`, and failover to the next key mid-request.
+- **Models** — press *Auto-load from upstream* to import everything the upstream's `/models`
+  endpoint reports. Re-syncing adds new models and never overwrites prices or overrides you
+  edited by hand. Models can also be added one at a time.
+- **Pricing** — per-model `$/1M` input and output rates feed the cost dashboard. Leave them
+  empty to fall back to the built-in price book, then the configured flat default.
+- **Extra headers** — merged into every upstream request, for gateways that need them.
+
+Provider IDs must be lowercase (`[a-z][a-z0-9_-]*`) and cannot collide with a built-in
+provider. Disabling a provider unregisters its prefix without deleting its keys or models.
+
+---
+
+## Token Usage & Cost Monitoring
+
+Every request through the gateway is recorded to SQLite (`data/nougate.db`, or
+`/app/data/nougate.db` in Docker) and charted on the **Token Metrics** page.
+
+- **Non-blocking** — rows are buffered in memory and batch-written every 5s, so a slow or
+  locked database can never stall an in-flight LLM response.
+- **Real usage when available** — token counts come from the upstream's `usage` block for
+  both streamed and non-streamed responses. When a provider reports nothing, counts are
+  estimated from payload size and the row is flagged `est` in the dashboard.
+- **Compression ROI** — the token delta across RTK and Headroom is recorded per request, so
+  the dashboard shows what compression actually saved in dollars.
+- **Cost estimation** — spend is computed at upstream *list* prices. For subscription-based
+  providers like Copilot and Antigravity this is the value routed through the gateway, not
+  what you were billed. Price resolution: the model spec's own prices → the built-in price
+  book matched on model family → `metrics.defaultInputPricePer1M`/`defaultOutputPricePer1M`.
+- **Retention** — an hourly job rolls per-request rows into daily aggregates, prunes detail
+  rows past `detailRetentionDays` (14), and prunes rollups past `rollupRetentionDays` (90).
+  Windows longer than 14 days are served from the rollup table, so the dashboard stays fast.
+- **Attribution** — usage is grouped by client. The client ID comes from the `x-client-id`
+  header, else the name of the gateway API key used, else `unknown`.
+
+Set `metrics.enabled` to `false` to turn recording off entirely.
+
+---
+
+## Gateway API Keys
+
+Issue `sk-nou-…` keys on the **API Keys** page so clients authenticate against the proxy
+routes. Only a SHA-256 hash is stored — the full key is shown exactly once, at creation.
+
+Enforcement is off by default so existing deployments keep working after an upgrade. Create
+a key, point your clients at it, then flip the **Required** toggle (or set
+`apiKeys.enabled: true`). Once on, `/openai/v1/*` and `/anthropic/v1/*` reject any request
+without a valid key, in the error shape that protocol expects.
+
+Both header conventions are accepted, so no client needs special handling:
+
+```bash
+# OpenAI-style clients
+curl https://nougate.nouverse.tech/openai/v1/chat/completions \
+  -H "Authorization: Bearer sk-nou-xxxxxxxx" \
+  -d '{"model": "deepseek:deepseek-v4-flash", "messages": [...]}'
+
+# Anthropic-style clients
+curl https://nougate.nouverse.tech/anthropic/v1/messages \
+  -H "x-api-key: sk-nou-xxxxxxxx" \
+  -d '{"model": "deepseek:deepseek-v4-flash", "max_tokens": 1024, "messages": [...]}'
+```
+
+Keys can be given an expiry, revoked (keeping their usage history) or deleted outright. The
+key's name doubles as the client ID in cost reports, so naming keys per machine or per agent
+gives you per-client spend for free.
+
+**Note:** this guards the LLM proxy routes. The dashboard and `/api/*` are guarded separately
+by Google sign-in — see *Dashboard Authentication* above.
+
+---
+
 ## APIs
 
 All models follow `provider:model-id` format.
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/openai/v1/models` | GET | List available models (OpenAI format) |
+| `/openai/v1/models` | GET | List available models across every provider (OpenAI format) |
 | `/openai/v1/chat/completions` | POST | Chat completions (OpenAI protocol) |
-| `/anthropic/v1/models` | GET | List available models (Anthropic format) |
+| `/anthropic/v1/models` | GET | List available models across every provider (Anthropic format) |
 | `/anthropic/v1/messages` | POST | Messages (Anthropic protocol) |
+
+Admin endpoints (behind the dashboard guard):
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/metrics/token-usage` | GET | Summary, time series, and per-model/provider/client breakdowns. Query: `lookback`, `clientId`, `provider` |
+| `/api/metrics/recent` | GET | Most recent individual requests |
+| `/api/metrics/export` | GET | CSV export of the detail log for the selected window |
+| `/api/metrics/maintenance` | POST | Run rollup + pruning immediately |
+| `/api/api-keys` | GET / POST | List keys, or mint a new one |
+| `/api/api-keys/settings` | POST | Toggle key enforcement |
+| `/api/api-keys/:id/revoke` | POST | Revoke a key |
+| `/api/api-keys/:id` | DELETE | Delete a key |
+| `/api/custom-providers` | GET / POST | List or create custom providers |
+| `/api/custom-providers/:id` | GET / POST / DELETE | Read, update, or delete one |
+| `/api/custom-providers/:id/keys` | GET / POST | List or add upstream API keys |
+| `/api/custom-providers/:id/keys/:keyId` | DELETE | Remove an upstream API key |
+| `/api/custom-providers/:id/models` | GET / POST | List or upsert model definitions |
+| `/api/custom-providers/:id/models/:modelId` | DELETE | Remove a model |
+| `/api/custom-providers/:id/sync-models` | POST | Auto-discover models from the upstream |
 
 Dashboard authentication endpoints (only active when `auth.json` is configured):
 

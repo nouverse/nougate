@@ -54,5 +54,15 @@
   "debugLogger": {
     "enabled": false,
     "outputDir": "./tmp/debug-payloads"
+  },
+  "metrics": {
+    "enabled": true,
+    "detailRetentionDays": 14,
+    "rollupRetentionDays": 90,
+    "defaultInputPricePer1M": 2.5,
+    "defaultOutputPricePer1M": 10
+  },
+  "apiKeys": {
+    "enabled": false
   }
 }

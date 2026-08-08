@@ -1,6 +1,15 @@
-import { type IModelSpec } from '@/core/interfaces';
+/**
+ * Anthropic → OpenAI request mapping, plus the reverse mapping for responses.
+ *
+ * Shared by every provider whose upstream speaks the OpenAI chat-completions
+ * dialect (GitHub Copilot, and any user-defined custom provider set to the
+ * "openai" API style).
+ */
 import { getCavemanPrompt } from '@/core/caveman';
 
+/**
+ * Convert an Anthropic Messages request into an OpenAI chat-completions request.
+ */
 export function mapAnthropicToOpenAI(anthropicBody: any, upstreamModelId: string) {
   const messages: any[] = [];
 
@@ -342,7 +351,7 @@ export function createOpenAIToAnthropicStreamTransformer(model: string, messageI
             controller.enqueue(encoder.encode(sseEvent('message_stop', { type: 'message_stop' })));
           }
         } catch (e) {
-          console.warn('[Copilot Anthropic Stream] Failed to parse OpenAI chunk:', e);
+          console.warn('[AnthropicStream] Failed to parse OpenAI chunk:', e);
         }
       }
     },

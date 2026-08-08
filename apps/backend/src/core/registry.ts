@@ -21,6 +21,22 @@ export function registerProvider(provider: IProvider): void {
 }
 
 /**
+ * Remove a provider from the registry.
+ *
+ * Used by custom providers, which can be created and deleted from the
+ * dashboard while the gateway is running.
+ */
+export function unregisterProvider(id: string): boolean {
+  const removed = providers.delete(id);
+
+  if (removed) {
+    console.log(`[Registry] Provider "${id}" unregistered.`);
+  }
+
+  return removed;
+}
+
+/**
  * Retrieve a provider by its identifier.
  */
 export function getProvider(id: string): IProvider | undefined {

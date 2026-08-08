@@ -5,8 +5,9 @@ import {
 } from "@/core/model-resolver";
 import type { IProtocolHandler } from "@/core/interfaces";
 import type { RequestContext } from "@/core/request-context";
-import { compressPayload } from "@/core/compressor";
-import { applyRtk } from "@/core/rtk";
+import { getAllProviders } from "@/core/registry";
+import { prepareRequestPayload } from "@/core/metrics/compression";
+import { instrumentResponse } from "@/core/metrics/tracker";
 
 /**
  * Build a JSON response with the shared OpenAI proxy headers.
@@ -44,19 +45,23 @@ export function buildSessionId(openaiBody: any, clientId: string): string {
 
 /**
  * Handle OpenAI-compatible model listing responses.
+ *
+ * Every registered provider is listed, since a client picks the provider by
+ * sending the `provider:model` prefix — a list scoped to one provider would
+ * hide the rest from model pickers.
  */
-function handleListModels(ctx: RequestContext): Response {
-  const data = ctx.provider
-    .getModelRegistry()
-    .listModelIds()
-    .map((modelId) => ({
-      id: formatModelId(ctx.provider.id, modelId),
-      legacy_id: `${ctx.provider.id}-${modelId}`,
-      object: "model",
-      created: Math.floor(Date.now() / 1000),
-      owned_by: ctx.provider.id,
-      provider: ctx.provider.id,
-    }))
+function handleListModels(): Response {
+  const data = getAllProviders()
+    .flatMap((provider) =>
+      provider.getModelRegistry().listModelIds().map((modelId) => ({
+        id: formatModelId(provider.id, modelId),
+        legacy_id: `${provider.id}-${modelId}`,
+        object: "model",
+        created: Math.floor(Date.now() / 1000),
+        owned_by: provider.id,
+        provider: provider.id,
+      })),
+    )
     .sort((a, b) => a.id.localeCompare(b.id));
 
   return createJsonResponse(
@@ -81,7 +86,7 @@ export class OpenAIProtocolHandler implements IProtocolHandler {
    */
   async handle(ctx: RequestContext): Promise<Response> {
     if (ctx.url.pathname === "/openai/v1/models" && ctx.req.method === "GET") {
-      return handleListModels(ctx);
+      return handleListModels();
     }
 
     try {
@@ -132,19 +137,52 @@ export class OpenAIProtocolHandler implements IProtocolHandler {
       );
     }
 
-    // RTK: compress tool_result content inline (fast, no network)
-    const rtkBody = applyRtk(openaiBody);
+    const startedAt = Date.now();
 
-    // Compress payload if Headroom is enabled
-    const compressedBody = await compressPayload(rtkBody);
+    // RTK (inline tool-result compression) then Headroom (semantic compression)
+    const { body: compressedBody, compression } = await prepareRequestPayload(openaiBody);
 
-    // Delegate upstream execution dynamically to the resolved provider
-    return ctx.provider.execute({
+    // Delegate upstream execution dynamically to the resolved provider.
+    // A throw here (no usable account, upstream unreachable, exhausted retries)
+    // must still reach the client as a protocol-shaped JSON error rather than
+    // escaping into the server's default HTML error page.
+    let response: Response;
+    try {
+      response = await ctx.provider.execute({
+        protocol: "openai",
+        body: compressedBody,
+        resolvedModel: ctx.resolvedModel,
+        modelSpec,
+        ctx,
+      });
+    } catch (error: any) {
+      console.error(
+        `[OpenAI] Upstream execution failed for "${ctx.resolvedModel.raw}":`,
+        error,
+      );
+      return createJsonResponse(
+        {
+          error: {
+            message: error?.message || "Upstream request failed",
+            type: "api_error",
+            code: "upstream_error",
+          },
+        },
+        502,
+      );
+    }
+
+    return instrumentResponse(response, {
+      provider: ctx.provider.id,
+      model: modelSpec.modelId,
       protocol: "openai",
-      body: compressedBody,
-      resolvedModel: ctx.resolvedModel,
+      clientId: ctx.clientId,
+      sessionId: ctx.sessionId,
+      apiKeyId: ctx.apiKeyId ?? null,
       modelSpec,
-      ctx,
+      estimatedInputTokens: compression.tokensAfter,
+      compression,
+      startedAt,
     });
   }
 }
