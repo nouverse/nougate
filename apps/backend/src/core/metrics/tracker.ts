@@ -170,7 +170,13 @@ function absorbFinalBody(totals: UsageTotals, body: any): void {
  * Turn the accumulated totals into a persisted metrics row.
  */
 function commit(totals: UsageTotals, meta: TrackingMeta, statusCode: number, streamed: boolean): void {
-  const estimated = !totals.reportedByUpstream;
+  // `reportedByUpstream` flips as soon as *either* side arrives, so a provider
+  // that sends only output tokens used to produce a row marked exact while the
+  // input figure was quietly an estimate. A row is only exact when nothing had
+  // to be guessed.
+  const hasRealInput = totals.inputTokens > 0;
+  const hasRealOutput = totals.outputTokens > 0;
+  const estimated = !totals.reportedByUpstream || !hasRealInput || !hasRealOutput;
 
   // When the upstream reported real input usage, the gap against our estimate
   // for the same payload is a free measurement — feed it back so future

@@ -1,6 +1,7 @@
 import type { IModelSpec } from '@/core/interfaces';
 import { getProxyConfig } from '@/config/manager';
 import { adminEventBus } from '@/core/events';
+import { ProviderUnavailableError } from '@/core/upstream-errors';
 import {
   type CustomProviderKeyRecord,
   type CustomProviderRecord,
@@ -20,6 +21,25 @@ export class NoUsableKeyError extends Error {
       `No usable API key for custom provider "${providerId}". Add a key in the dashboard, or reset the ones in cooldown.`,
     );
     this.name = 'NoUsableKeyError';
+  }
+}
+
+/**
+ * Every key is serving out a rate-limit cooldown.
+ *
+ * Distinct from `NoUsableKeyError`, which means nothing is configured: this one
+ * is temporary and carries the wait, so the caller can answer 429 with a
+ * retry hint instead of a generic failure.
+ */
+export class AllKeysCoolingError extends ProviderUnavailableError {
+  constructor(providerId: string, retryAfterMs: number) {
+    const seconds = Math.max(1, Math.ceil(retryAfterMs / 1000));
+    super(
+      `Every API key for "${providerId}" is rate limited. The first one frees up in ${seconds}s.`,
+      429,
+      seconds,
+    );
+    this.name = 'AllKeysCoolingError';
   }
 }
 
@@ -71,26 +91,34 @@ function selectKey(
   excludeIds: string[],
 ): CustomProviderKeyRecord | null {
   const now = Date.now();
+
+  // A cooling key is genuinely unavailable. This used to fall back to using one
+  // anyway "rather than failing the request outright" — which meant a provider
+  // with a single key ignored its own cooldown completely and hammered an
+  // upstream that had just asked us to slow down, the fastest way to earn a
+  // longer ban.
   const candidates = keys.filter(
     (key) => !excludeIds.includes(key.id) && key.cooldownUntil <= now,
   );
 
-  const pool = candidates.length > 0
-    // Every key is cooling down — fall back to the least-recently-used one
-    // rather than failing the request outright.
-    ? candidates
-    : keys.filter((key) => !excludeIds.includes(key.id));
-
-  if (pool.length === 0) {
+  if (candidates.length === 0) {
     return null;
   }
 
-  return pool.reduce((best, key) => {
+  return candidates.reduce((best, key) => {
     if (key.healthScore !== best.healthScore) {
       return key.healthScore > best.healthScore ? key : best;
     }
     return key.lastUsed < best.lastUsed ? key : best;
   });
+}
+
+/** How long until the first key comes out of cooldown, or 0 if one is free. */
+export function shortestCooldownMs(keys: CustomProviderKeyRecord[], now = Date.now()): number {
+  if (keys.length === 0) {
+    return 0;
+  }
+  return Math.max(0, Math.min(...keys.map((key) => key.cooldownUntil - now)));
 }
 
 function cooldownMs(): number {
@@ -118,7 +146,10 @@ async function penalize(key: CustomProviderKeyRecord, statusCode: number): Promi
   key.healthScore = Math.max(min, key.healthScore + penalty);
   key.consecutiveFailures += 1;
 
-  if (statusCode === 429 || statusCode === 503) {
+  // Only a rate limit earns a cooldown. A 503 is the upstream having a bad
+  // moment; benching the key for a minute over one blip would take a
+  // single-key provider offline for no reason.
+  if (statusCode === 429) {
     key.cooldownUntil = Date.now() + cooldownMs();
   }
 
@@ -185,6 +216,12 @@ export async function executeCustomRequest(
 
     const key = selectKey(keys, tried);
     if (!key) {
+      // Nothing left to try. If that is because everything is cooling rather
+      // than because everything failed, say so with a wait the caller can use.
+      const untried = keys.filter((candidate) => !tried.includes(candidate.id));
+      if (untried.length > 0) {
+        throw new AllKeysCoolingError(provider.id, shortestCooldownMs(untried));
+      }
       break;
     }
     tried.push(key.id);

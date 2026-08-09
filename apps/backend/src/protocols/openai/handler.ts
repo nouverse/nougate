@@ -4,6 +4,7 @@ import {
   requireProviderPrefix,
 } from "@/core/model-resolver";
 import type { IProtocolHandler } from "@/core/interfaces";
+import { ProviderUnavailableError } from "@/core/upstream-errors";
 import type { RequestContext } from "@/core/request-context";
 import { getAllProviders } from "@/core/registry";
 import { prepareRequestPayload } from "@/core/metrics/compression";
@@ -160,6 +161,30 @@ export class OpenAIProtocolHandler implements IProtocolHandler {
         `[OpenAI] Upstream execution failed for "${ctx.resolvedModel.raw}":`,
         error,
       );
+
+      // A provider that knows it is only temporarily out says so, and for how
+      // long. Answering 502 for that told clients the gateway was broken.
+      if (error instanceof ProviderUnavailableError) {
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        };
+        if (error.retryAfterSeconds) {
+          headers["Retry-After"] = String(error.retryAfterSeconds);
+        }
+
+        return new Response(
+          JSON.stringify({
+            error: {
+              message: error.message,
+              type: "rate_limit_error",
+              code: "rate_limited",
+            },
+          }),
+          { status: error.status, headers },
+        );
+      }
+
       return createJsonResponse(
         {
           error: {

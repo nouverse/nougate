@@ -185,6 +185,35 @@ export function createOpenAIToAnthropicStreamTransformer(model: string, messageI
   let currentBlockType: 'text' | 'tool_use' | null = null;
   let inputTokens = 0;
   let outputTokens = 0;
+  let stopReason = 'end_turn';
+
+  /**
+   * Close the Anthropic message.
+   *
+   * Deliberately *not* called on `finish_reason`. OpenAI sends the usage totals
+   * in a final chunk that arrives after it, so finalising early emitted
+   * `message_delta` before any usage was known — and the `finished` guard then
+   * stopped the real numbers from ever being sent. Anthropic clients, and our
+   * own metrics which read this stream, saw zero input tokens on almost every
+   * request.
+   */
+  const finalize = (controller: TransformStreamDefaultController) => {
+    if (finished) {
+      return;
+    }
+    finished = true;
+
+    if (blockStarted) {
+      controller.enqueue(encoder.encode(sseEvent('content_block_stop', { type: 'content_block_stop', index: blockIndex })));
+      blockStarted = false;
+    }
+    controller.enqueue(encoder.encode(sseEvent('message_delta', {
+      type: 'message_delta',
+      delta: { stop_reason: stopReason, stop_sequence: null },
+      usage: { input_tokens: inputTokens, output_tokens: outputTokens },
+    })));
+    controller.enqueue(encoder.encode(sseEvent('message_stop', { type: 'message_stop' })));
+  };
 
   return new TransformStream({
     start(controller) {
@@ -215,18 +244,7 @@ export function createOpenAIToAnthropicStreamTransformer(model: string, messageI
         const dataStr = trimmed.slice(6);
         
         if (dataStr === '[DONE]') {
-          if (!finished) {
-            finished = true;
-            if (blockStarted) {
-              controller.enqueue(encoder.encode(sseEvent('content_block_stop', { type: 'content_block_stop', index: blockIndex })));
-            }
-            controller.enqueue(encoder.encode(sseEvent('message_delta', {
-              type: 'message_delta',
-              delta: { stop_reason: 'end_turn', stop_sequence: null },
-              usage: { input_tokens: inputTokens, output_tokens: outputTokens },
-            })));
-            controller.enqueue(encoder.encode(sseEvent('message_stop', { type: 'message_stop' })));
-          }
+          finalize(controller);
           continue;
         }
 
@@ -333,22 +351,16 @@ export function createOpenAIToAnthropicStreamTransformer(model: string, messageI
             }
           }
 
-          if (finishReason && !finished) {
-            finished = true;
+          if (finishReason) {
+            // Record why it ended and close the open block, but leave the
+            // message open — the usage totals are still in flight.
+            stopReason = finishReason === 'tool_calls' ? 'tool_use'
+              : finishReason === 'length' ? 'max_tokens'
+              : 'end_turn';
             if (blockStarted) {
               controller.enqueue(encoder.encode(sseEvent('content_block_stop', { type: 'content_block_stop', index: blockIndex })));
               blockStarted = false;
             }
-            const stopReason = finishReason === 'tool_calls' ? 'tool_use'
-              : finishReason === 'stop' ? 'end_turn'
-              : finishReason === 'length' ? 'max_tokens'
-              : 'end_turn';
-            controller.enqueue(encoder.encode(sseEvent('message_delta', {
-              type: 'message_delta',
-              delta: { stop_reason: stopReason, stop_sequence: null },
-              usage: { output_tokens: outputTokens },
-            })));
-            controller.enqueue(encoder.encode(sseEvent('message_stop', { type: 'message_stop' })));
           }
         } catch (e) {
           console.warn('[AnthropicStream] Failed to parse OpenAI chunk:', e);
@@ -356,19 +368,10 @@ export function createOpenAIToAnthropicStreamTransformer(model: string, messageI
       }
     },
 
+    // Upstreams that end without a [DONE] line still get a properly closed
+    // message, with whatever usage did arrive.
     flush(controller) {
-      if (!finished) {
-        finished = true;
-        if (blockStarted) {
-          controller.enqueue(encoder.encode(sseEvent('content_block_stop', { type: 'content_block_stop', index: blockIndex })));
-        }
-        controller.enqueue(encoder.encode(sseEvent('message_delta', {
-          type: 'message_delta',
-          delta: { stop_reason: 'end_turn', stop_sequence: null },
-          usage: { output_tokens: outputTokens },
-        })));
-        controller.enqueue(encoder.encode(sseEvent('message_stop', { type: 'message_stop' })));
-      }
+      finalize(controller);
     }
   });
 }

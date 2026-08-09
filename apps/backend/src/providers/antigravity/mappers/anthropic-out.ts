@@ -303,58 +303,63 @@ export async function aggregateAnthropicResponse(
   const reader = googleRes.body!.getReader();
   let buf = "";
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    const lines = buf.split("\n");
-    buf = lines.pop() ?? "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop() ?? "";
 
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || !trimmed.startsWith("data: ")) continue;
-      const dataStr = trimmed.slice(6);
-      if (dataStr === "[DONE]") continue;
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith("data: ")) continue;
+        const dataStr = trimmed.slice(6);
+        if (dataStr === "[DONE]") continue;
 
-      try {
-        const g = JSON.parse(dataStr);
-        const data = g.response ?? g;
-        for (const part of data.candidates?.[0]?.content?.parts ?? []) {
-          const isThought = part.thought || part.thoughtText || part.type === "thinking";
-          const sig = part.thoughtSignature || part.thought_signature || part.signature;
+        try {
+          const g = JSON.parse(dataStr);
+          const data = g.response ?? g;
+          for (const part of data.candidates?.[0]?.content?.parts ?? []) {
+            const isThought = part.thought || part.thoughtText || part.type === "thinking";
+            const sig = part.thoughtSignature || part.thought_signature || part.signature;
 
-          if (sig) {
-            activeSignature = sig;
-          }
-
-          if (isThought && part.text) {
-            thinking += part.text;
-          } else if (part.text) {
-            text += part.text;
-          } else if (part.functionCall || part.function_call) {
-            const call = part.functionCall ?? part.function_call;
-            const toolId = call.id ?? `toolu_${Math.random().toString(36).slice(2, 10)}`;
-            if (activeSignature) {
-              cacheSignatureByCallId(toolId, activeSignature);
+            if (sig) {
+              activeSignature = sig;
             }
-            toolUses.push({
-              type: "tool_use",
-              id: toolId,
-              name: call.name,
-              input: typeof call.args === "string" ? JSON.parse(call.args) : (call.args ?? {}),
-            });
+
+            if (isThought && part.text) {
+              thinking += part.text;
+            } else if (part.text) {
+              text += part.text;
+            } else if (part.functionCall || part.function_call) {
+              const call = part.functionCall ?? part.function_call;
+              const toolId = call.id ?? `toolu_${Math.random().toString(36).slice(2, 10)}`;
+              if (activeSignature) {
+                cacheSignatureByCallId(toolId, activeSignature);
+              }
+              toolUses.push({
+                type: "tool_use",
+                id: toolId,
+                name: call.name,
+                input: typeof call.args === "string" ? JSON.parse(call.args) : (call.args ?? {}),
+              });
+            }
           }
-        }
-        if (data.candidates?.[0]?.finishReason) {
-          const fr = data.candidates[0].finishReason;
-          stopReason = fr === "STOP" ? "end_turn" : fr === "MAX_TOKENS" ? "max_tokens" : "end_turn";
-        }
-        if (data.usageMetadata) {
-          inputTokens = data.usageMetadata.promptTokenCount ?? 0;
-          outputTokens = data.usageMetadata.candidatesTokenCount ?? 0;
-        }
-      } catch (e) { /* ignore */ }
+          if (data.candidates?.[0]?.finishReason) {
+            const fr = data.candidates[0].finishReason;
+            stopReason = fr === "STOP" ? "end_turn" : fr === "MAX_TOKENS" ? "max_tokens" : "end_turn";
+          }
+          if (data.usageMetadata) {
+            inputTokens = data.usageMetadata.promptTokenCount ?? 0;
+            outputTokens = data.usageMetadata.candidatesTokenCount ?? 0;
+          }
+        } catch (e) { /* ignore */ }
+      }
     }
+  } finally {
+    // Release the upstream connection even when the loop exits by throwing.
+    await reader.cancel().catch(() => {});
   }
 
   if (sessionId && activeSignature && thinking) {

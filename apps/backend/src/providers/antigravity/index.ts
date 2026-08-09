@@ -122,44 +122,50 @@ async function finalizeOpenAIResponse(params: {
   let finalFinishReason = "stop";
   let buffer = "";
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) {
-      break;
-    }
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
-
-    for (const line of lines) {
-      if (!line.startsWith("data: ") || line === "data: [DONE]") {
-        continue;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
       }
 
-      try {
-        const event = JSON.parse(line.slice(6));
-        const choice = event.choices?.[0];
-        if (!choice) {
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ") || line === "data: [DONE]") {
           continue;
         }
 
-        if (choice.delta?.content) {
-          fullContent += choice.delta.content;
+        try {
+          const event = JSON.parse(line.slice(6));
+          const choice = event.choices?.[0];
+          if (!choice) {
+            continue;
+          }
+
+          if (choice.delta?.content) {
+            fullContent += choice.delta.content;
+          }
+          if (choice.delta?.reasoning_content) {
+            reasoningContent += choice.delta.reasoning_content;
+          }
+          if (choice.delta?.tool_calls) {
+            aggregatedToolCalls.push(...choice.delta.tool_calls);
+          }
+          if (choice.finish_reason) {
+            finalFinishReason = choice.finish_reason;
+          }
+        } catch (error) {
+          console.warn("[Stream] Failed to parse non-streaming chunk:", error);
         }
-        if (choice.delta?.reasoning_content) {
-          reasoningContent += choice.delta.reasoning_content;
-        }
-        if (choice.delta?.tool_calls) {
-          aggregatedToolCalls.push(...choice.delta.tool_calls);
-        }
-        if (choice.finish_reason) {
-          finalFinishReason = choice.finish_reason;
-        }
-      } catch (error) {
-        console.warn("[Stream] Failed to parse non-streaming chunk:", error);
       }
     }
+  } finally {
+    // Release the upstream connection even when the loop exits by throwing.
+    // Without this, a mid-stream failure left the Google response open.
+    await reader.cancel().catch(() => {});
   }
 
   if (buffer.startsWith("data: ") && buffer !== "data: [DONE]") {

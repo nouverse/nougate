@@ -4,6 +4,7 @@ import {
   requireProviderPrefix,
 } from "@/core/model-resolver";
 import type { IProtocolHandler } from "@/core/interfaces";
+import { ProviderUnavailableError } from "@/core/upstream-errors";
 import type { RequestContext } from "@/core/request-context";
 import { getAllProviders } from "@/core/registry";
 import { prepareRequestPayload } from "@/core/metrics/compression";
@@ -128,6 +129,27 @@ export class AnthropicProtocolHandler implements IProtocolHandler {
         `[Anthropic] Upstream execution failed for "${ctx.resolvedModel.raw}":`,
         error,
       );
+
+      // Temporary and self-describing: answer with the wait rather than a flat
+      // 502, which reads to a client as "the gateway is broken".
+      if (error instanceof ProviderUnavailableError) {
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        };
+        if (error.retryAfterSeconds) {
+          headers["Retry-After"] = String(error.retryAfterSeconds);
+        }
+
+        return new Response(
+          JSON.stringify({
+            type: "error",
+            error: { type: "rate_limit_error", message: error.message },
+          }),
+          { status: error.status, headers },
+        );
+      }
+
       return createErrorResponse(
         error?.message || "Upstream request failed",
         "api_error",

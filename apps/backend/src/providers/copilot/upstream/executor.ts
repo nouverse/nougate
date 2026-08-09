@@ -53,6 +53,10 @@ export class CopilotExecutor {
         model: upstreamModelId,
       };
 
+      const timeoutMs = options.modelSpec.timeoutMs ?? 60_000;
+      const controller = new AbortController();
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
       try {
         const copilotConfig = getCopilotConfig();
         if (copilotConfig.features.jitterEnabled) {
@@ -62,11 +66,19 @@ export class CopilotExecutor {
           await new Promise((resolve) => setTimeout(resolve, jitterMs));
         }
 
+        // Every model spec declares a timeoutMs and nothing used to read it,
+        // so a stalled upstream connection hung the request forever — the
+        // server runs with idleTimeout disabled, so nothing else would cut it.
+        timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
         const response = await fetch('https://api.githubcopilot.com/chat/completions', {
           method: 'POST',
           headers: getCopilotHeaders(account.sessionToken),
           body: JSON.stringify(requestBody),
+          signal: controller.signal,
         });
+
+        clearTimeout(timeoutId);
 
         if (response.status === 401) {
           console.warn(`[Copilot Upstream] Account ${account.id} unauthorized (401). Marking invalid.`);
@@ -101,7 +113,12 @@ export class CopilotExecutor {
         };
 
       } catch (error: any) {
-        console.error(`[Copilot Upstream] Request failed on account ${account.id}:`, error);
+        clearTimeout(timeoutId);
+        if (error?.name === 'AbortError') {
+          console.error(`[Copilot Upstream] Account ${account.id} timed out after ${timeoutMs}ms`);
+        } else {
+          console.error(`[Copilot Upstream] Request failed on account ${account.id}:`, error);
+        }
         await updateAccountUsage(account.id, false, modelId, options.modelSpec.pool, options.clientId, 500);
       }
     }

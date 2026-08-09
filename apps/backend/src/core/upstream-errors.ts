@@ -176,3 +176,24 @@ export function classifyUpstreamError({ status, body, error }: ClassifyInput): U
     message: status ? `The upstream returned ${status}.` : 'The upstream failed for an unknown reason.',
   };
 }
+
+
+/**
+ * A provider is temporarily unable to serve, and it knows for how long.
+ *
+ * Thrown from a provider's `execute()`; the protocol handlers turn it into the
+ * right status for the client's protocol instead of the generic 502 that every
+ * other failure becomes. Lives in core so no handler has to import a
+ * provider-specific error type.
+ */
+export class ProviderUnavailableError extends Error {
+  readonly status: number;
+  readonly retryAfterSeconds?: number;
+
+  constructor(message: string, status = 429, retryAfterSeconds?: number) {
+    super(message);
+    this.name = 'ProviderUnavailableError';
+    this.status = status;
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
