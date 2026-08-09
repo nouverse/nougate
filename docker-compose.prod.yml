@@ -35,23 +35,24 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  headroom:
-    image: ghcr.io/chopratejas/headroom:latest
-    container_name: headroom
-    restart: always
-    ports:
-      - "8787:8787"
-    deploy:
-      resources:
-        limits:
-          cpus: '2.0'
-          memory: 1G
-        reservations:
-          cpus: '0.5'
-          memory: 256M
-    environment:
-      - OMP_NUM_THREADS=2
-      - MKL_NUM_THREADS=2
-      - OPENBLAS_NUM_THREADS=2
-      - VECLIB_MAXIMUM_THREADS=2
-      - NUMEXPR_NUM_THREADS=2
+  # Enable this whenever you need headroom compression
+  # headroom:
+  #   image: ghcr.io/chopratejas/headroom:latest
+  #   container_name: headroom
+  #   restart: always
+  #   ports:
+  #     - "8787:8787"
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         cpus: '2.0'
+  #         memory: 1G
+  #       reservations:
+  #         cpus: '0.5'
+  #         memory: 256M
+  #   environment:
+  #     - OMP_NUM_THREADS=2
+  #     - MKL_NUM_THREADS=2
+  #     - OPENBLAS_NUM_THREADS=2
+  #     - VECLIB_MAXIMUM_THREADS=2
+  #     - NUMEXPR_NUM_THREADS=2
