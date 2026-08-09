@@ -39,6 +39,15 @@ export interface ScoringConfig {
   weights: {
     health: number;
     lru: number;
+    /**
+     * How much remaining upstream quota is worth when ranking accounts.
+     *
+     * Scored 0–`quota` from the account's worst relevant quota, so a fresh
+     * account outranks a nearly-spent one before a request is ever sent.
+     * Accounts whose provider reports no quota score 0 here and rank exactly as
+     * they did before. Set to 0 to ignore quota entirely.
+     */
+    quota: number;
   };
 }
 

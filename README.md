@@ -208,7 +208,7 @@ or `SESSION_SECRET_FILE`.
     "healthRange": { "min": 0, "max": 100, "initial": 100 },
     "penalties": { "apiError": -10, "refreshError": -20, "fatalError": -50, "systemicError": -5 },
     "rewards": { "success": 1 },
-    "weights": { "health": 2.0, "lru": 0.1 }
+    "weights": { "health": 2.0, "lru": 0.1, "quota": 25 }  // quota: rank by remaining upstream headroom; 0 disables
   },
   "retry": { "maxAttempts": 5, "transientRetryThresholdSeconds": 5 },
   "tokens": { "expiryBufferMs": 60000 },

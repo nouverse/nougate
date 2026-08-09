@@ -25,15 +25,16 @@ observability berbasis database dengan biaya per key, autentikasi dashboard dan 
 dan model kapabilitas yang membuat provider baru tidak menyentuh core. Manager tidak punya
 satu pun dari ini — bukan karena kalah, tapi karena bukan itu produknya.
 
-**Sisa gap tinggal tiga**, setelah rate limiting per-model, kalibrator estimasi, dan
-error classifier selesai (Agustus 2026):
+**Sisa gap tinggal dua**, setelah rate limiting per-model, kalibrator estimasi, error
+classifier, dan pemilihan akun sadar kuota selesai (Agustus 2026):
 
-1. **Pemilihan akun belum sadar sisa kuota.** Kita memakai skor kesehatan per-model
-   (reaktif, dipelajari dari kegagalan); Manager memakai sisa kuota per-model (proaktif,
-   dari quota API) — sinyal lebih baik untuk melewati akun yang pasti gagal. Ini gap
-   berdampak terbesar yang tersisa.
-2. **Kompresi konteks belum dipicu rasio pemakaian.** Dua lapis kita jalan tiap request.
-3. **Tidak ada adapter per-klien**, jadi quirk satu IDE tidak bisa ditangani terpisah.
+1. **Kompresi konteks belum dipicu rasio pemakaian.** Dua lapis kita jalan tiap request.
+   Ditunda dengan sengaja: ini fitur *biaya*, bukan stabilitas, dan Gemini punya konteks
+   ~1 juta token sehingga batasnya jarang tersentuh.
+2. **Tidak ada adapter per-klien**, jadi quirk satu IDE tidak bisa ditangani terpisah.
+
+Di luar daftar Manager, gap terbesar Nougate tetap **cross-provider fallback** — lihat
+[COMPARISON.md](COMPARISON.md).
 
 Selain itu ada tiga endpoint yang belum ada — Codex `/v1/responses`, Gemini native, dan
 Imagen — yang belum tentu perlu; lihat [§7](#7-rekomendasi-berikutnya).
@@ -69,7 +70,7 @@ Legenda: ⬆️ kita lebih baik · 🟰 setara · ⬇️ kita masih kalah · ➖
 | OpenAI-compatible endpoint | ✅ | ✅ | 🟰 Setara | — |
 | Anthropic native `/v1/messages` | ✅ | ✅ | 🟰 Setara | [§2.1](#21--native-anthropic-endpoint-v1messages) |
 | Multi-layer signature cache | ✅ 4-layer | ✅ 4-layer | 🟰 Setara | [§2.2](#22--multi-layer-signature-cache) |
-| Tiered account sorting (Ultra/Pro/Free) | ✅ tier bonus + skor per-model | ✅ tier + **sisa kuota** per-model | 🟡 Beda sinyal | [§2.3](#23--tiered-account-sorting) |
+| Tiered account sorting (Ultra/Pro/Free) | ✅ tier + skor per-model + **sisa kuota** | ✅ tier + sisa kuota per-model | 🟰 Setara | [§2.3](#23--tiered-account-sorting) |
 | Rate limit + exponential backoff | ✅ | ✅ | 🟰 Setara | [§2.4](#24--model-level-rate-limiting) |
 | **Rate limit granularity** | ✅ `pool\|model` + scope account-wide + `UpstreamErrorKind` | ✅ `account:model` + reason enum | 🟰 Setara | [§2.4](#24--model-level-rate-limiting) |
 | JSON Schema cleaning untuk Gemini | ✅ | ✅ | 🟰 Setara | [§2.5](#25--json-schema-cleaning-for-gemini) |
@@ -254,17 +255,19 @@ L12   pub fn store_thought_signature(sig, session_id, message_count)
 
 ### 2.3 🔴 Tiered Account Sorting
 
-> **Status: 🟡 sebagian, khusus Antigravity.** Tier ultra/pro/free memberi bonus +30/+15/0
-> pada skor rotasi, dan skor kesehatan sudah per-model (`modelScores["model|pool"]`, dengan
-> fallback ke rata-rata family) — jadi dimensi per-model **ada**.
+> **Status: ✅ selesai (Agustus 2026).** Skor rotasi sekarang menggabungkan empat sinyal:
+> health (reaktif), least-recently-used, tier ultra/pro/free (+30/+15/0), dan **sisa kuota**
+> untuk model yang diminta (`scoring.weights.quota`, default 25).
 >
-> Bedanya pada sinyalnya: kita memakai skor kesehatan yang *dipelajari dari kegagalan*,
-> Manager memakai *sisa kuota* per model dari quota API. Punya Manager lebih baik karena
-> tahu akun akan gagal sebelum request dikirim; punya kita baru tahu setelah gagal sekali.
-> Data kuotanya sudah kita poll — tinggal dimasukkan ke fungsi skor.
+> Kuota memakai limit paling buruk yang relevan — akun yang aman di satu limit tapi habis di
+> limit lain tetap tidak bisa melayani. Akun yang providernya tidak melaporkan kuota
+> mendapat 0, yaitu peringkat yang persis sama seperti sebelum dimensi ini ada; nilai `null`
+> berarti "tidak ada pendapat", bukan "kosong", supaya menambah akun baru tidak membuat pool
+> terlihat habis. Set `weights.quota: 0` untuk mematikannya.
 >
-> Provider lain memakai health score + least-recently-used, yang memang sesuai karena tidak
-> punya konsep tier.
+> Bobotnya sengaja di bawah selisih health yang berarti: kuota penuh bernilai +25, sedangkan
+> selisih 20 poin health bernilai +40. Peringkat tetap didominasi oleh apakah akun benar-benar
+> jalan.
 
 **Mengapa penting:** Saat ini kita rotasi berdasarkan health score saja. Antigravity-Manager mengurutkan akun dengan **4 level priority**:
 
@@ -1187,10 +1190,12 @@ Diurutkan berdasarkan dampak nyata, bukan urutan aslinya.
 ~~**1. Rate limit per model**~~ · ~~**2. Estimation calibrator**~~ · ~~**Error
 classifier**~~ — selesai Agustus 2026.
 
-**1. Pemilihan akun sadar sisa kuota** ([§2.3](#23--tiered-account-sorting)) — gap
-berdampak terbesar yang tersisa. Data kuotanya sudah kita poll; tinggal dimasukkan ke
-fungsi skor rotasi. Perlu hati-hati: ini menyentuh jalur panas pemilihan akun, jadi harus
-jatuh persis ke perilaku sekarang saat data kuota kosong atau basi.
+~~**Pemilihan akun sadar sisa kuota**~~ — selesai Agustus 2026.
+
+**1. Cross-provider fallback** — bukan dari daftar Manager, tapi gap terbesar Nougate
+secara keseluruhan. Bahannya sudah ada: registry provider, `getBestAccount` yang
+mengembalikan `null` saat habis, dan `UpstreamErrorClass.rotate` yang sudah tahu kapan
+pantas pindah.
 
 **2. Multi-level context compression** ([§3.8](#38--multi-level-context-compression)) —
 sekarang layak dikerjakan, karena kalibrator sudah memberi estimasi token yang bisa

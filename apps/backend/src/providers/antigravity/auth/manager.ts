@@ -72,7 +72,7 @@ function getManagerConfig() {
       return {
         rotation: { cooldown: { defaultDurationMs: 60000, maxDurationMs: 3600000 } },
         scoring: {
-          weights: { health: 2, lru: 0.1 },
+          weights: { health: 2, lru: 0.1, quota: 25 },
           healthRange: { min: 0, max: 100, initial: 100 },
           penalties: { apiError: -10, refreshError: -20, fatalError: -50, systemicError: -10 },
           rewards: { success: 2 },
@@ -261,25 +261,65 @@ export function flagAccountChallenge(email: string, pool: "cli" | "sandbox", mod
   }
 }
 
+/**
+ * The quota entries that describe the model being asked for.
+ *
+ * Antigravity names its quota groups loosely ("Claude Sonnet 4.6", "Gemini 3
+ * Pro"), so matching is on the family name with a couple of explicit vendor
+ * fallbacks. With no model given, every quota is relevant.
+ */
+function relevantQuotasFor(account: AntigravityAccount, model?: string) {
+  if (!account.quota || account.quota.length === 0) {
+    return [];
+  }
+
+  const family = model ? getFamilyName(model) : null;
+  if (!family) {
+    return account.quota;
+  }
+
+  const fLower = family.toLowerCase();
+  return account.quota.filter(q => {
+    const qLower = q.groupName.toLowerCase();
+    return qLower.includes(fLower) || fLower.includes(qLower) ||
+      (fLower.includes("claude") && qLower.includes("claude")) ||
+      (fLower.includes("gemini") && qLower.includes("gemini"));
+  });
+}
+
+/**
+ * How much headroom this account has left for `model`, 0–1.
+ *
+ * `null` means the provider has told us nothing — a brand-new account, or one
+ * whose quota poll has not landed yet. Callers must treat that as "no opinion"
+ * rather than as empty, or adding an account would make the pool look
+ * exhausted.
+ *
+ * The *worst* relevant quota wins: an account that is fine on one limit and out
+ * on another cannot serve the request.
+ */
+export function remainingQuotaFraction(account: AntigravityAccount, model?: string): number | null {
+  const relevant = relevantQuotasFor(account, model);
+  if (relevant.length === 0) {
+    return null;
+  }
+
+  return relevant.reduce(
+    (worst, q) => Math.min(worst, Math.max(0, Math.min(1, q.remainingFraction))),
+    1,
+  );
+}
+
 function isAccountQuotaExhausted(account: AntigravityAccount, model?: string): boolean {
   let config: ReturnType<typeof getManagerConfig>;
   try { config = getManagerConfig(); } catch { return false; }
   const threshold = config.features.softQuotaThresholdPercent;
   if (threshold >= 100 || !account.quota || account.quota.length === 0) return false;
 
-  const family = model ? getFamilyName(model) : null;
-  const relevantQuotas = family
-    ? account.quota.filter(q => {
-      const qLower = q.groupName.toLowerCase();
-      const fLower = family.toLowerCase();
-      return qLower.includes(fLower) || fLower.includes(qLower) ||
-        (fLower.includes("claude") && qLower.includes("claude")) ||
-        (fLower.includes("gemini") && qLower.includes("gemini"));
-    })
-    : account.quota;
-
+  const relevantQuotas = relevantQuotasFor(account, model);
   if (relevantQuotas.length === 0) return false;
 
+  const family = model ? getFamilyName(model) : null;
   const usedPercent = relevantQuotas.reduce((worst, q) => {
     const used = (1 - q.remainingFraction) * 100;
     return Math.max(worst, used);
@@ -326,7 +366,10 @@ export async function getBestAccount(pool?: "cli" | "sandbox", model?: string, c
             if (waitMs <= maxWaitMs) {
               console.log(`[CacheFirst] Waiting ${Math.ceil(waitMs / 1000)}s for ${stickyEmail} to preserve prompt cache...`);
               await new Promise(r => setTimeout(r, waitMs));
-              return await ensureAccountReady(stickyAccount);
+              const ready = await ensureAccountReady(stickyAccount);
+              if (ready) return ready;
+              // Its token would not refresh; fall through to the normal pool
+              // rather than failing a request other accounts could serve.
             }
             console.log(`[CacheFirst] ${stickyEmail} cooldown (${Math.ceil(waitMs / 1000)}s) exceeds max wait (${schedulingConfig.maxCacheFirstWaitSeconds}s), switching account.`);
           }
@@ -352,7 +395,10 @@ export async function getBestAccount(pool?: "cli" | "sandbox", model?: string, c
     if (clientId && excludeEmails.length === 0) {
       const stickyEmail = clientStickyMap.get(clientId);
       const sticky = candidates.find(a => a.email === stickyEmail && cooldownExpiry(a.email, pool, model) <= now);
-      if (sticky) return await ensureAccountReady(sticky);
+      if (sticky) {
+        const ready = await ensureAccountReady(sticky);
+        if (ready) return ready;
+      }
     }
 
     candidates.sort((a, b) => {
@@ -365,9 +411,23 @@ export async function getBestAccount(pool?: "cli" | "sandbox", model?: string, c
     });
 
     const offset = getPidOffset();
-    const selectedIndex = offset % candidates.length;
 
-    return await ensureAccountReady(candidates[selectedIndex]);
+    // Walk the ranked list until one is actually ready.
+    //
+    // A token that will not refresh used to end the whole selection: the caller
+    // got null, the account was never recorded as tried, and the next attempt
+    // picked the same broken account again — burning every retry, with a token
+    // round trip and a backoff sleep each time, while healthy accounts idled.
+    for (let step = 0; step < candidates.length; step += 1) {
+      const candidate = candidates[(offset + step) % candidates.length];
+      const ready = await ensureAccountReady(candidate);
+      if (ready) {
+        return ready;
+      }
+      console.warn(`[Rotation] ${candidate.email} could not be made ready; trying the next account.`);
+    }
+
+    return null;
   }
   return null;
 }
@@ -419,7 +479,19 @@ function calculatePriority(account: AntigravityAccount, now: number, model?: str
   // Tier bonus: ultra gets +30, pro gets +15, free gets +0
   const tierBonus = account.tier === 'ultra' ? 30 : account.tier === 'pro' ? 15 : 0;
 
-  return (health * config.scoring.weights.health) + (secondsSinceUsed * config.scoring.weights.lru) + tierBonus;
+  // Remaining quota, when the provider reports it. Health is reactive — it only
+  // drops after a request has already failed — so ranking on quota as well lets
+  // a nearly-spent account be passed over before it wastes an attempt.
+  //
+  // No quota data scores 0, which is exactly the ranking these accounts had
+  // before this dimension existed.
+  const remaining = remainingQuotaFraction(account, model);
+  const quotaBonus = remaining === null ? 0 : remaining * (config.scoring.weights.quota ?? 0);
+
+  return (health * config.scoring.weights.health)
+    + (secondsSinceUsed * config.scoring.weights.lru)
+    + tierBonus
+    + quotaBonus;
 }
 
 export async function updateAccountUsage(email: string, success: boolean, model?: string, pool?: string, clientId?: string, status?: number) {

@@ -25,5 +25,11 @@ jobs:
       - name: Type check
         run: bun run lint:check
 
-      - name: Run unit tests
+      - name: Run backend unit tests
         run: bun test tests/unit
+
+      - name: Type check frontend
+        run: cd apps/frontend && ./node_modules/.bin/tsc -b
+
+      - name: Run frontend tests
+        run: cd apps/frontend && bun test tests

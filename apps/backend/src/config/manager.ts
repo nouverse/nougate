@@ -39,7 +39,8 @@ const DEFAULT_CONFIG: ProxyConfig = {
     },
     weights: {
       health: 2.0,
-      lru: 0.1
+      lru: 0.1,
+      quota: 25
     }
   },
   retry: {
