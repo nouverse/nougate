@@ -56,6 +56,76 @@ type AntigravityExecuteOptions = Omit<UpstreamExecuteOptions, "googleBody" | "pr
 /**
  * Build a JSON response with the standard proxy headers for OpenAI clients.
  */
+export interface ExhaustionInput {
+  model: string;
+  /** How many accounts actually returned something. */
+  attemptCount: number;
+  attemptLogs: Array<{ email: string; status: number; reason: string }>;
+  /** Accounts that answered "this model does not exist here". */
+  unsupportedCount: number;
+  /** 5xx replies counted across accounts. */
+  systemicErrorCount: number;
+  lastStatus: number;
+  /** Human countdown to the next quota reset, when known. */
+  resetTime: string | null;
+}
+
+/**
+ * Decide what to tell the client when every account has been tried.
+ *
+ * "All accounts failed" has three quite different causes, and they used to
+ * share one answer: 429 `insufficient_quota`. That told clients to back off for
+ * a quota window when the real problem was a Google outage, and recorded an
+ * upstream failure in our own metrics as our quota running out.
+ */
+export function summarizeExhaustion(input: ExhaustionInput): { status: number; body: unknown } {
+  const { attemptLogs } = input;
+
+  // Nobody has the model. Rotating further would not help, and a quota message
+  // sends the operator hunting for a limit that is not the problem.
+  if (input.unsupportedCount > 0 && input.unsupportedCount >= input.attemptCount) {
+    return {
+      status: 404,
+      body: {
+        error: {
+          message: `No account has access to "${input.model}". It may not be rolled out to your accounts yet.`,
+          type: "invalid_request_error",
+          code: "model_not_found",
+          attempts: attemptLogs,
+        },
+      },
+    };
+  }
+
+  // The upstream is broken, not exhausted. 503 is retryable in a way 429 is not.
+  if (input.systemicErrorCount > 0 && input.lastStatus >= 500) {
+    return {
+      status: 503,
+      body: {
+        error: {
+          message: `The upstream is failing (${input.systemicErrorCount} server errors across accounts). This is not a quota problem — retry shortly.`,
+          type: "upstream_error",
+          code: "upstream_unavailable",
+          attempts: attemptLogs,
+        },
+      },
+    };
+  }
+
+  const resetMessage = input.resetTime ? ` Next reset in ${input.resetTime}.` : "";
+  return {
+    status: 429,
+    body: {
+      error: {
+        message: `Quota Exhausted: All accounts failed or are exhausted for this model.${resetMessage} Try a different model or wait for quota reset.`,
+        type: "insufficient_quota",
+        code: "insufficient_quota",
+        attempts: attemptLogs,
+      },
+    },
+  };
+}
+
 function createJsonResponse(body: unknown, status: number, attempts: number): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -196,6 +266,7 @@ export class AntigravityExecutor {
     let lastStatus = 0;
     let originAccountEmail = "";
     let systemicErrorCount = 0;
+    let unsupportedCount = 0;
     const triedEmails: string[] = [];
     const attemptLogs: Array<{ email: string; status: number; reason: string }> = [];
 
@@ -285,7 +356,7 @@ export class AntigravityExecutor {
 
       const timeoutMs = options.modelSpec.timeoutMs ?? 60000;
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
       try {
         if (providerConfig.features.jitterEnabled) {
@@ -294,6 +365,10 @@ export class AntigravityExecutor {
             Math.random() * (providerConfig.features.jitterMaxMs - providerConfig.features.jitterMinMs);
           await new Promise((resolve) => setTimeout(resolve, jitterMs));
         }
+
+        // Started after the jitter, so the anti-fingerprinting delay does not
+        // eat into the model's request budget.
+        timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
         const googleRes = await fetch(googleUrl, {
           method: "POST",
@@ -339,8 +414,16 @@ export class AntigravityExecutor {
             }
 
             if (parsedError.isModelUnsupported) {
-              console.log(`[Model] Unsupported model ${modelId} for ${account.email}, marking capability.`);
+              // Antigravity rolls models out per account, so "not found here"
+              // says nothing about the rest of the pool. Flag this one and try
+              // the next — returning here failed the whole request even when
+              // another account could have served it.
+              console.log(`[Model] Unsupported model ${modelId} for ${account.email}, trying another account.`);
               flagModelUnsupported(account.email, modelId);
+              unsupportedCount++;
+              await updateAccountUsage(account.email, false, modelId, pool, options.clientId, status);
+              triedEmails.push(account.email);
+              continue;
             }
 
             await updateAccountUsage(account.email, false, modelId, pool, options.clientId, status);
@@ -516,21 +599,18 @@ export class AntigravityExecutor {
       }
     }
 
-    const resetTime = getEarliestReset(useCliPool ? "cli" : "sandbox");
-    const resetMessage = resetTime ? ` Next reset in ${resetTime}.` : "";
+    const exhaustion = summarizeExhaustion({
+      model: options.model,
+      attemptCount: attemptLogs.length,
+      attemptLogs,
+      unsupportedCount,
+      systemicErrorCount,
+      lastStatus,
+      resetTime: getEarliestReset(useCliPool ? "cli" : "sandbox"),
+    });
+
     return {
-      response: createJsonResponse(
-        {
-          error: {
-            message: `Quota Exhausted: All accounts failed or are exhausted for this model.${resetMessage} Try a different model or wait for quota reset.`,
-            type: "insufficient_quota",
-            code: "insufficient_quota",
-            attempts: attemptLogs,
-          },
-        },
-        429,
-        attempts,
-      ),
+      response: createJsonResponse(exhaustion.body, exhaustion.status, attempts),
       accountId: "",
       attempts,
     };

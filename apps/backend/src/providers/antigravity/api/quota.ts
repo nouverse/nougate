@@ -63,7 +63,7 @@ function getNextMidnightPT(): string {
 
 export const supportedModelsCache: Set<string> = new Set();
 
-function parseQuotaResponse(data: any): AntigravityAccount["quota"] | null {
+export function parseQuotaResponse(data: any): AntigravityAccount["quota"] | null {
   let rawModels = data.availableModels || data.models || [];
   let entries: [string, any][] = [];
 
@@ -115,6 +115,14 @@ function parseQuotaResponse(data: any): AntigravityAccount["quota"] | null {
       }
       if (!group.modelIds.includes(modelId)) {
         group.modelIds.push(modelId);
+      }
+      // Models sharing a limitName share a bucket, so these figures should
+      // already agree. Keeping the lower one means a disagreement is reported
+      // conservatively rather than as whichever model happened to be parsed
+      // first — the number feeds account ranking and the exhaustion check.
+      if (remainingFraction < group.remainingFraction) {
+        group.remainingFraction = remainingFraction;
+        group.quotaLeft = `${Math.round(remainingFraction * 100)}%`;
       }
     } else {
       let resetTime = model.quotaInfo.quotaResetTime ||

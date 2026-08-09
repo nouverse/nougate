@@ -55,6 +55,11 @@ export interface AntigravityAccount {
     message?: string;
   };
   capabilities?: Record<string, boolean>;
+  /**
+   * When each capability flag was written, so a wrong one can expire.
+   * See `isModelUnsupportedFor` in ./manager.ts.
+   */
+  capabilityFlaggedAt?: Record<string, number>;
 
   // Quota info (cached)
   quota?: Array<{

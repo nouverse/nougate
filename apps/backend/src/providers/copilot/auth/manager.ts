@@ -337,6 +337,10 @@ export async function resetAccount(id: string) {
     account.modelScores = {};
     account.status = 'active';
     account.invalidatedAt = undefined;
+    // Selection honours capabilities[model] === false, and nothing else clears
+    // it — the same trap that made Antigravity's flag permanent. Reset is the
+    // way back.
+    account.capabilities = {};
 
     const keysToDelete = [];
     for (const [key] of cooldownMap) {

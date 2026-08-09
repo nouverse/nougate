@@ -345,7 +345,7 @@ export async function getBestAccount(pool?: "cli" | "sandbox", model?: string, c
   const usable = accounts.filter(a => a.refreshToken && !a.challenge && !excludeEmails.includes(a.email));
   if (pool) {
     let candidates = usable.filter(a => {
-      if (model && a.capabilities?.[model] === false) return false;
+      if (isModelUnsupportedFor(a, model)) return false;
       if (isAccountQuotaExhausted(a, model)) return false;
       const expiry = cooldownExpiry(a.email, pool, model);
       return !expiry || expiry <= now;
@@ -378,7 +378,7 @@ export async function getBestAccount(pool?: "cli" | "sandbox", model?: string, c
     }
 
     if (candidates.length === 0 && !skipRescue) {
-      candidates = usable.filter(a => !(model && a.capabilities?.[model] === false))
+      candidates = usable.filter(a => !isModelUnsupportedFor(a, model))
         .filter(a => {
           const expiry = cooldownExpiry(a.email, pool, model);
           return !expiry || expiry <= now + 300000;
@@ -518,11 +518,40 @@ export function parseDuration(val: string): number {
   return amount * multipliers[match[2]];
 }
 
+/**
+ * How long a "this account cannot serve this model" flag is trusted.
+ *
+ * The flag comes from a single 404/403 reply, and Antigravity rolls models out
+ * to accounts at different times — so today's "not found" is often tomorrow's
+ * supported model. The flag used to be permanent and nothing cleared it, not
+ * even the dashboard's Reset button, so one transient 404 removed an account
+ * from a model for good and the pool quietly shrank. Expiring it means a wrong
+ * flag costs one probe every six hours instead of forever.
+ */
+const UNSUPPORTED_PROBE_WINDOW_MS = 6 * 60 * 60 * 1000;
+
+export function isModelUnsupportedFor(account: AntigravityAccount, model?: string): boolean {
+  if (!model || account.capabilities?.[model] !== false) {
+    return false;
+  }
+
+  const flaggedAt = account.capabilityFlaggedAt?.[model];
+  // A flag with no timestamp predates expiry; re-probe it once rather than
+  // honouring it forever.
+  if (!flaggedAt) {
+    return false;
+  }
+
+  return Date.now() - flaggedAt < UNSUPPORTED_PROBE_WINDOW_MS;
+}
+
 export function flagModelUnsupported(email: string, model: string) {
   const account = accounts.find(a => a.email === email);
   if (account) {
     if (!account.capabilities) account.capabilities = {};
+    if (!account.capabilityFlaggedAt) account.capabilityFlaggedAt = {};
     account.capabilities[model] = false;
+    account.capabilityFlaggedAt[model] = Date.now();
     saveAccounts(accounts);
   }
 }
@@ -535,6 +564,10 @@ export async function resetAccount(email: string) {
     account.cooldowns = {};
     account.modelScores = {};
     account.history = [];
+    // Reset must undo a wrong "unsupported" flag too — it was the one piece of
+    // account state with no way back short of editing accounts.json.
+    account.capabilities = {};
+    account.capabilityFlaggedAt = {};
     delete account.challenge;
     const keysToDelete = [];
     for (const [key] of cooldownMap) {
