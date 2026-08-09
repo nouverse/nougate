@@ -197,7 +197,6 @@ or `SESSION_SECRET_FILE`.
 
 ```jsonc
 {
-  "baseUrl": "http://localhost:3000",
   "bypassModelValidation": false,
   "rotation": {
     "strategy": "hybrid",  // hybrid | sticky | round-robin | least-used | random
@@ -225,7 +224,13 @@ or `SESSION_SECRET_FILE`.
 }
 ```
 
-*`BASE_URL` env var overrides `baseUrl`. Required for OAuth redirect routing.*
+> **The gateway's own URL is not in here.** It comes from `BASE_URL` alone, read
+> through `core/base-url.ts`, and defaults to `http://localhost:${PORT}`. It
+> decides where OAuth redirects land and whether session cookies carry `Secure` —
+> deployment topology, settled before the container starts. It used to be stored
+> here *as well*, which meant the dashboard offered a field the env var silently
+> overwrote on the next boot. A `baseUrl` left in an existing `data/config.json`
+> is ignored on read and dropped on the next save.
 
 > **Global vs provider config.** `data/config.json` holds only settings that
 > apply to the whole gateway. Anything that belongs to one provider — quota

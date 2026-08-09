@@ -13,7 +13,6 @@ export const configEventBus = new EventEmitter();
 let config: ProxyConfig;
 
 const DEFAULT_CONFIG: ProxyConfig = {
-  baseUrl: 'http://localhost:3000',
   bypassModelValidation: false,
   rotation: {
     strategy: 'hybrid',
@@ -92,10 +91,6 @@ export async function loadProxyConfig(): Promise<ProxyConfig> {
   } catch (e) {
     console.error('[Config] Failed to load config.json, using defaults:', e);
     config = { ...DEFAULT_CONFIG };
-  }
-
-  if (process.env.BASE_URL) {
-    config.baseUrl = process.env.BASE_URL;
   }
 
   // Always use HEADROOM_URL from env if available (docker-first approach)

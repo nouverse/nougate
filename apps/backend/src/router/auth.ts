@@ -1,6 +1,6 @@
-import { getProxyConfig } from "@/config/manager";
 import { getActiveUser } from "@/auth/guard";
 import { createLogoutCookie, createSessionCookie } from "@/auth/session";
+import { getBaseUrl } from "@/core/base-url";
 import {
   AuthError,
   loginLockoutSeconds,
@@ -8,13 +8,6 @@ import {
   setUsername,
   verifyCredentials,
 } from "@/auth/users";
-
-/**
- * The gateway base URL, used to decide whether cookies carry the Secure flag.
- */
-function getBaseUrl(): string {
-  return (getProxyConfig()?.baseUrl || "http://localhost:3000").replace(/\/$/, "");
-}
 
 /**
  * Build a JSON response for the auth endpoints.

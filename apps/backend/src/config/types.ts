@@ -1,5 +1,11 @@
+/**
+ * Settings that apply to the whole gateway and are editable at runtime.
+ *
+ * `baseUrl` is deliberately absent: it comes from `BASE_URL` alone, through
+ * `core/base-url.ts`. Storing it here too meant the dashboard offered a field
+ * whose value the env var overwrote on the next boot.
+ */
 export interface ProxyConfig {
-  baseUrl?: string;
   bypassModelValidation?: boolean;
   rotation: RotationConfig;
   scoring: ScoringConfig;

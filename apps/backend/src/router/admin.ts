@@ -2,6 +2,7 @@ import { join } from "path";
 import { existsSync } from "fs";
 import { getProxyConfig, updateProxyConfig } from "@/config/manager";
 import { adminEventBus } from "@/core/events";
+import { getBaseUrl } from "@/core/base-url";
 import { AccountLimitError, getMaxAccountMultiplexing } from "@/core/rotation-pool";
 import { addAccount } from "@/providers/antigravity/auth/manager";
 import { exchangeCode, generateAuthUrl, getProjectId, getUserEmail } from "@/providers/antigravity/auth/oauth";
@@ -184,9 +185,7 @@ async function handleOAuthCallback(url: URL): Promise<Response> {
     }
 
     await addAccount(newAccount);
-    const config = getProxyConfig();
-    const baseUrl = config?.baseUrl || "http://localhost:3000";
-    return Response.redirect(`${baseUrl.replace(/\/$/, "")}/frontend/`);
+    return Response.redirect(`${getBaseUrl()}/frontend/`);
   } catch (error) {
     // This callback lands in a browser tab, so the account cap has to explain
     // itself in plain text rather than arriving as "Auth error: [object]".
