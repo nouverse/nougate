@@ -311,7 +311,7 @@ describe("Unit Tests: OpenAIProtocolHandler", () => {
       resolvedModel: resolveModel("gemini-3-flash"),
       provider: {
         id: "antigravity",
-        displayName: "Antigravity",
+        displayName: "Google Antigravity",
         init: async () => {},
         getBestAccount: async () => null,
         updateAccountUsage: async () => {},
@@ -391,4 +391,3 @@ describe("Unit Tests: OpenAIProtocolHandler", () => {
     }
   });
 });
-

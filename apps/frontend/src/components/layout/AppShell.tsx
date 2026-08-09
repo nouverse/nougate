@@ -60,9 +60,9 @@ export function AppShell({ children }: Props) {
 
   const menuItems = [
     { label: 'Overview', to: '/' as any, icon: <List className="w-4 h-4" /> },
-    { label: 'API Playground', to: '/playground' as any, icon: <FlaskConical className="w-4 h-4" /> },
     { label: 'Token Metrics', to: '/tokens' as any, icon: <BarChart3 className="w-4 h-4" /> },
     { label: 'API Keys', to: '/api-keys' as any, icon: <KeyRound className="w-4 h-4" /> },
+    { label: 'API Playground', to: '/playground' as any, icon: <FlaskConical className="w-4 h-4" /> },
     { label: 'Custom Providers', to: '/custom-providers' as any, icon: <Boxes className="w-4 h-4" /> },
     { label: 'Users', to: '/users' as any, icon: <UsersRound className="w-4 h-4" /> },
     { label: 'Account Settings', to: '/settings' as any, icon: <UserCog className="w-4 h-4" /> },
@@ -76,7 +76,7 @@ export function AppShell({ children }: Props) {
     
     return parts.map((part) => {
       if (part === 'providers') return 'Providers';
-      if (part === 'antigravity') return 'Antigravity';
+      if (part === 'antigravity') return 'Google Antigravity';
       return part.charAt(0).toUpperCase() + part.slice(1);
     });
   };

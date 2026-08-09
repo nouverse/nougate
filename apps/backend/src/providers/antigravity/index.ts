@@ -331,7 +331,7 @@ export function mergeAccountQuotas(accounts: AntigravityAccount[]): IProviderQuo
 export class AntigravityProvider implements IProvider {
   readonly id = 'antigravity';
 
-  readonly displayName = 'Antigravity';
+  readonly displayName = 'Google Antigravity';
 
   readonly accountFlow = 'oauth-redirect' as const;
 
