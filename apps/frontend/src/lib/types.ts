@@ -227,14 +227,8 @@ export interface ProxyConfig {
   retry?: Record<string, any>;
   tokens?: Record<string, any>;
   logging?: Record<string, any>;
-  models?: {
-    blacklist?: string[];
-    [key: string]: any;
-  };
-  quota?: Record<string, any>;
-  endpoints?: Record<string, any>;
-  features?: Record<string, any>;
-  scheduling?: Record<string, any>;
+  metrics?: Record<string, any>;
+  apiKeys?: { enabled?: boolean };
   headroom?: {
     enabled?: boolean;
     url?: string;

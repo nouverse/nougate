@@ -220,6 +220,12 @@ or `SESSION_SECRET_FILE`.
 
 *`BASE_URL` env var overrides `baseUrl`. Required for OAuth redirect routing.*
 
+> **Global vs provider config.** `data/config.json` holds only settings that
+> apply to the whole gateway. Anything that belongs to one provider — endpoints,
+> quota polling, feature flags, scheduling, model blacklist — lives in that
+> provider's own file and is edited from its **Provider Config** tab, not from
+> Global Config.
+
 ### Per-Provider Config (`providers/antigravity/config.json`)
 
 ```jsonc

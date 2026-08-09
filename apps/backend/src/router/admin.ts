@@ -32,50 +32,6 @@ function createJsonResponse(body: unknown, status = 200): Response {
 }
 
 /**
- * Combine global proxy config with provider-local config for the admin API.
- */
-function buildCombinedConfig() {
-  const proxyConfig = getProxyConfig();
-  const defaultProvider = getDefaultProvider();
-  const providerConfig = defaultProvider.getConfig?.() || {};
-
-  return {
-    ...proxyConfig,
-    models: providerConfig.models,
-    quota: providerConfig.quota,
-    endpoints: providerConfig.endpoints,
-    features: providerConfig.features,
-    scheduling: providerConfig.scheduling,
-  };
-}
-
-/**
- * Split admin config updates into global and provider-local payloads.
- */
-function splitConfigUpdates(updates: any) {
-  const proxyUpdates: any = {};
-  const providerUpdates: any = {};
-
-  for (const key of ["rotation", "scoring", "retry", "tokens", "logging", "headroom", "caveman"]) {
-    if (key in updates) {
-      proxyUpdates[key] = updates[key];
-    }
-  }
-
-  for (const key of ["quota", "endpoints", "features", "scheduling"]) {
-    if (key in updates) {
-      providerUpdates[key] = updates[key];
-    }
-  }
-
-  if (updates.models?.blacklist) {
-    providerUpdates.models = { blacklist: updates.models.blacklist };
-  }
-
-  return { proxyUpdates, providerUpdates };
-}
-
-/**
  * Create the admin SSE stream used by the dashboard.
  */
 function createAdminEventStream(): Response {
@@ -336,22 +292,23 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
     return new Response("OK", { status: 200 });
   }
 
+  // Global settings only. Provider-specific config (endpoints, quota, features,
+  // scheduling, model blacklist) belongs to whichever provider owns it and is
+  // served by /api/providers/:id/config — this endpoint used to graft the
+  // *default* provider's config on top, which made settings that only apply to
+  // Antigravity look global, and hid Copilot's and every custom provider's.
   if (url.pathname === "/api/config" && req.method === "GET") {
-    return createJsonResponse(buildCombinedConfig());
+    return createJsonResponse(getProxyConfig());
   }
 
   if (url.pathname === "/api/config" && req.method === "POST") {
     const body = await req.json();
     try {
-      const { proxyUpdates, providerUpdates } = splitConfigUpdates(body);
-      if (Object.keys(proxyUpdates).length > 0) {
-        await updateProxyConfig(proxyUpdates);
-      }
-      const defaultProvider = getDefaultProvider();
-      if (defaultProvider.updateConfig && Object.keys(providerUpdates).length > 0) {
-        await defaultProvider.updateConfig(providerUpdates);
-      }
-      return createJsonResponse(buildCombinedConfig());
+      // Unknown keys are dropped by updateProxyConfig's merge, so a stale
+      // client posting provider keys here changes nothing rather than writing
+      // them into the global file.
+      await updateProxyConfig(body);
+      return createJsonResponse(getProxyConfig());
     } catch (error: any) {
       return createJsonResponse({ error: error.message }, 400);
     }
