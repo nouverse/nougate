@@ -17,12 +17,12 @@ services:
     environment:
       # Explicit entries win over env_file, so these are the values that must
       # differ inside Docker regardless of what .env says.
-      - HEADROOM_URL=http://headroom:8787
+      - HEADROOM_URL=${HEADROOM_URL:-}
       # Pinned, NOT read from .env: a checkout's .env usually holds a localhost
       # BASE_URL for development, and silently inheriting it in production would
       # drop the Secure flag from session cookies and break OAuth redirects.
       # Change the value here when deploying to a different domain.
-      - BASE_URL=https://nougate.nouverse.tech
+      - BASE_URL=${BASE_URL:-https://nougate.nouverse.tech}
       - PORT=${PORT:-3000}
       # The rest are listed rather than left to env_file so this file is the
       # full inventory of what the container reads. `${VAR:-}` leaves a variable

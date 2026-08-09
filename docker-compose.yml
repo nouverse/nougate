@@ -10,8 +10,8 @@ services:
     # substituted from .env by Compose. `${VAR:-}` leaves it as an empty string
     # when .env does not set it, which each of these treats as unset.
     environment:
-      - BASE_URL=http://127.0.0.1:3000
-      - HEADROOM_URL=http://headroom:8787
+      - BASE_URL=${BASE_URL:-http://localhost:3000}
+      - HEADROOM_URL=${HEADROOM_URL:-}
       - PORT=${PORT:-3000}
       # ── Dashboard bootstrap account ──
       # Required on a fresh deployment. No fallback: unset means nobody can sign
@@ -41,4 +41,3 @@ services:
     restart: always
     ports:
       - "8787:8787"
-

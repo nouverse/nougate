@@ -54,8 +54,8 @@ services:
         required: false
     environment:
       # Explicit entries win over env_file.
-      - HEADROOM_URL=http://headroom:8787
       - NODE_ENV=development
+      - HEADROOM_URL=${HEADROOM_URL:-}
       - BASE_URL=${BASE_URL:-http://localhost:3000}
       - PORT=${PORT:-3000}
       # The rest are listed rather than left to env_file so this file is the
