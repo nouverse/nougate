@@ -44,12 +44,17 @@ services:
         cd /app && bun run --watch apps/backend/src/server.ts
     ports:
       - "${PORT:-3000}:${PORT:-3000}"
+    # See docker-compose.prod.yml for why env_file is needed alongside
+    # environment: .env alone never reaches the container.
+    env_file:
+      - path: .env
+        required: false
     environment:
-      - PORT=${PORT:-3000}
-      - BASE_URL=${BASE_URL:-http://localhost:3000}
+      # Explicit entries win over env_file.
       - HEADROOM_URL=http://headroom:8787
       - NODE_ENV=development
-      - SESSION_SECRET=${SESSION_SECRET:-}
+      - BASE_URL=${BASE_URL:-http://localhost:3000}
+      - PORT=${PORT:-3000}
     volumes:
       # ── Backend ──
       - ./apps/backend/src:/app/apps/backend/src

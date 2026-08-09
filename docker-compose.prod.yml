@@ -7,13 +7,23 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
+    # Everything in .env is passed into the container. Without this, Compose
+    # would still read .env — but only to substitute ${...} in this file, not to
+    # set variables inside the container. Any key not also listed under
+    # `environment:` would be silently ignored by the app.
+    env_file:
+      - path: .env
+        required: false
     environment:
-      # Set the gateway base URL
-      - BASE_URL=https://nougate.nouverse.tech
-      # Set the listening port (default: 3000)
-      - PORT=3000
+      # Explicit entries win over env_file, so these are the values that must
+      # differ inside Docker regardless of what .env says.
       - HEADROOM_URL=http://headroom:8787
-      - SESSION_SECRET=${SESSION_SECRET:-}
+      # Pinned, NOT read from .env: a checkout's .env usually holds a localhost
+      # BASE_URL for development, and silently inheriting it in production would
+      # drop the Secure flag from session cookies and break OAuth redirects.
+      # Change the value here when deploying to a different domain.
+      - BASE_URL=https://nougate.nouverse.tech
+      - PORT=${PORT:-3000}
     volumes:
       # Persistent data directory storing config.json and provider account databases
       - ./nougate-data:/app/data:z
