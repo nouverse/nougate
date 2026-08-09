@@ -291,8 +291,9 @@ BOTTOM_JITTER=                      # ms; minimum delay before ANY provider's re
                                     # goes upstream. Raises a provider's own window and
                                     # overrides a provider that turned jitter off.
                                     # BOTTOM_JITTER_MS is accepted as an alias.
-MAX_ACCOUNT_MULTIPLEXING=           # cap on how many accounts a provider may rotate
-                                    # through — the top N of its own ranking.
+MAX_ACCOUNT_MULTIPLEXING=           # hard cap on accounts per provider. Adding one
+                                    # past it is refused (409) on every add path;
+                                    # the dashboard shows "3 / 5" per provider.
 
 # Dashboard sessions. Optional — one is generated into data/.session-secret on
 # first run if unset. Set it to keep sessions valid across a wiped data volume.

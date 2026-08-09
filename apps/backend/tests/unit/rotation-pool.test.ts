@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
-import { capRotationPool, getMaxAccountMultiplexing } from '@/core/rotation-pool';
+import {
+  AccountLimitError,
+  assertAccountSlotAvailable,
+  capRotationPool,
+  getMaxAccountMultiplexing,
+} from '@/core/rotation-pool';
 
 /**
  * The cap decides how many accounts an upstream sees rotating behind one egress
@@ -52,5 +57,42 @@ describe('capRotationPool', () => {
     const input = [...RANKED];
     capRotationPool(input);
     expect(input).toEqual(RANKED);
+  });
+});
+
+describe('assertAccountSlotAvailable', () => {
+  test('allows anything when no limit is configured', () => {
+    delete process.env.MAX_ACCOUNT_MULTIPLEXING;
+    expect(() => assertAccountSlotAvailable('account', 99)).not.toThrow();
+  });
+
+  test('allows the add that fills the last slot', () => {
+    process.env.MAX_ACCOUNT_MULTIPLEXING = '5';
+    expect(() => assertAccountSlotAvailable('account', 4)).not.toThrow();
+  });
+
+  test('refuses the add that would exceed the limit', () => {
+    process.env.MAX_ACCOUNT_MULTIPLEXING = '5';
+    expect(() => assertAccountSlotAvailable('Copilot account', 5)).toThrow(AccountLimitError);
+  });
+
+  test('refuses when already over the limit, e.g. after the cap was lowered', () => {
+    process.env.MAX_ACCOUNT_MULTIPLEXING = '3';
+    expect(() => assertAccountSlotAvailable('account', 8)).toThrow(AccountLimitError);
+  });
+
+  test('the refusal carries a 409 and names the limit', () => {
+    process.env.MAX_ACCOUNT_MULTIPLEXING = '2';
+
+    try {
+      assertAccountSlotAvailable('API key for "deepseek"', 2);
+      throw new Error('expected assertAccountSlotAvailable to throw');
+    } catch (error) {
+      expect(error).toBeInstanceOf(AccountLimitError);
+      expect((error as AccountLimitError).status).toBe(409);
+      expect((error as AccountLimitError).limit).toBe(2);
+      expect((error as AccountLimitError).message).toContain('MAX_ACCOUNT_MULTIPLEXING is 2');
+      expect((error as AccountLimitError).message).toContain('deepseek');
+    }
   });
 });

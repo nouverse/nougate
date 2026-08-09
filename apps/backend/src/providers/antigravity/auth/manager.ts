@@ -1,6 +1,6 @@
 import { getProxyConfig as getGlobalProxyConfig } from '@/config/manager';
 import { adminEventBus } from '@/core/events';
-import { capRotationPool } from '@/core/rotation-pool';
+import { assertAccountSlotAvailable, capRotationPool } from '@/core/rotation-pool';
 import type { UpstreamErrorKind } from '@/core/upstream-errors';
 import { getAntigravityConfig, loadAntigravityConfig } from '@/providers/antigravity/provider-config';
 import { generateFingerprint } from '@/providers/antigravity/upstream/headers';
@@ -612,8 +612,14 @@ export function getEarliestReset(_pool: "cli" | "sandbox"): string | null {
 
 export async function addAccount(account: AntigravityAccount) {
   const existing = accounts.find(a => a.email === account.email);
-  if (existing) Object.assign(existing, account);
-  else accounts.push(account);
+  if (existing) {
+    // Re-authenticating an account we already hold is an update, so it is never
+    // blocked by the cap — otherwise a full pod could never refresh its tokens.
+    Object.assign(existing, account);
+  } else {
+    assertAccountSlotAvailable('Antigravity account', accounts.length);
+    accounts.push(account);
+  }
   await saveAccounts(accounts, { immediate: true });
 }
 

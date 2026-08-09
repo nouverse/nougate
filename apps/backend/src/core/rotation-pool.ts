@@ -50,3 +50,42 @@ export function capRotationPool<T>(ranked: T[]): T[] {
 
   return ranked.slice(0, cap);
 }
+
+/**
+ * Refusing to add an account past the cap.
+ *
+ * Carries a status so every add path — OAuth callback, device flow, API key
+ * form — answers with the same 409 and the same sentence, rather than each
+ * inventing its own wording for the same refusal.
+ */
+export class AccountLimitError extends Error {
+  readonly status = 409;
+  readonly limit: number;
+
+  constructor(subject: string, limit: number) {
+    super(
+      `Cannot add another ${subject}: MAX_ACCOUNT_MULTIPLEXING is ${limit}, and ${limit} ${
+        limit === 1 ? 'is' : 'are'
+      } already configured. Remove one first, or raise the limit.`,
+    );
+    this.name = 'AccountLimitError';
+    this.limit = limit;
+  }
+}
+
+/**
+ * Refuse a new account when the pod is already at its cap.
+ *
+ * Called on the *add* path, not the selection path: an operator who set a limit
+ * of 5 wants five accounts on this pod, not eight stored with three of them
+ * quietly benched. Re-authenticating an account that already exists is an
+ * update, not an add, and must not be blocked — call this only once you know
+ * the entry is new.
+ */
+export function assertAccountSlotAvailable(subject: string, currentCount: number): void {
+  const cap = getMaxAccountMultiplexing();
+
+  if (cap !== null && currentCount >= cap) {
+    throw new AccountLimitError(subject, cap);
+  }
+}

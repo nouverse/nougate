@@ -12,6 +12,7 @@ import { ProviderOverviewTab } from '@/components/providers/shared/ProviderOverv
 import { JsonEditor } from '@/components/shared/JsonEditor';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { CopyButton } from '@/components/shared/CopyButton';
+import { AccountLimitBadge } from '@/components/shared/AccountLimitBadge';
 import { Users, Cpu, Gauge, Settings2, BarChart2 } from 'lucide-react';
 
 type Tab = 'overview' | 'quota' | 'accounts' | 'models' | 'config';
@@ -107,10 +108,7 @@ function ProviderPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <div className="badge badge-neutral bg-base-300 text-base-content/75 border-0 font-semibold gap-1 py-3 px-3">
-            <Users className="w-3.5 h-3.5 text-primary" />
-            {detail.accounts.length} accounts
-          </div>
+          <AccountLimitBadge count={detail.accounts.length} limit={detail.accountLimit} />
           <div className="badge badge-neutral bg-base-300 text-base-content/75 border-0 font-semibold gap-1 py-3 px-3">
             <Cpu className="w-3.5 h-3.5 text-secondary" />
             {detail.models.length} models

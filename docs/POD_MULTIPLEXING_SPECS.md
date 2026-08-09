@@ -156,14 +156,35 @@ rather than once per upstream retry attempt. Retries already carry their own
 parsed backoff, so this removes a delay that was compounding, not one that was
 doing work.
 
-### Where the cap is applied
+### `MAX_ACCOUNT_MULTIPLEXING` is a hard limit on adding, not only on rotating
 
-`capRotationPool()` trims the tail of an **already-ranked** candidate list in
-`getBestAccount` (Antigravity, Copilot) and in the key rotation for custom
-providers. It never reorders, so it cannot change which account wins — only how
-far down the ranking a request may fall.
+Section 3 caps the *selection* pool. That alone would let an operator who set a
+limit of 5 end up holding eight accounts with three quietly benched — the pod
+would look compliant while storing credentials it never uses.
 
-Antigravity's cache-first sticky account is honoured before the cap, which is
-what preserves prompt caching. This does not widen the working set: every
-non-sticky selection goes through the cap, so the set of accounts that can ever
-become sticky is itself capped.
+So the limit is enforced in two places:
+
+1. **On add — the one that refuses.** `assertAccountSlotAvailable()` throws
+   `AccountLimitError` (409) when a provider is already at the cap. It sits in
+   the manager-level `addAccount()` for Antigravity and Copilot, and in
+   `addProviderKey()` for custom providers, so *every* add path is covered:
+   the OAuth browser callback, the `/api/providers/:id/accounts/add` route, the
+   Copilot device-flow completion, and the custom-provider key form.
+
+   Re-authenticating an account that already exists is an **update**, not an add,
+   and is never blocked — otherwise a full pod could never refresh its tokens.
+
+2. **On selection — the backstop.** `capRotationPool()` still trims the ranked
+   candidate list. With the add guard in place this is normally a no-op, but it
+   keeps the limit true when the cap is lowered after accounts were added, or
+   when a state file is edited by hand.
+
+The dashboard reports the count against the limit (`3 / 5`) in the sidebar, on
+the provider page, and on a custom provider's API-keys panel, turning amber when
+full. `null` limit means unset, and renders as a plain count.
+
+`capRotationPool()` never reorders, so it cannot change which account wins — only
+how far down the ranking a request may fall. Antigravity's cache-first sticky
+account is honoured before the cap, which is what preserves prompt caching; this
+does not widen the working set, since every non-sticky selection goes through the
+cap and so the set of accounts that can become sticky is itself capped.

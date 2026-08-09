@@ -165,8 +165,24 @@ export function AppShell({ children }: Props) {
                   </span>
                 </div>
               </div>
-              <span className="badge badge-xs badge-neutral border-0 bg-base-300 text-base-content/60 font-mono font-bold px-1.5 py-1 shrink-0">
-                {prov.accountCount}
+              {/* Reads "3 / 5" once MAX_ACCOUNT_MULTIPLEXING is set, and turns
+                  when the provider is full — the sidebar is where you notice
+                  there is no room before starting an OAuth round trip. */}
+              <span
+                className={`badge badge-xs badge-neutral border-0 font-mono font-bold px-1.5 py-1 shrink-0 ${
+                  prov.accountLimit !== null && prov.accountCount >= prov.accountLimit
+                    ? 'bg-warning/20 text-warning'
+                    : 'bg-base-300 text-base-content/60'
+                }`}
+                title={
+                  prov.accountLimit === null
+                    ? `${prov.accountCount} accounts`
+                    : `${prov.accountCount} of ${prov.accountLimit} accounts (MAX_ACCOUNT_MULTIPLEXING)`
+                }
+              >
+                {prov.accountLimit === null
+                  ? prov.accountCount
+                  : `${prov.accountCount}/${prov.accountLimit}`}
               </span>
             </Link>
           ))}

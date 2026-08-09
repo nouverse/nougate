@@ -2,6 +2,7 @@ import { and, asc, eq, sql } from 'drizzle-orm';
 import { getDb, t } from '@/core/db';
 import { type JitterConfig, normalizeJitterConfig } from '@/core/jitter';
 import { getProvider } from '@/core/registry';
+import { assertAccountSlotAvailable } from '@/core/rotation-pool';
 
 export type CustomApiStyle = 'openai' | 'anthropic';
 
@@ -297,6 +298,11 @@ export async function addProviderKey(
   // Later ones fall back to the key's last four characters, so an unlabelled
   // second key cannot collide with the first.
   const existingCount = (await listProviderKeys(providerId)).length;
+
+  // A custom provider's API keys are its accounts, so they are capped the same
+  // way Antigravity's and Copilot's are.
+  assertAccountSlotAvailable(`API key for "${providerId}"`, existingCount);
+
   const fallbackLabel = existingCount === 0 ? 'primary' : `key-${trimmed.slice(-4)}`;
 
   const record: CustomProviderKeyRecord = {

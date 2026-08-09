@@ -398,8 +398,16 @@ function CustomProvidersPage() {
                 title="API KEYS"
                 icon={<KeyRound className="w-4 h-4 text-primary shrink-0" />}
                 badge={
-                  <span className="badge badge-sm badge-neutral bg-base-300 border-0 font-mono font-bold shrink-0">
-                    {detail.keys.length}
+                  <span
+                    className={`badge badge-sm badge-neutral border-0 font-mono font-bold shrink-0 ${
+                      detail.accountLimit !== null && detail.keys.length >= detail.accountLimit
+                        ? 'bg-warning/20 text-warning'
+                        : 'bg-base-300'
+                    }`}
+                  >
+                    {detail.accountLimit === null
+                      ? detail.keys.length
+                      : `${detail.keys.length} / ${detail.accountLimit}`}
                   </span>
                 }
               >
@@ -409,6 +417,14 @@ function CustomProvidersPage() {
                       Keys rotate like accounts: the healthiest one wins, a 429 puts it in cooldown and
                       the next key takes over.
                     </p>
+
+                    {detail.accountLimit !== null && detail.keys.length >= detail.accountLimit && (
+                      <p className="text-xs text-warning">
+                        This provider is at the{' '}
+                        <code className="font-mono">MAX_ACCOUNT_MULTIPLEXING</code> limit of{' '}
+                        {detail.accountLimit}. Adding another key will be refused until one is removed.
+                      </p>
+                    )}
 
                     <div className="overflow-x-auto min-w-0">
                       <table className="table table-sm">

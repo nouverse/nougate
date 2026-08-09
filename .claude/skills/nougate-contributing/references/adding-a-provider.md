@@ -192,11 +192,22 @@ cooldown, then pick the highest health score, breaking ties by least-recently-us
 Return `null` when nothing is available; the protocol handler turns that into a
 protocol-shaped error.
 
-Once the list is ranked, pass it through `capRotationPool()` from
-`core/rotation-pool.ts` before selecting. That applies `MAX_ACCOUNT_MULTIPLEXING`,
-which bounds how many accounts an upstream sees rotating behind one egress IP.
-It only trims the tail of an already-sorted list, so it never changes which
-account wins — but the list must be sorted first, or it will bench the wrong ones.
+`MAX_ACCOUNT_MULTIPLEXING` bounds how many accounts a provider may hold, and it
+is your job to honour it in **two** places (`core/rotation-pool.ts`):
+
+- **Where you store a new account** — call `assertAccountSlotAvailable(subject, count)`
+  *before* pushing it. It throws `AccountLimitError` (status 409), which the
+  routers already map to a response. Put this in the function that actually
+  appends to your account list, not in the route handler: providers here have
+  three or four add paths (OAuth callback, device flow, manual token, API key
+  form) and guarding the storage point covers all of them at once.
+  Never block an update — if the account already exists, it is a re-auth.
+- **Where you rank candidates** — pass the sorted list through `capRotationPool()`
+  before selecting. It only trims the tail, so it never changes which account
+  wins, but the list must be sorted first or it will bench the wrong ones.
+
+The dashboard shows the count against the limit automatically, from `accountLimit`
+in the `/api/providers` payload. You do not add UI for it.
 
 ---
 

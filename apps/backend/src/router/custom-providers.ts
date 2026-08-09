@@ -13,6 +13,7 @@ import {
   updateCustomProvider,
   upsertProviderModels,
 } from '@/providers/custom/store';
+import { AccountLimitError, getMaxAccountMultiplexing } from '@/core/rotation-pool';
 import { syncProviderModels } from '@/providers/custom/model-sync';
 import {
   initCustomProviders,
@@ -57,7 +58,7 @@ function json(body: unknown, status = 200): Response {
 }
 
 function fail(error: unknown): Response {
-  if (error instanceof CustomProviderError) {
+  if (error instanceof CustomProviderError || error instanceof AccountLimitError) {
     return json({ error: error.message }, error.status);
   }
   console.error('[CustomProviders API] Request failed:', error);
@@ -81,6 +82,9 @@ async function describeProvider(id: string) {
     ...record,
     keys: (await listProviderKeys(id)).map(maskKey),
     modelCount: (await listProviderModels(id)).length,
+    // Null when MAX_ACCOUNT_MULTIPLEXING is unset, which the dashboard renders
+    // as a plain count rather than an "n / m" meter.
+    accountLimit: getMaxAccountMultiplexing(),
   };
 }
 

@@ -1,6 +1,6 @@
 import { getProxyConfig as getGlobalProxyConfig } from '@/config/manager';
 import { adminEventBus } from '@/core/events';
-import { capRotationPool } from '@/core/rotation-pool';
+import { assertAccountSlotAvailable, capRotationPool } from '@/core/rotation-pool';
 import type { UpstreamErrorKind } from '@/core/upstream-errors';
 import { ensureSessionToken, TokenExchangeError } from './token-exchange';
 import { loadConfig, saveConfig, type SelectionStrategy } from './storage';
@@ -346,8 +346,11 @@ export async function resetAccount(id: string) {
 export async function addAccount(account: CopilotAccount) {
   const existing = accounts.find(a => a.id === account.id);
   if (existing) {
+    // Re-authenticating an account we already hold is an update, so it is never
+    // blocked by the cap — otherwise a full pod could never refresh its tokens.
     Object.assign(existing, account);
   } else {
+    assertAccountSlotAvailable('Copilot account', accounts.length);
     accounts.push(account);
   }
   await saveAccounts(accounts, { immediate: true });

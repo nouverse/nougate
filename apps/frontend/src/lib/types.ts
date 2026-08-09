@@ -2,6 +2,12 @@ export interface Provider {
   id: string;
   displayName: string;
   accountCount: number;
+  /**
+   * How many accounts this deployment allows per provider, from
+   * MAX_ACCOUNT_MULTIPLEXING. Null when unset, which means no limit — render a
+   * plain count rather than an "n / m" meter.
+   */
+  accountLimit: number | null;
   modelCount: number;
   /** True for user-defined providers managed from the Custom Providers page. */
   isCustom?: boolean;
@@ -191,6 +197,8 @@ export interface CustomProviderDetail extends CustomProviderSummary {
   keys: CustomProviderKey[];
   /** Models are fetched separately — see useCustomProviderModels. */
   modelCount: number;
+  /** API-key ceiling from MAX_ACCOUNT_MULTIPLEXING; null when unset. */
+  accountLimit: number | null;
 }
 
 /** One callable model, keyed by the exact `provider:model` string a client sends. */

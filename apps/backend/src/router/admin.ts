@@ -2,6 +2,7 @@ import { join } from "path";
 import { existsSync } from "fs";
 import { getProxyConfig, updateProxyConfig } from "@/config/manager";
 import { adminEventBus } from "@/core/events";
+import { AccountLimitError, getMaxAccountMultiplexing } from "@/core/rotation-pool";
 import { addAccount } from "@/providers/antigravity/auth/manager";
 import { exchangeCode, generateAuthUrl, getProjectId, getUserEmail } from "@/providers/antigravity/auth/oauth";
 import type { AntigravityAccount } from "@/providers/antigravity/auth/types";
@@ -187,6 +188,14 @@ async function handleOAuthCallback(url: URL): Promise<Response> {
     const baseUrl = config?.baseUrl || "http://localhost:3000";
     return Response.redirect(`${baseUrl.replace(/\/$/, "")}/frontend/`);
   } catch (error) {
+    // This callback lands in a browser tab, so the account cap has to explain
+    // itself in plain text rather than arriving as "Auth error: [object]".
+    if (error instanceof AccountLimitError) {
+      return new Response(error.message, {
+        status: error.status,
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+      });
+    }
     return new Response(`Auth error: ${error}`, { status: 500 });
   }
 }
@@ -391,6 +400,9 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
         id: p.id,
         displayName: p.displayName,
         accountCount: accounts.length,
+        // Null when MAX_ACCOUNT_MULTIPLEXING is unset, which the dashboard
+        // renders as a plain count rather than an "n / m" meter.
+        accountLimit: getMaxAccountMultiplexing(),
         modelCount: p.getSupportedModels().length,
         // Lets the dashboard route custom providers to their own editor.
         isCustom: p instanceof CustomProvider,
@@ -415,7 +427,10 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
         const result = await p.completeDeviceFlow(deviceCode);
         return createJsonResponse(result);
       } catch (error: any) {
-        return createJsonResponse({ error: error.message || error }, 400);
+        // The device flow can succeed at GitHub and still be refused here — the
+        // account cap is checked when the account is stored, not when the code
+        // is issued — so the status has to carry through.
+        return createJsonResponse({ error: error.message || error }, error?.status ?? 400);
       }
     }
 
@@ -484,6 +499,9 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
         config,
         models,
         accounts,
+        // Null when MAX_ACCOUNT_MULTIPLEXING is unset, which the dashboard
+        // renders as a plain count rather than an "n / m" meter.
+        accountLimit: getMaxAccountMultiplexing(),
         capabilities: { quota: supportsQuota, accountFlow: p.accountFlow ?? null },
         quotas,
       });
@@ -528,7 +546,9 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
           const result = await p.addAccount(body);
           return createJsonResponse(result);
         } catch (error: any) {
-          return createJsonResponse({ error: error.message || error }, 400);
+          // A refusal that carries its own status keeps it: hitting the account
+          // cap is a 409, not a malformed request.
+          return createJsonResponse({ error: error.message || error }, error?.status ?? 400);
         }
       }
       return new Response("Not Supported", { status: 400 });
