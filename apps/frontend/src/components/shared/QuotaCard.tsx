@@ -1,26 +1,22 @@
 import { Infinity as InfinityIcon } from 'lucide-react';
 
+import type { ProviderQuota } from '@/lib/types';
+
 interface Props {
-  groupName: string;
-  remainingFraction: number;
-  /** No cap on this plan: the figure below is consumption, not headroom. */
-  unlimited?: boolean;
-  used?: string;
-  limit?: string;
-  /** What `used`/`limit` count, supplied by the provider. */
-  unit?: string;
-  resetIn?: string;
+  quota: ProviderQuota;
 }
 
-export function QuotaCard({
-  groupName,
-  remainingFraction,
-  unlimited = false,
-  used,
-  limit,
-  unit,
-  resetIn,
-}: Props) {
+/**
+ * One usage limit, rendered from the normalised `IProviderQuota` shape.
+ *
+ * It takes the contract object whole rather than a spread of props, so there is
+ * no per-provider mapping layer that could quietly disagree with the backend.
+ * Nothing here knows which provider produced the figures, what they count, or
+ * how the window works — labels and units come from the provider, and the only
+ * judgement made locally is which colour reads as "running low".
+ */
+export function QuotaCard({ quota }: Props) {
+  const { label, remainingFraction, unlimited = false, used, limit, unit, resetIn } = quota;
   const percentage = Math.round(remainingFraction * 100);
 
   let progressColor = 'progress-success';
@@ -33,16 +29,18 @@ export function QuotaCard({
     badgeColor = 'badge-warning';
   }
 
+  const suffix = unit ? ` ${unit}` : '';
+
   // On an unlimited plan a percentage is meaningless — showing a full bar would
   // imply a cap that is 100% free. The consumption figure is the real content.
   const footer = unlimited
     ? used && used !== '0'
-      ? `${used}${unit ? ` ${unit}` : ''} used this cycle`
+      ? `${used}${suffix} used this cycle`
       : 'No usage recorded this cycle'
     : used && limit
-      ? `${used} / ${limit}${unit ? ` ${unit}` : ''}`
+      ? `${used} / ${limit}${suffix}`
       : used
-        ? `${used}${unit ? ` ${unit}` : ''} used`
+        ? `${used}${suffix} used`
         : null;
 
   return (
@@ -50,7 +48,7 @@ export function QuotaCard({
       <div className="card-body p-4 flex flex-col justify-between gap-3">
         <div className="flex items-start justify-between gap-2">
           <h4 className="font-semibold text-sm text-base-content/90 line-clamp-2 leading-snug">
-            {groupName}
+            {label}
           </h4>
           {unlimited ? (
             <span className="badge badge-ghost badge-sm font-semibold whitespace-nowrap gap-1 shrink-0">

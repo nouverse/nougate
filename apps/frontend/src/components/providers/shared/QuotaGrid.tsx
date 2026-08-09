@@ -30,15 +30,7 @@ export function QuotaGrid({ quotas }: Props) {
             key={quota.id}
             className="w-[85vw] max-w-[320px] shrink-0 snap-center lg:w-auto lg:max-w-none"
           >
-            <QuotaCard
-              groupName={quota.label}
-              remainingFraction={quota.remainingFraction}
-              unlimited={quota.unlimited}
-              used={quota.used}
-              limit={quota.limit}
-              unit={quota.unit}
-              resetIn={quota.resetIn}
-            />
+            <QuotaCard quota={quota} />
           </div>
         ))}
       </div>
