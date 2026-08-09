@@ -80,9 +80,17 @@ export interface IProviderQuota {
   label: string;
   /** Remaining headroom, 0–1. The card's bar and percentage come from this. */
   remainingFraction: number;
+  /**
+   * True when the plan has no cap. The figures below are then consumption, not
+   * headroom, and `remainingFraction` carries no information — the dashboard
+   * says so rather than drawing a full bar and implying a limit exists.
+   */
+  unlimited?: boolean;
   /** Free-form, already formatted by the provider — units are its own. */
   used?: string;
   limit?: string;
+  /** What `used`/`limit` are counted in, e.g. "requests", "credits". */
+  unit?: string;
   /** When the window rolls over, pre-formatted, e.g. "4h 59m". */
   resetIn?: string;
   /** Models this limit applies to, when the provider can attribute it. */

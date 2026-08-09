@@ -3,6 +3,7 @@ import type {
   IAccount,
   IModelRegistry,
   IProvider,
+  IProviderQuota,
   ProviderExecuteParams,
 } from '@/core/interfaces';
 import {
@@ -21,6 +22,7 @@ import {
   getCooldowns,
 } from './auth/manager';
 import type { CopilotAccount } from './auth/types';
+import { getPoolQuotas, invalidateQuotaCache } from './auth/quota';
 import { copilotModelRegistry, loadModelSpecOverrides } from './config/model-specs';
 import { getGitHubProfile } from './auth/token-exchange';
 import { startDeviceFlow, pollDeviceFlow } from './auth/device-flow';
@@ -158,6 +160,14 @@ export class CopilotProvider implements IProvider {
     }
   }
 
+  /**
+   * GitHub reports quota per entitlement (chat, completions, premium requests)
+   * on a monthly cycle. The mapping lives in ./auth/quota.ts.
+   */
+  async getQuotas(): Promise<IProviderQuota[]> {
+    return getPoolQuotas(getAccounts());
+  }
+
   getStrategy(): string {
     return getStrategy();
   }
@@ -181,6 +191,8 @@ export class CopilotProvider implements IProvider {
 
   async removeAccount(accountId: string): Promise<void> {
     await removeAccount(accountId);
+    // Its cached quota would otherwise keep counting toward the pool.
+    invalidateQuotaCache(accountId);
   }
 
   async resetAccount(accountId: string): Promise<void> {

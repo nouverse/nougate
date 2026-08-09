@@ -32,11 +32,12 @@ export function QuotaGrid({ quotas }: Props) {
           >
             <QuotaCard
               groupName={quota.label}
-              quotaLeft={`${Math.round(quota.remainingFraction * 100)}%`}
               remainingFraction={quota.remainingFraction}
-              usage={quota.used ?? '—'}
-              limit={quota.limit ?? '—'}
-              resetIn={quota.resetIn ?? '—'}
+              unlimited={quota.unlimited}
+              used={quota.used}
+              limit={quota.limit}
+              unit={quota.unit}
+              resetIn={quota.resetIn}
             />
           </div>
         ))}

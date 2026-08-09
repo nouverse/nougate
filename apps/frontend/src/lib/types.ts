@@ -220,8 +220,12 @@ export interface ProviderQuota {
   id: string;
   label: string;
   remainingFraction: number;
+  /** No cap on this plan — `used` is consumption, and the fraction means nothing. */
+  unlimited?: boolean;
   used?: string;
   limit?: string;
+  /** What `used`/`limit` count, e.g. "requests". Supplied by the provider. */
+  unit?: string;
   resetIn?: string;
   modelIds?: string[];
 }

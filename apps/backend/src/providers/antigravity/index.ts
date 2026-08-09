@@ -319,6 +319,7 @@ export function mergeAccountQuotas(accounts: AntigravityAccount[]): IProviderQuo
     remainingFraction: entry.sum / entry.count,
     used: entry.worst.usage,
     limit: entry.worst.limit,
+    unit: 'requests',
     resetIn: entry.worst.resetIn,
     modelIds: entry.worst.modelIds,
   }));
