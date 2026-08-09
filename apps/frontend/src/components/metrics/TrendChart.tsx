@@ -15,6 +15,35 @@ const PADDING = { top: 16, right: 16, bottom: 28, left: 52 };
 const PLOT_WIDTH = WIDTH - PADDING.left - PADDING.right;
 const PLOT_HEIGHT = HEIGHT - PADDING.top - PADDING.bottom;
 
+/**
+ * Nearest bucket index for a pointer, from the transform the browser actually
+ * applied to the viewBox.
+ *
+ * The old version divided by the element's width, which is only the same thing
+ * when the element box happens to match the viewBox. It does not: the SVG has a
+ * fixed height and `preserveAspectRatio` letterboxes it inside a much wider card,
+ * so every reading was offset — far enough that the first and last buckets sat
+ * outside the element and could not be hovered at all.
+ *
+ * A viewBox transform is scale + translate only, so inverting it is `(x - e) / a`.
+ * Exported for the test; the component passes `svg.getScreenCTM()`.
+ */
+export function indexAtScreenX(
+  ctm: { a: number; e: number } | null,
+  clientX: number,
+  count: number,
+): number | null {
+  if (!ctm || ctm.a === 0) {
+    return null;
+  }
+  if (count <= 1) {
+    return 0;
+  }
+  const userX = (clientX - ctm.e) / ctm.a;
+  const ratio = (userX - PADDING.left) / PLOT_WIDTH;
+  return Math.min(Math.max(Math.round(ratio * (count - 1)), 0), count - 1);
+}
+
 interface Series {
   key: string;
   label: string;
@@ -139,13 +168,11 @@ export function TrendChart({ data, metric }: Props) {
           role="img"
           aria-label={`${metric === 'cost' ? 'Spend' : 'Token'} trend over the selected window`}
           onMouseLeave={() => setHoverIndex(null)}
-          onMouseMove={(event) => {
-            const rect = event.currentTarget.getBoundingClientRect();
-            const ratio = (event.clientX - rect.left) / rect.width;
-            const x = ratio * WIDTH - PADDING.left;
-            const index = Math.round((x / PLOT_WIDTH) * (data.length - 1));
-            setHoverIndex(Math.min(Math.max(index, 0), data.length - 1));
-          }}
+          onMouseMove={(event) =>
+            setHoverIndex(
+              indexAtScreenX(event.currentTarget.getScreenCTM(), event.clientX, data.length),
+            )
+          }
         >
           <defs>
             {series.map((entry) => (

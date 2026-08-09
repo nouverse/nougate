@@ -51,14 +51,45 @@ export function formatTimestamp(ms: number): string {
   return new Date(ms).toLocaleString();
 }
 
+const pad = (value: number): string => String(value).padStart(2, '0');
+
+/**
+ * Hourly bucket keys are UTC — the backend buckets with `at time zone 'UTC'` —
+ * so parse the instant rather than reading the digits, which are seven hours off
+ * in Jakarta. Daily keys have no instant: a day bucket is a UTC calendar day, and
+ * shifting it into local time would relabel it as the wrong date.
+ */
+function hourBucketDate(period: string): Date | null {
+  if (!period.includes('T')) {
+    return null;
+  }
+  const date = new Date(`${period}:00Z`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 /**
  * Turn a bucket key from the API ("2026-08-08" or "2026-08-08T14:00") into a
- * short axis label.
+ * short axis label, in the viewer's timezone so it agrees with `formatTimestamp`.
  */
 export function formatPeriod(period: string): string {
-  if (period.includes('T')) {
-    return `${period.split('T')[1].slice(0, 2)}:00`;
+  const instant = hourBucketDate(period);
+  if (instant) {
+    // Minutes, not a hard ":00" — not every zone is a whole hour off UTC.
+    return `${pad(instant.getHours())}:${pad(instant.getMinutes())}`;
   }
   const [, month, day] = period.split('-');
   return month && day ? `${day}/${month}` : period;
+}
+
+/**
+ * The same bucket with its date, for the table beside the chart.
+ */
+export function formatPeriodLong(period: string): string {
+  const instant = hourBucketDate(period);
+  if (!instant) {
+    return period;
+  }
+  return `${instant.getFullYear()}-${pad(instant.getMonth() + 1)}-${pad(
+    instant.getDate(),
+  )} ${pad(instant.getHours())}:${pad(instant.getMinutes())}`;
 }

@@ -11,6 +11,7 @@ import {
   formatCount,
   formatDuration,
   formatPercent,
+  formatPeriodLong,
   formatTimestamp,
   formatTokens,
 } from '@/lib/format';
@@ -269,7 +270,7 @@ function TokensPage() {
                 <tbody className="font-mono">
                   {usageData.map((point) => (
                     <tr key={point.period}>
-                      <td className="whitespace-nowrap">{point.period}</td>
+                      <td className="whitespace-nowrap">{formatPeriodLong(point.period)}</td>
                       <td className="text-right">{formatCount(point.requests)}</td>
                       <td className="text-right">{formatTokens(point.totalTokens)}</td>
                       <td className="text-right">{formatTokens(point.tokensSaved)}</td>
