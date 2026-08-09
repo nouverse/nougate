@@ -152,9 +152,11 @@ Two things make that possible, and are worth knowing before editing the schema:
 
 - **The two schemas must stay in step.** Drizzle types its tables per dialect, so
   `core/db/schema/sqlite.ts` and `core/db/schema/pg.ts` are the same tables
-  written twice. Change one, change the other. Postgres deliberately stores epoch
-  milliseconds as `bigint` and booleans as `0/1 integer`, so values round-trip
-  identically and no call site has to know which database it is on.
+  written twice. Change one, change the other — `tests/unit/schema-parity.test.ts`
+  fails the build if they diverge in tables, column names, nullability, defaults
+  or JS types. Postgres deliberately stores epoch milliseconds as `bigint` and
+  booleans as `0/1 integer`, so values round-trip identically and no call site
+  has to know which database it is on.
 - **Every query is written with `await`.** The SQLite driver is synchronous and
   the Postgres one is not; Drizzle's SQLite builders are also thenable, so
   awaiting everything is what lets one set of queries serve both.
