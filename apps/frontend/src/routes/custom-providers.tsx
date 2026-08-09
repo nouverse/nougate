@@ -1,13 +1,19 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useCustomProviders, useCustomProvider, useInvalidateCustomProviders } from '@/hooks/useQueries';
+import {
+  useCustomProviders,
+  useCustomProvider,
+  useCustomProviderModels,
+  useInvalidateCustomProviders,
+} from '@/hooks/useQueries';
 import { api } from '@/lib/api';
 import { CustomApiStyle, CustomProviderModel } from '@/lib/types';
 import { ConfirmModal } from '@/components/shared/ConfirmModal';
+import { CollapsibleCard } from '@/components/shared/CollapsibleCard';
 import { CopyButton, ModelIdChip } from '@/components/shared/CopyButton';
 import { formatTimestamp } from '@/lib/format';
-import { Boxes, Plus, RefreshCw, Trash2, KeyRound, Save } from 'lucide-react';
+import { Boxes, Plus, RefreshCw, Search, Trash2, KeyRound, Save } from 'lucide-react';
 
 export const Route = createFileRoute('/custom-providers')({
   component: CustomProvidersPage,
@@ -45,6 +51,10 @@ function CustomProvidersPage() {
   const [form, setForm] = useState<NewProviderForm>(EMPTY_FORM);
   const [newKey, setNewKey] = useState({ apiKey: '', label: '' });
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  // Models are fetched only once the panel is opened — an aggregator can list
+  // several hundred, and rendering a form row for each is expensive.
+  const [modelsOpen, setModelsOpen] = useState(false);
+  const { data: models, isLoading: modelsLoading } = useCustomProviderModels(selectedId, modelsOpen);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
   // Land on the first provider so the page is never an empty right-hand pane.
@@ -63,6 +73,7 @@ function CustomProvidersPage() {
     invalidate();
     if (selectedId) {
       queryClient.invalidateQueries({ queryKey: ['custom-providers', selectedId] });
+      queryClient.invalidateQueries({ queryKey: ['custom-providers', selectedId, 'models'] });
     }
   };
 
@@ -268,7 +279,7 @@ function CustomProvidersPage() {
                   />
                 </Field>
 
-                <Field label="Key label" hint="Optional name for this key">
+                <Field label="API key label" hint={'Optional label for this API key — defaults to "primary"'}>
                   <input
                     type="text"
                     placeholder="primary"
@@ -348,7 +359,10 @@ function CustomProvidersPage() {
                       ? 'bg-primary text-primary-content shadow-md'
                       : 'text-base-content/75 hover:bg-base-300'
                   }`}
-                  onClick={() => setSelectedId(provider.id)}
+                  onClick={() => {
+                    setSelectedId(provider.id);
+                    setModelsOpen(false);
+                  }}
                 >
                   <span className="flex items-center gap-2 min-w-0">
                     <span
@@ -375,108 +389,130 @@ function CustomProvidersPage() {
                 isSaving={updateMutation.isPending}
               />
 
-              <div className="card bg-base-200 border border-base-300 shadow-sm">
-                <div className="card-body p-5 space-y-4 min-w-0">
-                  <h3 className="card-title text-sm font-bold tracking-wide flex items-center gap-2">
-                    <KeyRound className="w-4 h-4 text-primary" />
-                    API KEYS ({detail.keys.length})
-                  </h3>
-                  <p className="text-xs text-base-content/50 -mt-2">
-                    Keys rotate like accounts: the healthiest one wins, a 429 puts it in cooldown and
-                    the next key takes over.
-                  </p>
+              <CollapsibleCard
+                title="API KEYS"
+                icon={<KeyRound className="w-4 h-4 text-primary shrink-0" />}
+                badge={
+                  <span className="badge badge-sm badge-neutral bg-base-300 border-0 font-mono font-bold shrink-0">
+                    {detail.keys.length}
+                  </span>
+                }
+                defaultOpen
+              >
+                {() => (
+                  <>
+                    <p className="text-xs text-base-content/50">
+                      Keys rotate like accounts: the healthiest one wins, a 429 puts it in cooldown and
+                      the next key takes over.
+                    </p>
 
-                  <div className="overflow-x-auto min-w-0">
-                    <table className="table table-sm">
-                      <thead>
-                        <tr className="text-base-content/50 text-[10px] uppercase tracking-wider">
-                          <th>Label</th>
-                          <th>Key</th>
-                          <th className="text-right">Health</th>
-                          <th>Last used</th>
-                          <th />
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {detail.keys.map((key) => (
-                          <tr key={key.id}>
-                            <td className="font-semibold text-xs">{key.label}</td>
-                            <td className="font-mono text-[11px] text-base-content/60">{key.apiKey}</td>
-                            <td className="text-right font-mono text-xs">
-                              {key.healthScore}
-                              {key.cooldownUntil > Date.now() && (
-                                <span className="badge badge-xs badge-warning ml-1.5 font-bold">
-                                  cooldown
-                                </span>
-                              )}
-                            </td>
-                            <td className="text-[11px] text-base-content/60">
-                              {key.lastUsed ? formatTimestamp(key.lastUsed) : 'never'}
-                            </td>
-                            <td className="text-right">
-                              <button
-                                type="button"
-                                className="btn btn-ghost btn-xs text-error"
-                                onClick={() => removeKeyMutation.mutate(key.id)}
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </td>
+                    <div className="overflow-x-auto min-w-0">
+                      <table className="table table-sm">
+                        <thead>
+                          <tr className="text-base-content/50 text-[10px] uppercase tracking-wider">
+                            <th>Label</th>
+                            <th>Key</th>
+                            <th className="text-right">Health</th>
+                            <th>Last used</th>
+                            <th />
                           </tr>
-                        ))}
-                        {detail.keys.length === 0 && (
-                          <tr>
-                            <td colSpan={5} className="text-center text-base-content/40 py-6 text-xs">
-                              No keys — requests to this provider will fail until you add one.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody>
+                          {detail.keys.map((key) => (
+                            <tr key={key.id}>
+                              <td className="font-semibold text-xs">{key.label}</td>
+                              <td className="font-mono text-[11px] text-base-content/60">{key.apiKey}</td>
+                              <td className="text-right font-mono text-xs">
+                                {key.healthScore}
+                                {key.cooldownUntil > Date.now() && (
+                                  <span className="badge badge-xs badge-warning ml-1.5 font-bold">
+                                    cooldown
+                                  </span>
+                                )}
+                              </td>
+                              <td className="text-[11px] text-base-content/60">
+                                {key.lastUsed ? formatTimestamp(key.lastUsed) : 'never'}
+                              </td>
+                              <td className="text-right">
+                                <button
+                                  type="button"
+                                  className="btn btn-ghost btn-xs text-error"
+                                  onClick={() => removeKeyMutation.mutate(key.id)}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                          {detail.keys.length === 0 && (
+                            <tr>
+                              <td colSpan={5} className="text-center text-base-content/40 py-6 text-xs">
+                                No keys — requests to this provider will fail until you add one.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
 
-                  <form
-                    className="flex flex-col sm:flex-row gap-2"
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      addKeyMutation.mutate();
-                    }}
-                  >
-                    <input
-                      type="password"
-                      required
-                      placeholder="sk-..."
-                      className="input input-bordered input-sm flex-1 bg-base-100 font-mono text-xs"
-                      value={newKey.apiKey}
-                      onChange={(event) => setNewKey({ ...newKey, apiKey: event.target.value })}
-                    />
-                    <input
-                      type="text"
-                      placeholder="label (optional)"
-                      className="input input-bordered input-sm w-full sm:w-40 bg-base-100 text-xs"
-                      value={newKey.label}
-                      onChange={(event) => setNewKey({ ...newKey, label: event.target.value })}
-                    />
-                    <button
-                      type="submit"
-                      className="btn btn-sm btn-primary rounded-xl font-semibold"
-                      disabled={addKeyMutation.isPending}
+                    <form
+                      className="flex flex-col sm:flex-row gap-2"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        addKeyMutation.mutate();
+                      }}
                     >
-                      Add key
-                    </button>
-                  </form>
-                </div>
-              </div>
+                      <input
+                        type="password"
+                        required
+                        placeholder="sk-..."
+                        className="input input-bordered input-sm flex-1 bg-base-100 font-mono text-xs"
+                        value={newKey.apiKey}
+                        onChange={(event) => setNewKey({ ...newKey, apiKey: event.target.value })}
+                      />
+                      <input
+                        type="text"
+                        placeholder={detail.keys.length === 0 ? 'primary' : 'label (optional)'}
+                        className="input input-bordered input-sm w-full sm:w-40 bg-base-100 text-xs"
+                        value={newKey.label}
+                        onChange={(event) => setNewKey({ ...newKey, label: event.target.value })}
+                      />
+                      <button
+                        type="submit"
+                        className="btn btn-sm btn-primary rounded-xl font-semibold"
+                        disabled={addKeyMutation.isPending}
+                      >
+                        Add key
+                      </button>
+                    </form>
+                  </>
+                )}
+              </CollapsibleCard>
 
-              <ModelEditor
-                providerId={detail.id}
-                models={detail.models}
-                onSave={(models) => saveModelsMutation.mutate(models)}
-                onRemove={(modelId) => removeModelMutation.mutate(modelId)}
-                onSync={() => syncMutation.mutate()}
-                isSyncing={syncMutation.isPending}
-                isSaving={saveModelsMutation.isPending}
-              />
+              <CollapsibleCard
+                title="MODELS"
+                subtitle={`Call them as ${detail.id}:model — prices left on "auto" fall back to the built-in price book.`}
+                icon={<Boxes className="w-4 h-4 text-primary shrink-0" />}
+                badge={
+                  <span className="badge badge-sm badge-neutral bg-base-300 border-0 font-mono font-bold shrink-0">
+                    {detail.modelCount}
+                  </span>
+                }
+                onOpen={() => setModelsOpen(true)}
+              >
+                {() => (
+                  <ModelEditor
+                    providerId={detail.id}
+                    models={models ?? []}
+                    isLoading={modelsLoading}
+                    onSave={(next) => saveModelsMutation.mutate(next)}
+                    onRemove={(modelId) => removeModelMutation.mutate(modelId)}
+                    onSync={() => syncMutation.mutate()}
+                    isSyncing={syncMutation.isPending}
+                    isSaving={saveModelsMutation.isPending}
+                  />
+                )}
+              </CollapsibleCard>
             </div>
           )}
         </div>
@@ -606,20 +642,27 @@ function ProviderSettings({
             </select>
           </Field>
 
-          <div className="form-control w-full justify-end pb-2">
-            <label className="label cursor-pointer justify-start gap-3">
-              <input
-                type="checkbox"
-                className="toggle toggle-sm toggle-primary"
-                checked={enabled}
-                onChange={(event) => setEnabled(event.target.checked)}
-              />
-              <span className="label-text font-semibold text-xs text-base-content/75">
-                Enabled (unregistering stops the prefix from resolving)
-              </span>
-            </label>
-          </div>
         </div>
+
+        {/* Own row, not a grid cell: the description wraps instead of running
+            off the card on narrow screens. */}
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            className="toggle toggle-sm toggle-primary shrink-0 mt-0.5"
+            checked={enabled}
+            onChange={(event) => setEnabled(event.target.checked)}
+          />
+          <span className="min-w-0">
+            <span className="label-text font-semibold text-xs text-base-content/75 block">
+              Enabled
+            </span>
+            <span className="text-[10px] text-base-content/50 block leading-relaxed">
+              Turning this off unregisters the provider, so{' '}
+              <code className="font-mono">{detail.id}:model</code> stops resolving for clients.
+            </span>
+          </span>
+        </label>
 
         <div className="flex justify-end">
           <button
@@ -640,6 +683,7 @@ function ProviderSettings({
 function ModelEditor({
   providerId,
   models,
+  isLoading,
   onSave,
   onRemove,
   onSync,
@@ -648,6 +692,7 @@ function ModelEditor({
 }: {
   providerId: string;
   models: CustomProviderModel[];
+  isLoading: boolean;
   onSave: (models: Partial<CustomProviderModel>[]) => void;
   onRemove: (modelId: string) => void;
   onSync: () => void;
@@ -656,6 +701,7 @@ function ModelEditor({
 }) {
   const [draft, setDraft] = useState<CustomProviderModel[]>(models);
   const [newModelId, setNewModelId] = useState('');
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     setDraft(models);
@@ -667,159 +713,42 @@ function ModelEditor({
     );
   };
 
+  // An aggregator like OpenRouter returns several hundred models, so the table
+  // is filtered rather than scrolled. Edits still apply to the whole draft.
+  const visible = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) {
+      return draft;
+    }
+    return draft.filter(
+      (model) =>
+        model.modelId.toLowerCase().includes(needle) ||
+        (model.upstreamModelId ?? '').toLowerCase().includes(needle),
+    );
+  }, [draft, search]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-2 text-xs text-base-content/50 py-6">
+        <span className="loading loading-spinner loading-xs" />
+        Loading models…
+      </div>
+    );
+  }
+
   return (
-    <div className="card bg-base-200 border border-base-300 shadow-sm">
-      <div className="card-body p-5 space-y-4 min-w-0">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="min-w-0">
-            <h3 className="card-title text-sm font-bold tracking-wide">MODELS ({draft.length})</h3>
-            <p className="text-xs text-base-content/50 mt-0.5">
-              Leave a price on <span className="font-mono">auto</span> to let the built-in price
-              book work it out from the model name. Models it does not recognise are reported as
-              unpriced ($0) until you enter a rate.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <CopyButton
-              value={draft.map((model) => `${providerId}:${model.modelId}`).join('\n')}
-              label={`Copy ${draft.length} ID${draft.length === 1 ? '' : 's'}`}
-              className="border border-base-300"
-              title="Copy every model ID, one per line"
-            />
-            <button
-              type="button"
-              className="btn btn-ghost btn-xs gap-1.5"
-              onClick={onSync}
-              disabled={isSyncing}
-            >
-              {isSyncing ? (
-                <span className="loading loading-spinner loading-xs" />
-              ) : (
-                <RefreshCw className="w-3.5 h-3.5" />
-              )}
-              Auto-load from upstream
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm btn-primary rounded-xl font-semibold gap-1.5"
-              disabled={isSaving}
-              onClick={() => onSave(draft)}
-            >
-              <Save className="w-3.5 h-3.5" />
-              Save models
-            </button>
-          </div>
-        </div>
+    <div className="space-y-4 min-w-0">
+      <p className="text-xs text-base-content/50">
+        Leave a price on <span className="font-mono">auto</span> to let the built-in price book work
+        it out from the model name. Models it does not recognise are reported as unpriced ($0) until
+        you enter a rate.
+      </p>
 
-        <div className="overflow-x-auto min-w-0">
-          <table className="table table-sm">
-            <thead>
-              <tr className="text-base-content/50 text-[10px] uppercase tracking-wider">
-                <th className="min-w-[16rem]">Model ID (send this as `model`)</th>
-                <th>Upstream ID</th>
-                <th className="text-right">Max out</th>
-                <th className="text-right">$ / 1M in</th>
-                <th className="text-right">$ / 1M out</th>
-                <th className="text-center">Think</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {draft.map((model) => (
-                <tr key={model.modelId}>
-                  <td>
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <ModelIdChip providerId={providerId} modelId={model.modelId} />
-                      {model.isPriced === false && (
-                        <span
-                          className="badge badge-xs badge-warning font-bold"
-                          title="No rate known for this model — its cost is counted as $0 until you enter one"
-                        >
-                          unpriced
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td>
-                    <input
-                      type="text"
-                      className="input input-bordered input-xs w-36 bg-base-100 font-mono text-[11px]"
-                      value={model.upstreamModelId ?? ''}
-                      onChange={(event) =>
-                        patch(model.modelId, { upstreamModelId: event.target.value })
-                      }
-                    />
-                  </td>
-                  <td className="text-right">
-                    <input
-                      type="number"
-                      className="input input-bordered input-xs w-24 bg-base-100 font-mono text-[11px] text-right"
-                      value={model.maxOutputTokens}
-                      onChange={(event) =>
-                        patch(model.modelId, { maxOutputTokens: parseInt(event.target.value, 10) || 8192 })
-                      }
-                    />
-                  </td>
-                  <td className="text-right">
-                    <input
-                      type="number"
-                      step="0.001"
-                      placeholder="auto"
-                      className="input input-bordered input-xs w-24 bg-base-100 font-mono text-[11px] text-right"
-                      value={model.inputPricePer1M ?? ''}
-                      onChange={(event) =>
-                        patch(model.modelId, {
-                          inputPricePer1M: event.target.value ? parseFloat(event.target.value) : null,
-                        })
-                      }
-                    />
-                  </td>
-                  <td className="text-right">
-                    <input
-                      type="number"
-                      step="0.001"
-                      placeholder="auto"
-                      className="input input-bordered input-xs w-24 bg-base-100 font-mono text-[11px] text-right"
-                      value={model.outputPricePer1M ?? ''}
-                      onChange={(event) =>
-                        patch(model.modelId, {
-                          outputPricePer1M: event.target.value ? parseFloat(event.target.value) : null,
-                        })
-                      }
-                    />
-                  </td>
-                  <td className="text-center">
-                    <input
-                      type="checkbox"
-                      className="checkbox checkbox-xs"
-                      checked={model.isThinking}
-                      onChange={(event) => patch(model.modelId, { isThinking: event.target.checked })}
-                    />
-                  </td>
-                  <td className="text-right">
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-xs text-error"
-                      onClick={() => onRemove(model.modelId)}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {draft.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="text-center text-base-content/40 py-6 text-xs">
-                    No models. Use "Auto-load from upstream" or add one below.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
+      {/* Actions sit above the table: with a few hundred rows below them, a
+          footer would be several screens down. */}
+      <div className="flex flex-wrap items-center gap-2">
         <form
-          className="flex flex-col sm:flex-row gap-2"
+          className="flex gap-2 flex-1 min-w-[16rem]"
           onSubmit={(event) => {
             event.preventDefault();
             if (!newModelId.trim()) {
@@ -840,15 +769,176 @@ function ModelEditor({
           <input
             type="text"
             placeholder="deepseek-v4-flash"
-            className="input input-bordered input-sm flex-1 bg-base-100 font-mono text-xs"
+            className="input input-bordered input-sm flex-1 min-w-0 bg-base-100 font-mono text-xs"
             value={newModelId}
             onChange={(event) => setNewModelId(event.target.value)}
           />
-          <button type="submit" className="btn btn-sm btn-ghost rounded-xl font-semibold gap-1.5">
+          <button
+            type="submit"
+            className="btn btn-sm btn-ghost rounded-xl font-semibold gap-1.5 shrink-0"
+          >
             <Plus className="w-3.5 h-3.5" />
             Add model
           </button>
         </form>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <CopyButton
+            value={draft.map((model) => `${providerId}:${model.modelId}`).join('\n')}
+            label={`Copy ${draft.length} ID${draft.length === 1 ? '' : 's'}`}
+            className="border border-base-300"
+            title="Copy every model ID, one per line"
+          />
+          <button
+            type="button"
+            className="btn btn-ghost btn-sm gap-1.5"
+            onClick={onSync}
+            disabled={isSyncing}
+          >
+            {isSyncing ? (
+              <span className="loading loading-spinner loading-xs" />
+            ) : (
+              <RefreshCw className="w-3.5 h-3.5" />
+            )}
+            Auto-load from upstream
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm btn-primary rounded-xl font-semibold gap-1.5"
+            disabled={isSaving}
+            onClick={() => onSave(draft)}
+          >
+            <Save className="w-3.5 h-3.5" />
+            Save models
+          </button>
+        </div>
+      </div>
+
+      {draft.length > 8 && (
+        <label className="input input-bordered input-sm flex items-center gap-2 bg-base-100">
+          <Search className="w-3.5 h-3.5 text-base-content/40 shrink-0" />
+          <input
+            type="text"
+            placeholder={`Filter ${draft.length} models…`}
+            className="grow font-mono text-xs min-w-0"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+          {search && (
+            <span className="text-[10px] text-base-content/40 shrink-0">{visible.length} match</span>
+          )}
+        </label>
+      )}
+
+      <div className="overflow-x-auto min-w-0">
+        <table className="table table-sm">
+          <thead>
+            <tr className="text-base-content/50 text-[10px] uppercase tracking-wider">
+              <th className="min-w-[16rem]">Model ID (send this as `model`)</th>
+              <th>Upstream ID</th>
+              <th className="text-right">Max out</th>
+              <th className="text-right">$ / 1M in</th>
+              <th className="text-right">$ / 1M out</th>
+              <th className="text-center">Think</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {visible.map((model) => (
+              <tr key={model.modelId}>
+                <td>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <ModelIdChip providerId={providerId} modelId={model.modelId} />
+                    {model.isPriced === false && (
+                      <span
+                        className="badge badge-xs badge-warning font-bold"
+                        title="No rate known for this model — its cost is counted as $0 until you enter one"
+                      >
+                        unpriced
+                      </span>
+                    )}
+                  </div>
+                </td>
+                <td>
+                  <input
+                    type="text"
+                    className="input input-bordered input-xs w-36 bg-base-100 font-mono text-[11px]"
+                    value={model.upstreamModelId ?? ''}
+                    onChange={(event) =>
+                      patch(model.modelId, { upstreamModelId: event.target.value })
+                    }
+                  />
+                </td>
+                <td className="text-right">
+                  <input
+                    type="number"
+                    className="input input-bordered input-xs w-24 bg-base-100 font-mono text-[11px] text-right"
+                    value={model.maxOutputTokens}
+                    onChange={(event) =>
+                      patch(model.modelId, {
+                        maxOutputTokens: parseInt(event.target.value, 10) || 8192,
+                      })
+                    }
+                  />
+                </td>
+                <td className="text-right">
+                  <input
+                    type="number"
+                    step="0.001"
+                    placeholder="auto"
+                    className="input input-bordered input-xs w-24 bg-base-100 font-mono text-[11px] text-right"
+                    value={model.inputPricePer1M ?? ''}
+                    onChange={(event) =>
+                      patch(model.modelId, {
+                        inputPricePer1M: event.target.value ? parseFloat(event.target.value) : null,
+                      })
+                    }
+                  />
+                </td>
+                <td className="text-right">
+                  <input
+                    type="number"
+                    step="0.001"
+                    placeholder="auto"
+                    className="input input-bordered input-xs w-24 bg-base-100 font-mono text-[11px] text-right"
+                    value={model.outputPricePer1M ?? ''}
+                    onChange={(event) =>
+                      patch(model.modelId, {
+                        outputPricePer1M: event.target.value ? parseFloat(event.target.value) : null,
+                      })
+                    }
+                  />
+                </td>
+                <td className="text-center">
+                  <input
+                    type="checkbox"
+                    className="checkbox checkbox-xs"
+                    checked={model.isThinking}
+                    onChange={(event) => patch(model.modelId, { isThinking: event.target.checked })}
+                  />
+                </td>
+                <td className="text-right">
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-xs text-error"
+                    onClick={() => onRemove(model.modelId)}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {visible.length === 0 && (
+              <tr>
+                <td colSpan={7} className="text-center text-base-content/40 py-6 text-xs">
+                  {draft.length === 0
+                    ? 'No models yet. Use "Auto-load from upstream" or add one above.'
+                    : `Nothing matches "${search}".`}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );

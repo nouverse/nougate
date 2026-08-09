@@ -266,10 +266,16 @@ export async function addProviderKey(
     throw new CustomProviderError('API key is required.');
   }
 
+  // The first key is "primary" — which is what the form's placeholder promises.
+  // Later ones fall back to the key's last four characters, so an unlabelled
+  // second key cannot collide with the first.
+  const existingCount = (await listProviderKeys(providerId)).length;
+  const fallbackLabel = existingCount === 0 ? 'primary' : `key-${trimmed.slice(-4)}`;
+
   const record: CustomProviderKeyRecord = {
     id: crypto.randomUUID(),
     providerId,
-    label: label?.trim() || `key-${trimmed.slice(-4)}`,
+    label: label?.trim() || fallbackLabel,
     apiKey: trimmed,
     healthScore: 100,
     lastUsed: 0,

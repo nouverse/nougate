@@ -163,7 +163,8 @@ export interface CustomProviderSummary {
 
 export interface CustomProviderDetail extends CustomProviderSummary {
   keys: CustomProviderKey[];
-  models: CustomProviderModel[];
+  /** Models are fetched separately — see useCustomProviderModels. */
+  modelCount: number;
 }
 
 /** One callable model, keyed by the exact `provider:model` string a client sends. */

@@ -80,6 +80,7 @@ function PlaygroundPage() {
   const [protocol, setProtocol] = useState<Protocol>('openai');
   const [model, setModel] = useState('');
   const [modelSearch, setModelSearch] = useState('');
+  const [providerFilter, setProviderFilter] = useState('all');
   const [systemPrompt, setSystemPrompt] = useState('');
   const [userPrompt, setUserPrompt] = useState('Say hello in one short sentence.');
   const [stream, setStream] = useState(true);
@@ -99,20 +100,38 @@ function PlaygroundPage() {
   const keyRequired = apiKeys?.enabled ?? false;
   const baseUrl = config?.baseUrl || window.location.origin;
 
-  const models = useMemo(() => {
-    if (!catalog) {
-      return [];
+  /** Providers present in the catalogue, with how many models each contributes. */
+  const providers = useMemo(() => {
+    const counts = new Map<string, { id: string; name: string; count: number }>();
+    for (const entry of catalog ?? []) {
+      const existing = counts.get(entry.providerId);
+      if (existing) {
+        existing.count += 1;
+      } else {
+        counts.set(entry.providerId, { id: entry.providerId, name: entry.providerName, count: 1 });
+      }
     }
-    const needle = modelSearch.trim().toLowerCase();
-    return needle ? catalog.filter((entry) => entry.id.toLowerCase().includes(needle)) : catalog;
-  }, [catalog, modelSearch]);
+    return Array.from(counts.values()).sort((a, b) => a.id.localeCompare(b.id));
+  }, [catalog]);
 
-  // Default to the first model once the catalogue arrives.
+  const models = useMemo(() => {
+    const needle = modelSearch.trim().toLowerCase();
+    return (catalog ?? [])
+      .filter((entry) => providerFilter === 'all' || entry.providerId === providerFilter)
+      .filter((entry) => !needle || entry.id.toLowerCase().includes(needle));
+  }, [catalog, modelSearch, providerFilter]);
+
+  // Keep the selection inside the visible list. Without this, narrowing the
+  // filters would leave the picker displaying a model it no longer lists, and
+  // the request would go to that hidden model instead of the one on screen.
   useEffect(() => {
-    if (!model && catalog && catalog.length > 0) {
-      setModel(catalog[0].id);
+    if (models.length === 0) {
+      return;
     }
-  }, [catalog, model]);
+    if (!model || !models.some((entry) => entry.id === model)) {
+      setModel(models[0].id);
+    }
+  }, [models, model]);
 
   // Keep the newest streamed token in view.
   useEffect(() => {
@@ -352,19 +371,37 @@ function PlaygroundPage() {
             <div className="form-control w-full">
               <label className="label">
                 <span className="label-text font-semibold text-xs text-base-content/75">
-                  Model ({catalog?.length ?? 0} available across all providers)
+                  Model
+                </span>
+                <span className="label-text-alt text-[10px] text-base-content/40">
+                  {models.length} of {catalog?.length ?? 0}
                 </span>
               </label>
 
-              <div className="relative mb-2">
-                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-base-content/30" />
-                <input
-                  type="text"
-                  placeholder="Filter models..."
-                  className="input input-bordered input-sm w-full bg-base-100 text-xs pl-8"
-                  value={modelSearch}
-                  onChange={(event) => setModelSearch(event.target.value)}
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
+                <select
+                  className="select select-bordered select-sm w-full bg-base-100 text-xs"
+                  value={providerFilter}
+                  onChange={(event) => setProviderFilter(event.target.value)}
+                >
+                  <option value="all">All providers ({catalog?.length ?? 0})</option>
+                  {providers.map((entry) => (
+                    <option key={entry.id} value={entry.id}>
+                      {entry.name} ({entry.count})
+                    </option>
+                  ))}
+                </select>
+
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-base-content/30" />
+                  <input
+                    type="text"
+                    placeholder="Filter models..."
+                    className="input input-bordered input-sm w-full bg-base-100 text-xs pl-8"
+                    value={modelSearch}
+                    onChange={(event) => setModelSearch(event.target.value)}
+                  />
+                </div>
               </div>
 
               <select
@@ -372,7 +409,7 @@ function PlaygroundPage() {
                 value={model}
                 onChange={(event) => setModel(event.target.value)}
               >
-                {models.length === 0 && <option value="">No models match</option>}
+                {models.length === 0 && <option value="">No models match these filters</option>}
                 {models.map((entry) => (
                   <option key={entry.id} value={entry.id}>
                     {entry.id}

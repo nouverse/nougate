@@ -12,6 +12,7 @@ import {
   ApiKeysResponse,
   CustomProviderSummary,
   CustomProviderDetail,
+  CustomProviderModel,
   CatalogModel,
 } from '@/lib/types';
 
@@ -127,6 +128,20 @@ export function useCustomProvider(id: string | null) {
     queryKey: ['custom-providers', id],
     queryFn: () => api.get<CustomProviderDetail>(`/api/custom-providers/${id}`),
     enabled: !!id,
+  });
+}
+
+/**
+ * A provider's models, fetched only once the Models panel is opened.
+ *
+ * An aggregator can expose several hundred, so this is kept off the provider
+ * detail payload and out of the DOM until it is actually wanted.
+ */
+export function useCustomProviderModels(id: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: ['custom-providers', id, 'models'],
+    queryFn: () => api.get<CustomProviderModel[]>(`/api/custom-providers/${id}/models`),
+    enabled: !!id && enabled,
   });
 }
 

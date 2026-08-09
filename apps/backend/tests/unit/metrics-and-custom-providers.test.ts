@@ -417,6 +417,21 @@ describe('custom providers', () => {
     expect(store.maskKey(key).apiKey).not.toContain('upstream');
   });
 
+  test('an unlabelled key is named "primary" only while it is the first one', async () => {
+    // The form's placeholder says "primary", so the first key has to actually
+    // get that name. A second unlabelled key must not collide with it.
+    await store.createCustomProvider({ id: 'unlabelled', baseUrl: 'https://x.dev/v1' });
+
+    await store.addProviderKey('unlabelled', 'sk-first-aaaa');
+    await store.addProviderKey('unlabelled', 'sk-second-bbbb');
+
+    const labels = (await store.listProviderKeys('unlabelled')).map((key) => key.label);
+    expect(labels).toContain('primary');
+    expect(labels).toContain('key-bbbb');
+
+    await store.deleteCustomProvider('unlabelled');
+  });
+
   test('model sync preserves hand-edited rows', async () => {
     const written = await store.upsertProviderModels(
       'deepseek',

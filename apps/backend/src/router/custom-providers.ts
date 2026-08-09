@@ -73,10 +73,14 @@ async function describeProvider(id: string) {
     return null;
   }
 
+  // Models are deliberately omitted: an aggregator like OpenRouter has ~400 of
+  // them, and shipping the whole list on every provider view — then rendering a
+  // form row for each — is the single heaviest thing this page can do. The
+  // Models panel fetches them from /models when it is opened.
   return {
     ...record,
     keys: (await listProviderKeys(id)).map(maskKey),
-    models: withPricingStatus(await listProviderModels(id)),
+    modelCount: (await listProviderModels(id)).length,
   };
 }
 
