@@ -28,8 +28,11 @@ jobs:
       - name: Run backend unit tests
         run: bun test tests/unit
 
-      - name: Type check frontend
-        run: cd apps/frontend && ./node_modules/.bin/tsc -b
+      # `vite build` runs first on purpose: the TanStack router plugin
+      # generates src/routeTree.gen.ts, which is gitignored, so a bare `tsc -b`
+      # on a clean checkout fails on every route file.
+      - name: Build and type check frontend
+        run: cd apps/frontend && bun run build
 
       - name: Run frontend tests
         run: cd apps/frontend && bun test tests
