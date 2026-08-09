@@ -46,6 +46,16 @@ export interface UsageSummary {
   pendingWrites: number;
 }
 
+export interface ApiKeyStat {
+  /** Key ID, or 'none' for traffic recorded while key auth was off. */
+  apiKeyId: string;
+  name: string;
+  revoked: boolean;
+  requests: number;
+  totalTokens: number;
+  totalCost: number;
+}
+
 export interface TokenUsageResponse {
   lookback: Lookback;
   summary: UsageSummary;
@@ -53,6 +63,8 @@ export interface TokenUsageResponse {
   modelStats: ModelStat[];
   providerStats: Array<{ provider: string; requests: number; totalTokens: number; totalCost: number }>;
   clientStats: Array<{ clientId: string; requests: number; totalTokens: number; totalCost: number }>;
+  /** Always covers every key, even while one is selected. */
+  apiKeyStats: ApiKeyStat[];
   clients: string[];
 }
 
@@ -71,6 +83,8 @@ export interface RecentUsageLog {
   tokensSaved: number;
   estimated: number;
   totalCost: number;
+  apiKeyId: string | null;
+  apiKeyName: string | null;
 }
 
 // ─── Gateway API keys ────────────────────────────────────────────────────────
@@ -128,6 +142,10 @@ export interface CustomProviderModel {
   inputPricePer1M: number | null;
   outputPricePer1M: number | null;
   enabled: boolean;
+  /** Server-computed: false when no rate is known, so cost counts as $0. */
+  isPriced?: boolean;
+  effectiveInputPricePer1M?: number;
+  effectiveOutputPricePer1M?: number;
 }
 
 export interface CustomProviderSummary {
@@ -137,8 +155,6 @@ export interface CustomProviderSummary {
   apiStyle: CustomApiStyle;
   enabled: boolean;
   extraHeaders: Record<string, string>;
-  defaultInputPrice: number | null;
-  defaultOutputPrice: number | null;
   createdAt: number;
   updatedAt: number;
   keyCount?: number;
@@ -159,11 +175,11 @@ export interface CatalogModel {
   displayName: string;
   isThinking: boolean;
   maxOutputTokens: number;
-  /** Resolved price: the spec's own, else the price book, else the config default. */
+  /** Resolved price: the model's own, else the built-in price book. */
   inputPricePer1M: number;
   outputPricePer1M: number;
-  /** True when the price is the flat config default rather than a known rate. */
-  pricingIsFallback: boolean;
+  /** False when no rate is known, so cost is reported as $0. */
+  isPriced: boolean;
   isCustom: boolean;
 }
 

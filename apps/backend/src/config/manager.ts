@@ -106,8 +106,8 @@ const DEFAULT_CONFIG: ProxyConfig = {
     enabled: true,
     detailRetentionDays: 14,
     rollupRetentionDays: 90,
-    defaultInputPricePer1M: Number(process.env.DEFAULT_INPUT_PRICE_1M ?? 2.5),
-    defaultOutputPricePer1M: Number(process.env.DEFAULT_OUTPUT_PRICE_1M ?? 10)
+    defaultInputPricePer1M: Number(process.env.DEFAULT_INPUT_PRICE_1M ?? 0),
+    defaultOutputPricePer1M: Number(process.env.DEFAULT_OUTPUT_PRICE_1M ?? 0)
   },
   apiKeys: {
     enabled: false

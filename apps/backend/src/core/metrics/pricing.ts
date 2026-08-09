@@ -5,41 +5,55 @@ import { lookupPriceBook } from '@/core/metrics/price-book';
 export interface ModelPricing {
   inputPricePer1M: number;
   outputPricePer1M: number;
-  /** True when neither the spec nor the price book had a number for this model. */
-  isFallback: boolean;
+  /**
+   * False when no rate is known for this model, in which case the prices are 0.
+   *
+   * Cost is then reported as $0 and flagged, rather than invented from a blanket
+   * default — a made-up rate is indistinguishable from a real one on a chart,
+   * while a visible "unpriced" marker tells you exactly which models still need
+   * a number.
+   */
+  isPriced: boolean;
 }
 
-const FALLBACK_INPUT_PRICE = 2.5;
-const FALLBACK_OUTPUT_PRICE = 10;
+const UNPRICED: ModelPricing = {
+  inputPricePer1M: 0,
+  outputPricePer1M: 0,
+  isPriced: false,
+};
 
 /**
- * Read the configured fallback prices, tolerating an uninitialized config
- * (unit tests and scripts import the metrics modules without booting the app).
+ * Optional blanket rate for models nothing else can price.
+ *
+ * Off by default (0 = no fallback). Set `metrics.defaultInputPricePer1M` /
+ * `defaultOutputPricePer1M` to opt into an estimate instead of $0.
  */
-function getFallbackPricing(): { input: number; output: number } {
+function getConfiguredFallback(): { input: number; output: number } | null {
   try {
     const metrics = getProxyConfig().metrics;
-    return {
-      input: metrics?.defaultInputPricePer1M ?? FALLBACK_INPUT_PRICE,
-      output: metrics?.defaultOutputPricePer1M ?? FALLBACK_OUTPUT_PRICE,
-    };
+    const input = metrics?.defaultInputPricePer1M ?? 0;
+    const output = metrics?.defaultOutputPricePer1M ?? 0;
+    return input > 0 || output > 0 ? { input, output } : null;
   } catch {
-    return { input: FALLBACK_INPUT_PRICE, output: FALLBACK_OUTPUT_PRICE };
+    return null;
   }
 }
 
 /**
  * Resolve the effective per-1M-token prices for a model spec.
  *
- * Precedence: the spec's own prices, then the reference price book matched on
- * the model name, then the configured flat fallback.
+ * Precedence: the spec's own prices (set per model in the dashboard), then the
+ * reference price book matched on the model name, then the optional configured
+ * blanket rate. If none apply, the model is reported as unpriced.
  */
 export function resolvePricing(modelSpec: IModelSpec | null | undefined): ModelPricing {
   const specInput = modelSpec?.inputPricePer1M;
   const specOutput = modelSpec?.outputPricePer1M;
 
+  // An explicit 0 is a real answer ("this model is free"), so test for the
+  // presence of a number rather than for truthiness.
   if (typeof specInput === 'number' && typeof specOutput === 'number') {
-    return { inputPricePer1M: specInput, outputPricePer1M: specOutput, isFallback: false };
+    return { inputPricePer1M: specInput, outputPricePer1M: specOutput, isPriced: true };
   }
 
   const book = modelSpec?.modelId ? lookupPriceBook(modelSpec.modelId) : null;
@@ -47,16 +61,29 @@ export function resolvePricing(modelSpec: IModelSpec | null | undefined): ModelP
     return {
       inputPricePer1M: typeof specInput === 'number' ? specInput : book.input,
       outputPricePer1M: typeof specOutput === 'number' ? specOutput : book.output,
-      isFallback: false,
+      isPriced: true,
     };
   }
 
-  const fallback = getFallbackPricing();
-  return {
-    inputPricePer1M: typeof specInput === 'number' ? specInput : fallback.input,
-    outputPricePer1M: typeof specOutput === 'number' ? specOutput : fallback.output,
-    isFallback: typeof specInput !== 'number' && typeof specOutput !== 'number',
-  };
+  const fallback = getConfiguredFallback();
+  if (fallback) {
+    return {
+      inputPricePer1M: typeof specInput === 'number' ? specInput : fallback.input,
+      outputPricePer1M: typeof specOutput === 'number' ? specOutput : fallback.output,
+      isPriced: true,
+    };
+  }
+
+  // Half-configured models (only one side set) still count as priced.
+  if (typeof specInput === 'number' || typeof specOutput === 'number') {
+    return {
+      inputPricePer1M: specInput ?? 0,
+      outputPricePer1M: specOutput ?? 0,
+      isPriced: true,
+    };
+  }
+
+  return { ...UNPRICED };
 }
 
 /**

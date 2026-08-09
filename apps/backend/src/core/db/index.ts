@@ -99,12 +99,15 @@ const SCHEMA_STATEMENTS = [
   `CREATE INDEX IF NOT EXISTS idx_token_logs_client ON token_usage_logs (client_id)`,
   `CREATE INDEX IF NOT EXISTS idx_token_logs_provider ON token_usage_logs (provider)`,
 
+  // api_key_id is part of the key so long-window charts can be filtered by
+  // gateway key, not just by client. '' means "recorded while key auth was off".
   `CREATE TABLE IF NOT EXISTS token_usage_daily_rollups (
     date TEXT NOT NULL,
     provider TEXT NOT NULL,
     model TEXT NOT NULL,
     full_model_name TEXT NOT NULL,
     client_id TEXT NOT NULL,
+    api_key_id TEXT NOT NULL DEFAULT '',
     total_requests INTEGER NOT NULL DEFAULT 0,
     total_input_tokens INTEGER NOT NULL DEFAULT 0,
     total_output_tokens INTEGER NOT NULL DEFAULT 0,
@@ -112,9 +115,11 @@ const SCHEMA_STATEMENTS = [
     total_input_cost REAL NOT NULL DEFAULT 0,
     total_output_cost REAL NOT NULL DEFAULT 0,
     total_cost_saved REAL NOT NULL DEFAULT 0,
-    PRIMARY KEY (date, full_model_name, client_id)
+    PRIMARY KEY (date, full_model_name, client_id, api_key_id)
   )`,
   `CREATE INDEX IF NOT EXISTS idx_rollups_date ON token_usage_daily_rollups (date)`,
+  `CREATE INDEX IF NOT EXISTS idx_rollups_api_key ON token_usage_daily_rollups (api_key_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_token_logs_api_key ON token_usage_logs (api_key_id)`,
 
   // ─── Dashboard users ────────────────────────────────────────────────────────
   // COLLATE NOCASE on the unique username so "Admin" cannot be registered
@@ -151,8 +156,6 @@ const SCHEMA_STATEMENTS = [
     api_style TEXT NOT NULL DEFAULT 'openai',
     enabled INTEGER NOT NULL DEFAULT 1,
     extra_headers TEXT,
-    default_input_price REAL,
-    default_output_price REAL,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   )`,
@@ -192,6 +195,80 @@ const SCHEMA_STATEMENTS = [
 ];
 
 /**
+ * Whether a table exists yet. A fresh database has none, and migrations must
+ * skip it rather than trying to rebuild something that was never there.
+ */
+function tableExists(db: Database, table: string): boolean {
+  const row = db
+    .query(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`)
+    .get(table);
+  return row !== null && row !== undefined;
+}
+
+/**
+ * Whether a table already has a column.
+ */
+function hasColumn(db: Database, table: string, column: string): boolean {
+  const columns = db.query(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  return columns.some((entry) => entry.name === column);
+}
+
+/**
+ * Bring an existing database up to the current shape.
+ *
+ * `CREATE TABLE IF NOT EXISTS` cannot alter a table that already exists, so any
+ * change to an existing table needs an explicit, idempotent step here.
+ */
+function runMigrations(db: Database): void {
+  // Adding api_key_id to the rollup changes its primary key, which SQLite can
+  // only do by rebuilding the table. Rollups hold the only copy of usage older
+  // than the detail-log retention window, so the rows are copied rather than
+  // recreated. Existing rows predate per-key tracking and get ''.
+  if (
+    tableExists(db, 'token_usage_daily_rollups') &&
+    !hasColumn(db, 'token_usage_daily_rollups', 'api_key_id')
+  ) {
+    console.log('[DB] Migrating token_usage_daily_rollups to track the gateway API key...');
+
+    db.transaction(() => {
+      db.exec(`CREATE TABLE token_usage_daily_rollups_migrated (
+        date TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        model TEXT NOT NULL,
+        full_model_name TEXT NOT NULL,
+        client_id TEXT NOT NULL,
+        api_key_id TEXT NOT NULL DEFAULT '',
+        total_requests INTEGER NOT NULL DEFAULT 0,
+        total_input_tokens INTEGER NOT NULL DEFAULT 0,
+        total_output_tokens INTEGER NOT NULL DEFAULT 0,
+        total_tokens_saved INTEGER NOT NULL DEFAULT 0,
+        total_input_cost REAL NOT NULL DEFAULT 0,
+        total_output_cost REAL NOT NULL DEFAULT 0,
+        total_cost_saved REAL NOT NULL DEFAULT 0,
+        PRIMARY KEY (date, full_model_name, client_id, api_key_id)
+      )`);
+
+      db.exec(`INSERT INTO token_usage_daily_rollups_migrated (
+        date, provider, model, full_model_name, client_id, api_key_id,
+        total_requests, total_input_tokens, total_output_tokens, total_tokens_saved,
+        total_input_cost, total_output_cost, total_cost_saved
+      )
+      SELECT date, provider, model, full_model_name, client_id, '',
+             total_requests, total_input_tokens, total_output_tokens, total_tokens_saved,
+             total_input_cost, total_output_cost, total_cost_saved
+      FROM token_usage_daily_rollups`);
+
+      db.exec('DROP TABLE token_usage_daily_rollups');
+      db.exec(
+        'ALTER TABLE token_usage_daily_rollups_migrated RENAME TO token_usage_daily_rollups',
+      );
+    })();
+
+    console.log('[DB] Rollup migration complete.');
+  }
+}
+
+/**
  * Open (once) and return the shared SQLite handle, applying the schema on first use.
  */
 export function getDb(): Database {
@@ -219,6 +296,8 @@ export function getDb(): Database {
   db.exec('PRAGMA synchronous = NORMAL');
   db.exec('PRAGMA foreign_keys = ON');
   db.exec('PRAGMA busy_timeout = 5000');
+
+  runMigrations(db);
 
   for (const statement of SCHEMA_STATEMENTS) {
     db.exec(statement);

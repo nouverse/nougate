@@ -22,6 +22,8 @@ export interface UsageFilters {
   lookback: Lookback;
   clientId?: string;
   provider?: string;
+  /** Gateway API key ID, or 'none' for traffic recorded without one. */
+  apiKeyId?: string;
 }
 
 export interface UsagePoint {
@@ -41,6 +43,19 @@ export interface ModelStat {
   requests: number;
   inputTokens: number;
   outputTokens: number;
+  totalTokens: number;
+  totalCost: number;
+}
+
+/** Filter value for requests made while gateway key auth was off. */
+export const NO_API_KEY = 'none';
+
+export interface ApiKeyStat {
+  apiKeyId: string;
+  /** The key's name, or a placeholder when it was deleted or never used. */
+  name: string;
+  revoked: boolean;
+  requests: number;
   totalTokens: number;
   totalCost: number;
 }
@@ -107,6 +122,16 @@ function buildScope(filters: UsageFilters): Scope {
   if (filters.provider && filters.provider !== 'all') {
     conditions.push('provider = $provider');
     params.$provider = filters.provider;
+  }
+
+  if (filters.apiKeyId && filters.apiKeyId !== 'all') {
+    if (filters.apiKeyId === NO_API_KEY) {
+      // Detail rows store NULL for "no key"; rollups store ''.
+      conditions.push(rollup ? "api_key_id = ''" : 'api_key_id IS NULL');
+    } else {
+      conditions.push('api_key_id = $apiKeyId');
+      params.$apiKeyId = filters.apiKeyId;
+    }
   }
 
   return { clause: conditions.join(' AND '), params, rollup };
@@ -262,6 +287,45 @@ export function getClientStats(filters: UsageFilters): Array<GroupStat & { clien
 }
 
 /**
+ * Spend grouped by the gateway API key that authorised each request.
+ */
+export function getApiKeyStats(filters: UsageFilters): ApiKeyStat[] {
+  const { clause, params, rollup } = buildScope(filters);
+  const table = rollup ? 'token_usage_daily_rollups' : 'token_usage_logs';
+  const requests = rollup ? 'SUM(total_requests)' : 'COUNT(*)';
+  const tokens = rollup
+    ? 'SUM(total_input_tokens + total_output_tokens)'
+    : 'SUM(input_tokens + output_tokens)';
+  const cost = rollup
+    ? 'SUM(total_input_cost + total_output_cost)'
+    : 'SUM(input_cost + output_cost)';
+
+  const rows = dbAll<any>(
+    `SELECT COALESCE(usage.api_key_id, '') AS apiKeyId,
+            k.name AS name,
+            COALESCE(k.revoked, 0) AS revoked,
+            ${requests} AS requests,
+            ${tokens} AS totalTokens,
+            ${cost} AS totalCost
+     FROM ${table} AS usage
+     LEFT JOIN api_keys AS k ON k.id = usage.api_key_id
+     WHERE ${clause.replace(/\b(timestamp|date|client_id|provider|api_key_id)\b/g, 'usage.$1')}
+     GROUP BY apiKeyId
+     ORDER BY totalCost DESC, totalTokens DESC`,
+    params,
+  );
+
+  return rows.map((row) => ({
+    apiKeyId: row.apiKeyId || NO_API_KEY,
+    name: row.name || (row.apiKeyId ? 'deleted key' : 'no key'),
+    revoked: row.revoked === 1,
+    requests: row.requests ?? 0,
+    totalTokens: row.totalTokens ?? 0,
+    totalCost: row.totalCost ?? 0,
+  }));
+}
+
+/**
  * Headline numbers for the stat cards.
  */
 export function getUsageSummary(filters: UsageFilters): UsageSummary {
@@ -321,13 +385,15 @@ export function getRecentLogs(limit = 50): any[] {
   const capped = Math.min(Math.max(limit, 1), 500);
 
   return dbAll(
-    `SELECT id, timestamp, client_id AS clientId, full_model_name AS fullModelName,
-            provider, protocol, streamed, status_code AS statusCode,
-            duration_ms AS durationMs, input_tokens AS inputTokens,
-            output_tokens AS outputTokens, tokens_saved AS tokensSaved,
-            estimated, (input_cost + output_cost) AS totalCost
-     FROM token_usage_logs
-     ORDER BY timestamp DESC
+    `SELECT l.id, l.timestamp, l.client_id AS clientId, l.full_model_name AS fullModelName,
+            l.provider, l.protocol, l.streamed, l.status_code AS statusCode,
+            l.duration_ms AS durationMs, l.input_tokens AS inputTokens,
+            l.output_tokens AS outputTokens, l.tokens_saved AS tokensSaved,
+            l.estimated, (l.input_cost + l.output_cost) AS totalCost,
+            l.api_key_id AS apiKeyId, k.name AS apiKeyName
+     FROM token_usage_logs AS l
+     LEFT JOIN api_keys AS k ON k.id = l.api_key_id
+     ORDER BY l.timestamp DESC
      LIMIT $limit`,
     { $limit: capped },
   );
@@ -346,6 +412,7 @@ export function getKnownClients(): string[] {
 const CSV_COLUMNS = [
   'timestamp',
   'client_id',
+  'api_key_id',
   'provider',
   'model',
   'full_model_name',
@@ -378,6 +445,14 @@ export function exportLogsCsv(filters: UsageFilters): string {
   if (filters.provider && filters.provider !== 'all') {
     conditions.push('provider = $provider');
     params.$provider = filters.provider;
+  }
+  if (filters.apiKeyId && filters.apiKeyId !== 'all') {
+    if (filters.apiKeyId === NO_API_KEY) {
+      conditions.push('api_key_id IS NULL');
+    } else {
+      conditions.push('api_key_id = $apiKeyId');
+      params.$apiKeyId = filters.apiKeyId;
+    }
   }
 
   const rows = dbAll<Record<string, unknown>>(

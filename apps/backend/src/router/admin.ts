@@ -306,8 +306,8 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
           maxOutputTokens: spec?.maxOutputTokens ?? 8192,
           inputPricePer1M: pricing.inputPricePer1M,
           outputPricePer1M: pricing.outputPricePer1M,
-          /** True when neither the spec nor the price book knew this model. */
-          pricingIsFallback: pricing.isFallback,
+          /** False when no rate is known, so cost is reported as $0. */
+          isPriced: pricing.isPriced,
           isCustom: p instanceof CustomProvider,
         };
       });

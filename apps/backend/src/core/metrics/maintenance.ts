@@ -29,18 +29,19 @@ export function runRollup(): number {
 
   const result = dbRun(
     `INSERT INTO token_usage_daily_rollups (
-       date, provider, model, full_model_name, client_id,
+       date, provider, model, full_model_name, client_id, api_key_id,
        total_requests, total_input_tokens, total_output_tokens, total_tokens_saved,
        total_input_cost, total_output_cost, total_cost_saved
      )
      SELECT strftime('%Y-%m-%d', timestamp / 1000, 'unixepoch') AS day,
             provider, model, full_model_name, client_id,
+            COALESCE(api_key_id, '') AS key_id,
             COUNT(*), SUM(input_tokens), SUM(output_tokens), SUM(tokens_saved),
             SUM(input_cost), SUM(output_cost), SUM(cost_saved)
      FROM token_usage_logs
      WHERE timestamp < $todayStart
-     GROUP BY day, provider, model, full_model_name, client_id
-     ON CONFLICT (date, full_model_name, client_id) DO UPDATE SET
+     GROUP BY day, provider, model, full_model_name, client_id, key_id
+     ON CONFLICT (date, full_model_name, client_id, api_key_id) DO UPDATE SET
        total_requests = excluded.total_requests,
        total_input_tokens = excluded.total_input_tokens,
        total_output_tokens = excluded.total_output_tokens,

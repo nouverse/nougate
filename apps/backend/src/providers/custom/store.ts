@@ -10,8 +10,6 @@ export interface CustomProviderRecord {
   apiStyle: CustomApiStyle;
   enabled: boolean;
   extraHeaders: Record<string, string>;
-  defaultInputPrice: number | null;
-  defaultOutputPrice: number | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -69,8 +67,6 @@ function rowToProvider(row: any): CustomProviderRecord {
     apiStyle: row.api_style === 'anthropic' ? 'anthropic' : 'openai',
     enabled: row.enabled === 1,
     extraHeaders: row.extra_headers ? safeParseHeaders(row.extra_headers) : {},
-    defaultInputPrice: row.default_input_price ?? null,
-    defaultOutputPrice: row.default_output_price ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -147,8 +143,6 @@ export interface CreateCustomProviderInput {
   baseUrl: string;
   apiStyle?: CustomApiStyle;
   extraHeaders?: Record<string, string>;
-  defaultInputPrice?: number | null;
-  defaultOutputPrice?: number | null;
   enabled?: boolean;
 }
 
@@ -175,8 +169,6 @@ export function createCustomProvider(input: CreateCustomProviderInput): CustomPr
     apiStyle: input.apiStyle === 'anthropic' ? 'anthropic' : 'openai',
     enabled: input.enabled !== false,
     extraHeaders: input.extraHeaders ?? {},
-    defaultInputPrice: input.defaultInputPrice ?? null,
-    defaultOutputPrice: input.defaultOutputPrice ?? null,
     createdAt: now,
     updatedAt: now,
   };
@@ -184,9 +176,9 @@ export function createCustomProvider(input: CreateCustomProviderInput): CustomPr
   dbRun(
     `INSERT INTO custom_providers (
        id, display_name, base_url, api_style, enabled, extra_headers,
-       default_input_price, default_output_price, created_at, updated_at
+       created_at, updated_at
      ) VALUES ($id, $displayName, $baseUrl, $apiStyle, $enabled, $extraHeaders,
-       $defaultInputPrice, $defaultOutputPrice, $createdAt, $updatedAt)`,
+       $createdAt, $updatedAt)`,
     {
       $id: record.id,
       $displayName: record.displayName,
@@ -194,8 +186,6 @@ export function createCustomProvider(input: CreateCustomProviderInput): CustomPr
       $apiStyle: record.apiStyle,
       $enabled: record.enabled ? 1 : 0,
       $extraHeaders: JSON.stringify(record.extraHeaders),
-      $defaultInputPrice: record.defaultInputPrice,
-      $defaultOutputPrice: record.defaultOutputPrice,
       $createdAt: record.createdAt,
       $updatedAt: record.updatedAt,
     },
@@ -222,10 +212,6 @@ export function updateCustomProvider(
     apiStyle: updates.apiStyle ?? existing.apiStyle,
     enabled: updates.enabled ?? existing.enabled,
     extraHeaders: updates.extraHeaders ?? existing.extraHeaders,
-    defaultInputPrice:
-      updates.defaultInputPrice === undefined ? existing.defaultInputPrice : updates.defaultInputPrice,
-    defaultOutputPrice:
-      updates.defaultOutputPrice === undefined ? existing.defaultOutputPrice : updates.defaultOutputPrice,
     updatedAt: Date.now(),
   };
 
@@ -233,7 +219,6 @@ export function updateCustomProvider(
     `UPDATE custom_providers SET
        display_name = $displayName, base_url = $baseUrl, api_style = $apiStyle,
        enabled = $enabled, extra_headers = $extraHeaders,
-       default_input_price = $defaultInputPrice, default_output_price = $defaultOutputPrice,
        updated_at = $updatedAt
      WHERE id = $id`,
     {
@@ -243,8 +228,6 @@ export function updateCustomProvider(
       $apiStyle: merged.apiStyle,
       $enabled: merged.enabled ? 1 : 0,
       $extraHeaders: JSON.stringify(merged.extraHeaders),
-      $defaultInputPrice: merged.defaultInputPrice,
-      $defaultOutputPrice: merged.defaultOutputPrice,
       $updatedAt: merged.updatedAt,
     },
   );

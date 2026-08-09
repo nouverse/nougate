@@ -565,7 +565,7 @@ function PlaygroundPage() {
                 <Metric
                   label="Est. cost"
                   value={estimatedCost != null ? formatCost(estimatedCost) : '—'}
-                  hint={selected?.pricingIsFallback ? 'default rate' : undefined}
+                  hint={selected && !selected.isPriced ? 'model unpriced' : undefined}
                 />
               </div>
             )}

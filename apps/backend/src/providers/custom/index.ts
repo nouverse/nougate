@@ -151,8 +151,6 @@ export class CustomProvider implements IProvider {
               maxOutputTokens: 8192,
               upstreamModelId: modelId,
               timeoutMs: 60_000,
-              inputPricePer1M: this.record.defaultInputPrice ?? undefined,
-              outputPricePer1M: this.record.defaultOutputPrice ?? undefined,
             };
           }
         } catch {

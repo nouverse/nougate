@@ -1,5 +1,6 @@
 import {
   exportLogsCsv,
+  getApiKeyStats,
   getClientStats,
   getKnownClients,
   getModelStats,
@@ -25,6 +26,7 @@ function readFilters(url: URL): UsageFilters {
     lookback: normalizeLookback(url.searchParams.get('lookback')),
     clientId: url.searchParams.get('clientId') || 'all',
     provider: url.searchParams.get('provider') || 'all',
+    apiKeyId: url.searchParams.get('apiKeyId') || 'all',
   };
 }
 
@@ -53,6 +55,9 @@ export async function handleMetricsRoute(req: Request, url: URL): Promise<Respon
         modelStats: getModelStats(filters),
         providerStats: getProviderStats(filters),
         clientStats: getClientStats(filters),
+        // Computed without the key filter, so the dropdown keeps listing every
+        // key even while one of them is selected.
+        apiKeyStats: getApiKeyStats({ ...filters, apiKeyId: 'all' }),
         clients: getKnownClients(),
       });
     }

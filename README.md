@@ -326,8 +326,11 @@ What a custom provider carries:
 - **Models** — press *Auto-load from upstream* to import everything the upstream's `/models`
   endpoint reports. Re-syncing adds new models and never overwrites prices or overrides you
   edited by hand. Models can also be added one at a time.
-- **Pricing** — per-model `$/1M` input and output rates feed the cost dashboard. Leave them
-  empty to fall back to the built-in price book, then the configured flat default.
+- **Pricing** — per-model `$/1M` input and output rates feed the cost dashboard, editable in
+  the provider's Models table. Leave a rate on `auto` and the built-in price book works it out
+  from the model name, which handles aggregator IDs like `anthropic/claude-opus-4.5` correctly.
+  A model nothing can price is marked **unpriced** and counts as $0 rather than being given an
+  invented rate — set a number when you want it included in spend.
 - **Extra headers** — merged into every upstream request, for gateways that need them.
 
 Provider IDs must be lowercase (`[a-z][a-z0-9_-]*`) and cannot collide with a built-in
@@ -365,13 +368,23 @@ Every request through the gateway is recorded to SQLite (`data/nougate.db`, or
   the dashboard shows what compression actually saved in dollars.
 - **Cost estimation** — spend is computed at upstream *list* prices. For subscription-based
   providers like Copilot and Antigravity this is the value routed through the gateway, not
-  what you were billed. Price resolution: the model spec's own prices → the built-in price
-  book matched on model family → `metrics.defaultInputPricePer1M`/`defaultOutputPricePer1M`.
+  what you were billed. Price resolution: the model's own rate → the built-in price book
+  matched on model family → an optional blanket rate
+  (`metrics.defaultInputPricePer1M`/`defaultOutputPricePer1M`, off by default). If none apply
+  the model is reported as **unpriced** at $0 and flagged in the dashboard; its tokens are
+  still recorded. A guessed rate is indistinguishable from a real one on a chart, so nothing
+  is invented silently.
 - **Retention** — an hourly job rolls per-request rows into daily aggregates, prunes detail
   rows past `detailRetentionDays` (14), and prunes rollups past `rollupRetentionDays` (90).
   Windows longer than 14 days are served from the rollup table, so the dashboard stays fast.
-- **Attribution** — usage is grouped by client. The client ID comes from the `x-client-id`
-  header, else the name of the gateway API key used, else `unknown`.
+- **Attribution** — usage is grouped by both **client** and **gateway API key**, and either
+  can be used as a filter (they compose). The client ID comes from the `x-client-id` header,
+  else the name of the key used, else `unknown`; the key is recorded separately, so naming a
+  key per machine or per agent gives you per-machine spend even when clients set their own
+  `x-client-id`. Traffic recorded while key auth was off appears as **no key**, and a key that
+  was deleted still shows its historical usage as **deleted key**. The API key is stored in
+  the daily rollups too, so the filter works across the full 90-day window, not just the
+  detail-log retention period.
 
 Set `metrics.enabled` to `false` to turn recording off entirely.
 
@@ -426,7 +439,7 @@ Admin endpoints (behind the dashboard guard):
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/models` | GET | Full catalogue of callable `provider:model` IDs with resolved pricing |
-| `/api/metrics/token-usage` | GET | Summary, time series, and per-model/provider/client breakdowns. Query: `lookback`, `clientId`, `provider` |
+| `/api/metrics/token-usage` | GET | Summary, time series, and per-model/provider/client/API-key breakdowns. Query: `lookback`, `clientId`, `provider`, `apiKeyId` |
 | `/api/metrics/recent` | GET | Most recent individual requests |
 | `/api/metrics/export` | GET | CSV export of the detail log for the selected window |
 | `/api/metrics/maintenance` | POST | Run rollup + pruning immediately |

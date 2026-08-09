@@ -20,8 +20,6 @@ interface NewProviderForm {
   apiStyle: CustomApiStyle;
   apiKey: string;
   keyLabel: string;
-  defaultInputPrice: string;
-  defaultOutputPrice: string;
   autoLoadModels: boolean;
 }
 
@@ -32,8 +30,6 @@ const EMPTY_FORM: NewProviderForm = {
   apiStyle: 'openai',
   apiKey: '',
   keyLabel: '',
-  defaultInputPrice: '',
-  defaultOutputPrice: '',
   autoLoadModels: true,
 };
 
@@ -79,8 +75,6 @@ function CustomProvidersPage() {
         apiStyle: form.apiStyle,
         apiKey: form.apiKey || undefined,
         keyLabel: form.keyLabel || undefined,
-        defaultInputPrice: form.defaultInputPrice ? parseFloat(form.defaultInputPrice) : null,
-        defaultOutputPrice: form.defaultOutputPrice ? parseFloat(form.defaultOutputPrice) : null,
         autoLoadModels: form.autoLoadModels,
       }),
     onSuccess: (result) => {
@@ -284,27 +278,7 @@ function CustomProvidersPage() {
                   />
                 </Field>
 
-                <Field label="Default input price" hint="USD per 1M tokens, used for cost tracking">
-                  <input
-                    type="number"
-                    step="0.001"
-                    placeholder="0.27"
-                    className="input input-bordered input-sm w-full bg-base-100 font-mono text-xs"
-                    value={form.defaultInputPrice}
-                    onChange={(event) => setForm({ ...form, defaultInputPrice: event.target.value })}
-                  />
-                </Field>
 
-                <Field label="Default output price" hint="USD per 1M tokens">
-                  <input
-                    type="number"
-                    step="0.001"
-                    placeholder="1.10"
-                    className="input input-bordered input-sm w-full bg-base-100 font-mono text-xs"
-                    value={form.defaultOutputPrice}
-                    onChange={(event) => setForm({ ...form, defaultOutputPrice: event.target.value })}
-                  />
-                </Field>
               </div>
 
               <label className="label cursor-pointer justify-start gap-3">
@@ -697,7 +671,14 @@ function ModelEditor({
     <div className="card bg-base-200 border border-base-300 shadow-sm">
       <div className="card-body p-5 space-y-4 min-w-0">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <h3 className="card-title text-sm font-bold tracking-wide">MODELS ({draft.length})</h3>
+          <div className="min-w-0">
+            <h3 className="card-title text-sm font-bold tracking-wide">MODELS ({draft.length})</h3>
+            <p className="text-xs text-base-content/50 mt-0.5">
+              Leave a price on <span className="font-mono">auto</span> to let the built-in price
+              book work it out from the model name. Models it does not recognise are reported as
+              unpriced ($0) until you enter a rate.
+            </p>
+          </div>
           <div className="flex items-center gap-2">
             <CopyButton
               value={draft.map((model) => `${providerId}:${model.modelId}`).join('\n')}
@@ -747,7 +728,17 @@ function ModelEditor({
               {draft.map((model) => (
                 <tr key={model.modelId}>
                   <td>
-                    <ModelIdChip providerId={providerId} modelId={model.modelId} />
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <ModelIdChip providerId={providerId} modelId={model.modelId} />
+                      {model.isPriced === false && (
+                        <span
+                          className="badge badge-xs badge-warning font-bold"
+                          title="No rate known for this model — its cost is counted as $0 until you enter one"
+                        >
+                          unpriced
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td>
                     <input

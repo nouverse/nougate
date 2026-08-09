@@ -83,14 +83,14 @@ export async function syncProviderModels(
 ): Promise<ModelSyncResult> {
   const discovered = await fetchUpstreamModels(provider);
 
+  // Discovered models arrive unpriced on purpose. A single blanket price would
+  // be stamped onto every model of every vendor an aggregator exposes, and
+  // would then shadow the built-in price book, which usually knows better.
+  // Set real numbers per model in the Models table when you need them.
   const models: UpsertModelInput[] = discovered.map((modelId) => ({
     modelId,
     displayName: modelId,
     upstreamModelId: modelId,
-    // Prices default to the provider-level defaults so cost tracking has a
-    // number to work with until the user fills in real per-model pricing.
-    inputPricePer1M: provider.defaultInputPrice,
-    outputPricePer1M: provider.defaultOutputPrice,
   }));
 
   const imported = upsertProviderModels(provider.id, models, true);

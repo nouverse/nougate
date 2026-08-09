@@ -13,7 +13,7 @@ import {
   formatTimestamp,
   formatTokens,
 } from '@/lib/format';
-import { DollarSign, Scissors, Zap, Activity, Download, Table2, LineChart } from 'lucide-react';
+import { DollarSign, Scissors, Zap, Activity, Download, Table2, LineChart, KeyRound } from 'lucide-react';
 
 export const Route = createFileRoute('/tokens')({
   component: TokensPage,
@@ -25,10 +25,11 @@ function TokensPage() {
   const [lookback, setLookback] = useState<Lookback>('24h');
   const [clientId, setClientId] = useState('all');
   const [provider, setProvider] = useState('all');
+  const [apiKeyId, setApiKeyId] = useState('all');
   const [metric, setMetric] = useState<'cost' | 'tokens'>('cost');
   const [showTable, setShowTable] = useState(false);
 
-  const { data, isLoading, error } = useTokenUsage(lookback, clientId, provider);
+  const { data, isLoading, error } = useTokenUsage(lookback, clientId, provider, apiKeyId);
   const { data: recent } = useRecentUsage(25);
 
   if (isLoading) {
@@ -48,8 +49,10 @@ function TokensPage() {
     );
   }
 
-  const { summary, usageData, modelStats, providerStats, clientStats, clients } = data;
-  const exportUrl = `/api/metrics/export?lookback=${lookback}&clientId=${encodeURIComponent(clientId)}&provider=${encodeURIComponent(provider)}`;
+  const { summary, usageData, modelStats, providerStats, clientStats, apiKeyStats, clients } = data;
+  const exportUrl =
+    `/api/metrics/export?lookback=${lookback}&clientId=${encodeURIComponent(clientId)}` +
+    `&provider=${encodeURIComponent(provider)}&apiKeyId=${encodeURIComponent(apiKeyId)}`;
 
   return (
     <div className="space-y-6 text-base-content">
@@ -106,6 +109,20 @@ function TokensPage() {
           {providerStats.map((entry) => (
             <option key={entry.provider} value={entry.provider}>
               {entry.provider}
+            </option>
+          ))}
+        </select>
+
+        <select
+          className="select select-bordered select-xs bg-base-200 text-xs font-semibold"
+          value={apiKeyId}
+          onChange={(event) => setApiKeyId(event.target.value)}
+        >
+          <option value="all">All API keys</option>
+          {apiKeyStats.map((entry) => (
+            <option key={entry.apiKeyId} value={entry.apiKeyId}>
+              {entry.name}
+              {entry.revoked ? ' (revoked)' : ''}
             </option>
           ))}
         </select>
@@ -224,11 +241,22 @@ function TokensPage() {
               items={modelStats.slice(0, 8).map((model) => ({
                 label: model.fullModelName,
                 value: model.totalTokens,
-                secondary: formatCost(model.totalCost),
+                // Tokens but no cost means no rate is known for this model —
+                // say so rather than letting it read as genuinely free.
+                secondary:
+                  model.totalCost === 0 && model.totalTokens > 0
+                    ? 'unpriced'
+                    : formatCost(model.totalCost),
               }))}
               format={formatTokens}
               emptyMessage="No model traffic in this window"
             />
+            {modelStats.some((model) => model.totalCost === 0 && model.totalTokens > 0) && (
+              <p className="text-[10px] text-base-content/40">
+                "unpriced" models have no known rate and count as $0. Set one on the provider's
+                Models table to include them in spend.
+              </p>
+            )}
           </div>
         </div>
 
@@ -248,7 +276,7 @@ function TokensPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="card bg-base-200 border border-base-300 shadow-sm">
           <div className="card-body p-5 space-y-4">
             <h3 className="card-title text-sm font-bold tracking-wide">SPEND BY CLIENT</h3>
@@ -264,7 +292,30 @@ function TokensPage() {
           </div>
         </div>
 
-        <div className="card bg-base-200 border border-base-300 shadow-sm lg:col-span-2">
+        <div className="card bg-base-200 border border-base-300 shadow-sm">
+          <div className="card-body p-5 space-y-4">
+            <h3 className="card-title text-sm font-bold tracking-wide flex items-center gap-2">
+              <KeyRound className="w-4 h-4 text-primary" />
+              SPEND BY API KEY
+            </h3>
+            <BarList
+              items={apiKeyStats.map((entry) => ({
+                label: `${entry.name}${entry.revoked ? ' (revoked)' : ''}`,
+                value: entry.totalCost,
+                secondary: `${formatCount(entry.requests)} req`,
+              }))}
+              format={formatCost}
+              emptyMessage="No key-attributed traffic yet"
+            />
+            <p className="text-[10px] text-base-content/40">
+              "no key" covers requests made while gateway key auth was switched off.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4">
+        <div className="card bg-base-200 border border-base-300 shadow-sm">
           <div className="card-body p-5 space-y-3">
             <h3 className="card-title text-sm font-bold tracking-wide">RECENT REQUESTS</h3>
             <div className="overflow-x-auto max-h-80">
@@ -274,6 +325,7 @@ function TokensPage() {
                     <th>Time</th>
                     <th>Model</th>
                     <th>Client</th>
+                    <th>API key</th>
                     <th className="text-right">In / Out</th>
                     <th className="text-right">Cost</th>
                   </tr>
@@ -296,6 +348,11 @@ function TokensPage() {
                         )}
                       </td>
                       <td className="text-base-content/60">{log.clientId}</td>
+                      <td className="text-base-content/60">
+                        {log.apiKeyName || (
+                          <span className="text-base-content/30 italic">no key</span>
+                        )}
+                      </td>
                       <td className="text-right font-mono">
                         {formatTokens(log.inputTokens)} / {formatTokens(log.outputTokens)}
                       </td>
@@ -304,7 +361,7 @@ function TokensPage() {
                   ))}
                   {(recent ?? []).length === 0 && (
                     <tr>
-                      <td colSpan={5} className="text-center text-base-content/40 py-6">
+                      <td colSpan={6} className="text-center text-base-content/40 py-6">
                         No requests recorded yet
                       </td>
                     </tr>

@@ -78,12 +78,18 @@ export function useConfig() {
 
 // ─── Token usage & cost ──────────────────────────────────────────────────────
 
-export function useTokenUsage(lookback: Lookback, clientId: string, provider: string) {
+export function useTokenUsage(
+  lookback: Lookback,
+  clientId: string,
+  provider: string,
+  apiKeyId: string,
+) {
   return useQuery({
-    queryKey: ['metrics', 'token-usage', lookback, clientId, provider],
+    queryKey: ['metrics', 'token-usage', lookback, clientId, provider, apiKeyId],
     queryFn: () =>
       api.get<TokenUsageResponse>(
-        `/api/metrics/token-usage?lookback=${lookback}&clientId=${encodeURIComponent(clientId)}&provider=${encodeURIComponent(provider)}`,
+        `/api/metrics/token-usage?lookback=${lookback}&clientId=${encodeURIComponent(clientId)}` +
+          `&provider=${encodeURIComponent(provider)}&apiKeyId=${encodeURIComponent(apiKeyId)}`,
       ),
     // Usage keeps accumulating while the page is open, so poll gently.
     refetchInterval: 30000,

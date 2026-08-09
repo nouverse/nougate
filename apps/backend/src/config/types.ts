@@ -80,7 +80,11 @@ export interface MetricsConfig {
   detailRetentionDays: number;
   /** How long daily rollups are kept before pruning. */
   rollupRetentionDays: number;
-  /** Price fallback for models without pricing (e.g. bypassModelValidation). */
+  /**
+   * Optional blanket rate, in USD per 1M tokens, for models that neither the
+   * dashboard nor the built-in price book can price. 0 disables it, leaving
+   * such models reported as unpriced ($0) instead of estimated.
+   */
   defaultInputPricePer1M: number;
   defaultOutputPricePer1M: number;
 }

@@ -21,6 +21,33 @@ import {
   syncCustomProvider,
 } from '@/providers/custom/manager';
 import { adminEventBus } from '@/core/events';
+import { resolvePricing } from '@/core/metrics/pricing';
+
+/**
+ * Annotate stored model rows with the rate that will actually be billed.
+ *
+ * The price book lives in the backend, so the dashboard cannot work out on its
+ * own whether a row left on "auto" ends up priced or unpriced.
+ */
+function withPricingStatus(models: ReturnType<typeof listProviderModels>) {
+  return models.map((model) => {
+    const pricing = resolvePricing({
+      modelId: model.modelId,
+      pool: model.pool,
+      isThinking: model.isThinking,
+      maxOutputTokens: model.maxOutputTokens,
+      inputPricePer1M: model.inputPricePer1M ?? undefined,
+      outputPricePer1M: model.outputPricePer1M ?? undefined,
+    });
+
+    return {
+      ...model,
+      isPriced: pricing.isPriced,
+      effectiveInputPricePer1M: pricing.inputPricePer1M,
+      effectiveOutputPricePer1M: pricing.outputPricePer1M,
+    };
+  });
+}
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -49,7 +76,7 @@ function describeProvider(id: string) {
   return {
     ...record,
     keys: listProviderKeys(id).map(maskKey),
-    models: listProviderModels(id),
+    models: withPricingStatus(listProviderModels(id)),
   };
 }
 
@@ -171,7 +198,7 @@ export async function handleCustomProvidersRoute(
     // ── Models ───────────────────────────────────────────────────────────────
     if (providerId && action === 'models') {
       if (req.method === 'GET') {
-        return json(listProviderModels(providerId));
+        return json(withPricingStatus(listProviderModels(providerId)));
       }
 
       if (req.method === 'POST' && !resourceId) {
@@ -184,7 +211,7 @@ export async function handleCustomProvidersRoute(
         const written = upsertProviderModels(providerId, models);
         refreshCustomProvider(providerId);
         adminEventBus.emit('update', {});
-        return json({ written, models: listProviderModels(providerId) });
+        return json({ written, models: withPricingStatus(listProviderModels(providerId)) });
       }
 
       if (req.method === 'DELETE' && resourceId) {
@@ -205,7 +232,7 @@ export async function handleCustomProvidersRoute(
       const result = await syncProviderModels(record);
       refreshCustomProvider(providerId);
       adminEventBus.emit('update', {});
-      return json({ ...result, models: listProviderModels(providerId) });
+      return json({ ...result, models: withPricingStatus(listProviderModels(providerId)) });
     }
 
     return json({ error: 'Unknown custom provider endpoint' }, 404);

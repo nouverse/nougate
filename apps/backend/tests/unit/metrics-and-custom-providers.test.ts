@@ -9,9 +9,9 @@ const tempDir = mkdtempSync(join(tmpdir(), 'nougate-db-'));
 process.env.NOUGATE_DB_PATH = join(tempDir, 'test.db');
 
 const { initDb, closeDb } = await import('@/core/db');
-const { loadProxyConfig, updateProxyConfig } = await import('@/config/manager');
+const { loadProxyConfig, updateProxyConfig, getProxyConfig } = await import('@/config/manager');
 const { tokenMetricsLogger } = await import('@/core/metrics/logger');
-const { getUsageSummary, getModelStats, exportLogsCsv } = await import('@/core/metrics/queries');
+const { getUsageSummary, getModelStats, getApiKeyStats, exportLogsCsv } = await import('@/core/metrics/queries');
 const { runRollup, runPruning } = await import('@/core/metrics/maintenance');
 const { resolvePricing, costOf } = await import('@/core/metrics/pricing');
 const { instrumentResponse } = await import('@/core/metrics/tracker');
@@ -24,6 +24,11 @@ const { mapOpenAIToAnthropic, finalizeAnthropicToOpenAIResponse } = await import
 
 beforeAll(async () => {
   await loadProxyConfig();
+  // Pin the blanket fallback off so these assertions do not depend on whatever
+  // the developer's config.json happens to contain.
+  await updateProxyConfig({
+    metrics: { ...getProxyConfig().metrics!, defaultInputPricePer1M: 0, defaultOutputPricePer1M: 0 },
+  });
   initDb();
 });
 
@@ -88,7 +93,7 @@ describe('token metrics pipeline', () => {
   test('exports the detail log as CSV', () => {
     const csv = exportLogsCsv({ lookback: '24h' });
     const [header, ...rows] = csv.split('\n');
-    expect(header.startsWith('timestamp,client_id,provider')).toBe(true);
+    expect(header.startsWith('timestamp,client_id,api_key_id,provider')).toBe(true);
     expect(rows.length).toBe(3);
   });
 
@@ -114,6 +119,75 @@ describe('token metrics pipeline', () => {
   });
 });
 
+describe('api key attribution', () => {
+  test('groups usage by the key that authorised it', () => {
+    logSample({ clientId: 'k1-client', apiKeyId: 'key-one', inputTokens: 700, outputTokens: 300 });
+    logSample({ clientId: 'k1-client', apiKeyId: 'key-one', inputTokens: 700, outputTokens: 300 });
+    logSample({ clientId: 'k2-client', apiKeyId: 'key-two', inputTokens: 100, outputTokens: 50 });
+    tokenMetricsLogger.flush();
+
+    const stats = getApiKeyStats({ lookback: '24h' });
+    const byId = Object.fromEntries(stats.map((entry) => [entry.apiKeyId, entry]));
+
+    expect(byId['key-one'].requests).toBe(2);
+    expect(byId['key-one'].totalTokens).toBe(2000);
+    expect(byId['key-two'].requests).toBe(1);
+
+    // A key ID with no matching row in api_keys is still identifiable.
+    expect(byId['key-one'].name).toBe('deleted key');
+  });
+
+  test('buckets keyless traffic under "no key"', () => {
+    // Every earlier sample in this file was logged without an api_key_id.
+    const stats = getApiKeyStats({ lookback: '24h' });
+    const keyless = stats.find((entry) => entry.apiKeyId === 'none');
+
+    expect(keyless).toBeDefined();
+    expect(keyless!.name).toBe('no key');
+    expect(keyless!.requests).toBeGreaterThan(0);
+  });
+
+  test('filters the summary down to one key', () => {
+    const all = getUsageSummary({ lookback: '24h' });
+    const one = getUsageSummary({ lookback: '24h', apiKeyId: 'key-one' });
+    const keyless = getUsageSummary({ lookback: '24h', apiKeyId: 'none' });
+
+    expect(one.requests).toBe(2);
+    expect(keyless.requests).toBeGreaterThan(0);
+    expect(one.requests + keyless.requests).toBeLessThanOrEqual(all.requests);
+  });
+
+  test('composes with the client filter', () => {
+    expect(getUsageSummary({ lookback: '24h', apiKeyId: 'key-one', clientId: 'k1-client' }).requests)
+      .toBe(2);
+    expect(getUsageSummary({ lookback: '24h', apiKeyId: 'key-one', clientId: 'k2-client' }).requests)
+      .toBe(0);
+  });
+
+  test('survives the rollup, so long windows can be filtered too', () => {
+    const yesterday = Date.now() - 26 * 60 * 60 * 1000;
+    logSample({ timestamp: yesterday, apiKeyId: 'key-one', clientId: 'k1-client' });
+    tokenMetricsLogger.flush();
+    runRollup();
+
+    // 30d is served from the rollup table rather than the detail log.
+    const rolled = getUsageSummary({ lookback: '30d', apiKeyId: 'key-one' });
+    expect(rolled.requests).toBeGreaterThan(0);
+
+    const other = getUsageSummary({ lookback: '30d', apiKeyId: 'key-two' });
+    expect(other.requests).toBeLessThan(rolled.requests);
+  });
+
+  test('exports only the selected key', () => {
+    const csv = exportLogsCsv({ lookback: '24h', apiKeyId: 'key-two' });
+    const rows = csv.split('\n').slice(1).filter(Boolean);
+
+    expect(csv.split('\n')[0]).toContain('api_key_id');
+    expect(rows.length).toBe(1);
+    expect(rows[0]).toContain('key-two');
+  });
+});
+
 describe('pricing', () => {
   test('prefers explicit spec pricing', () => {
     const pricing = resolvePricing({
@@ -126,7 +200,7 @@ describe('pricing', () => {
     });
     expect(pricing.inputPricePer1M).toBe(1);
     expect(pricing.outputPricePer1M).toBe(2);
-    expect(pricing.isFallback).toBe(false);
+    expect(pricing.isPriced).toBe(true);
   });
 
   test('falls back to the price book by model family', () => {
@@ -140,15 +214,41 @@ describe('pricing', () => {
     expect(pricing.outputPricePer1M).toBe(15);
   });
 
-  test('falls back to configured defaults for unknown models', () => {
+  test('reports an unknown model as unpriced rather than inventing a rate', () => {
     const pricing = resolvePricing({
       modelId: 'totally-unknown-xyz',
       pool: 'cli',
       isThinking: false,
       maxOutputTokens: 100,
     });
-    expect(pricing.isFallback).toBe(true);
-    expect(pricing.inputPricePer1M).toBeGreaterThan(0);
+    expect(pricing.isPriced).toBe(false);
+    expect(pricing.inputPricePer1M).toBe(0);
+    expect(pricing.outputPricePer1M).toBe(0);
+  });
+
+  test('treats an explicit zero as a real price, not as unknown', () => {
+    const pricing = resolvePricing({
+      modelId: 'some-free-model',
+      pool: 'cli',
+      isThinking: false,
+      maxOutputTokens: 100,
+      inputPricePer1M: 0,
+      outputPricePer1M: 0,
+    });
+    expect(pricing.isPriced).toBe(true);
+  });
+
+  test('prices aggregator-style ids from the price book', () => {
+    // OpenRouter exposes "vendor/model" ids; the book must still match, or a
+    // gateway with hundreds of models would report everything as unpriced.
+    const opus = resolvePricing({
+      modelId: 'anthropic/claude-opus-4.5',
+      pool: 'cli',
+      isThinking: false,
+      maxOutputTokens: 100,
+    });
+    expect(opus.isPriced).toBe(true);
+    expect(opus.inputPricePer1M).toBe(5);
   });
 
   test('converts tokens to cost', () => {
@@ -263,7 +363,9 @@ describe('gateway api keys', () => {
   });
 
   test('enforcement follows the config toggle', async () => {
+    await updateProxyConfig({ apiKeys: { enabled: false } });
     expect(apiKeys.isApiKeyAuthEnabled()).toBe(false);
+
     await updateProxyConfig({ apiKeys: { enabled: true } });
     expect(apiKeys.isApiKeyAuthEnabled()).toBe(true);
     await updateProxyConfig({ apiKeys: { enabled: false } });
