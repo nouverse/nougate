@@ -28,6 +28,11 @@ services:
       # full inventory of what the container reads. `${VAR:-}` leaves a variable
       # as an empty string when .env does not set it, which each of these treats
       # as unset.
+      # ── Dashboard bootstrap account ──
+      # Required on a fresh deployment. No fallback: unset means nobody can sign
+      # in. Read only while the user table is empty.
+      - INITIAL_ADMIN_USERNAME=${INITIAL_ADMIN_USERNAME:-}
+      - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:-}
       # ── Dashboard sessions ──
       - SESSION_SECRET=${SESSION_SECRET:-}
       - SESSION_TTL_HOURS=${SESSION_TTL_HOURS:-}

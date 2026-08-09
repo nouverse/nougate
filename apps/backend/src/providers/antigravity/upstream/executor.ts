@@ -15,6 +15,10 @@ import {
   updateAccountUsage,
 } from "@/providers/antigravity/auth/manager";
 import type { AntigravityAccount } from "@/providers/antigravity/auth/types";
+import {
+  ANTIGRAVITY_ENDPOINTS,
+  type AntigravityEndpoints,
+} from "@/providers/antigravity/upstream/endpoints";
 import { parseGoogleError } from "@/providers/antigravity/upstream/errors";
 import { getGeminiCliHeaders, getImpersonationHeaders } from "@/providers/antigravity/upstream/headers";
 import { parseRetryDelay } from "@/providers/antigravity/utils/retry";
@@ -141,7 +145,7 @@ function createJsonResponse(body: unknown, status: number, attempts: number): Re
  * Pick the correct upstream endpoint for the current pool and attempt.
  */
 function selectGoogleUrl(
-  endpoints: { sandbox: string[]; cli: string[] },
+  endpoints: AntigravityEndpoints,
   useCliPool: boolean,
   attempts: number,
   isClaudeModel: boolean,
@@ -255,10 +259,7 @@ export class AntigravityExecutor {
     const isClaudeModel =
       modelId.toLowerCase().includes("claude") ||
       (options.modelSpec.upstreamModelId || "").toLowerCase().includes("claude");
-    const endpoints = {
-      sandbox: providerConfig.endpoints.sandbox,
-      cli: providerConfig.endpoints.cli,
-    };
+    const endpoints = ANTIGRAVITY_ENDPOINTS;
 
     let attempts = 0;
     let aggressive = false;

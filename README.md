@@ -44,7 +44,6 @@
 - **Per-Provider Overview**: Traffic, spend, top models and account health for any provider, from the same metrics pipeline — plus a **Quota** tab for providers that report upstream limits.
 - **Token & Cost Analytics**: Per-request token usage and estimated spend recorded to SQLite, charted by model, provider and client, with the savings compression earned.
 - **Live System Logs**: Console capture with level filtering, search, auto-scroll.
-- **Debug Payload Logger**: Dump request/response JSON to disk (configurable, model-filterable, fail-safe).
 
 ### Providers
 
@@ -216,7 +215,6 @@ or `SESSION_SECRET_FILE`.
   "headroom": { "enabled": false, "url": "http://localhost:9999", "timeoutMs": 5000 },
   "caveman": { "enabled": false, "level": 3 },
   "rtk": { "enabled": true },
-  "debugLogger": { "enabled": false, "outputDir": "./tmp/debug-payloads", "modelFilter": [] },
   "metrics": {
     "enabled": true,
     "detailRetentionDays": 14,   // per-request rows are pruned after this, rollups keep the trend
@@ -230,26 +228,21 @@ or `SESSION_SECRET_FILE`.
 *`BASE_URL` env var overrides `baseUrl`. Required for OAuth redirect routing.*
 
 > **Global vs provider config.** `data/config.json` holds only settings that
-> apply to the whole gateway. Anything that belongs to one provider — endpoints,
-> quota polling, feature flags, scheduling, model blacklist — lives in that
-> provider's own file and is edited from its **Provider Config** tab, not from
-> Global Config.
+> apply to the whole gateway. Anything that belongs to one provider — quota
+> polling, feature flags, scheduling, model blacklist — lives in that provider's
+> own file and is edited from its **Provider Config** tab, not from Global Config.
 
 ### Per-Provider Config (`data/providers/antigravity/config.json`)
 
 ```jsonc
 {
-  "endpoints": {
-    "sandbox": ["https://us-central1-cloudaicompanion-pa.cloud.google.com"],
-    "cli": ["https://cloudaicompanion-pa.googleapis.com"]
-  },
   "features": {
     "keepThinking": false,
     "sanitizeToolNames": true,
     "googleSearchGrounding": false,
     "jitterEnabled": true,
-    "jitterMinMs": 100,
-    "jitterMaxMs": 500
+    "jitterMinMs": 2000,
+    "jitterMaxMs": 5000
   },
   "scheduling": {
     "mode": "cache_first",
@@ -260,6 +253,15 @@ or `SESSION_SECRET_FILE`.
   "systemInstruction": ""  // empty = use default, or override here
 }
 ```
+
+> **Upstream endpoints are not configurable.** They live in
+> `providers/antigravity/upstream/endpoints.ts`, not in this file or the
+> dashboard. They are not a preference: they are the hosts that speak the wire
+> format the mappers produce, in the order the retry logic expects, so editing
+> them could only ever break a working gateway. An `endpoints` block left in an
+> older `config.json` is ignored on read and dropped on the next save. A
+> different upstream that happens to be OpenAI- or Anthropic-shaped belongs in a
+> **custom provider**, which exists precisely so a URL can be set from the UI.
 
 ### Model Spec Overrides (`data/providers/antigravity/model-specs.json`)
 
@@ -284,6 +286,11 @@ DB_URL=                             # empty = SQLite at data/nougate.db; or post
 NOUGATE_DB_PATH=./data/nougate.db   # SQLite file location (auto-resolved; rarely needed)
 DEFAULT_INPUT_PRICE_1M=0            # blanket price fallback; 0 = off, models stay "unpriced"
 DEFAULT_OUTPUT_PRICE_1M=0
+
+# The first dashboard account, created only while the user table is empty.
+# No fallback: leave either blank and nobody can sign in at all.
+INITIAL_ADMIN_USERNAME=operator
+INITIAL_ADMIN_PASSWORD=<at least 8 characters>
 
 # Pod limits. Both are unset by default, and unset means "not enforced" — neither
 # has a built-in value that would silently change how an existing deployment behaves.
@@ -315,19 +322,34 @@ The LLM proxy routes (`/openai/v1/*`, `/anthropic/v1/*`) are deliberately *not*
 covered here: CLI clients cannot hold a browser session, so they are guarded
 separately by [gateway API keys](#gateway-api-keys).
 
-**First run.** When the database has no users, an account is seeded:
+**First run.** When the database has no users, the first account is created from
+two environment variables:
 
-```
-username: admin
-password: admin123
+```env
+INITIAL_ADMIN_USERNAME=operator
+INITIAL_ADMIN_PASSWORD=<something long>
 ```
 
-That credential is flagged for mandatory replacement. It unlocks exactly one
-screen — "finish setting up your account" — and every other endpoint answers
-`403 password_change_required` until a real password is set. So the well-known
-default never grants access to a publicly reachable gateway, even if you forget
-to change it right away. That screen also lets you claim a real **username**
-instead of `admin`, which is optional and can be done later.
+**There is no fallback.** If either is missing or blank, no account is created
+and *nobody can sign in* — the startup log says so in a box. A gateway that ships
+with a working username and password is a gateway anyone who read its README can
+open, and "you were supposed to change it" has never made that untrue.
+
+The password is taken exactly as given: no length rule, no character rule. The
+policy that guards the dashboard's own forms exists to stop users picking
+something weak; this value is set by whoever runs the deployment, in a file only
+they can write. The **username** is still checked (3–254 characters, no spaces),
+because one with a space cannot be typed back exactly — that would create an
+account nobody could sign in to, which is a different kind of mistake.
+
+The account is not flagged for a forced password change: you chose the password,
+so being made to change it immediately would be theatre. That flag still exists,
+and still applies to accounts an admin creates for other people.
+
+Both variables are read **only while the user table is empty**. Setting them on a
+deployment that already has users does nothing — they bootstrap an account, they
+do not reset one. Lost the password? Sign in as another admin and reset it from
+**User Management**, or delete the user rows and restart.
 
 Two pages, deliberately separate:
 

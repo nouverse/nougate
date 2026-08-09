@@ -1126,9 +1126,19 @@ Kategorisasi stream errors menjadi user-friendly types (timeout, connection, dec
 - `mappers/error_classifier.rs` L12 `pub fn classify_stream_error(error) -> (type, message, i18n_key)`
 - Returns: `"timeout_error"`, `"connection_error"`, `"decode_error"`, `"stream_error"`, `"unknown_error"`
 
-### 4.9 🟢 Debug Payload Logger
+### 4.9 🔴 Debug Payload Logger
 
-> **Status: ✅ selesai.** Plus filter per model.
+> **Status: ❌ dihapus, belum diadopsi.** Sempat ada modul `core/debug-logger.ts`
+> lengkap dengan blok config di `config.json`, tapi ternyata **tidak pernah
+> dipanggil dari mana pun** — nol call site. Jadi fiturnya tidak pernah benar-benar
+> ada; yang ada cuma config yang tidak menggerakkan apa-apa. Modul dan config-nya
+> dihapus daripada dibiarkan terlihat seperti fitur yang jalan.
+>
+> Kalau nanti diadopsi ulang: panggil dari kedua protocol handler
+> (`protocols/openai/handler.ts`, `protocols/anthropic/handler.ts`), taruh
+> output-nya di bawah `data/` lewat `dataPath()`, dan biarkan toggle-nya di kode
+> saja — nulis payload utuh ke disk itu keputusan waktu debugging, bukan switch
+> yang enak ditinggal di form dashboard.
 
 Dump full request/response JSON ke disk untuk debugging. Configurable output directory dan toggle.
 

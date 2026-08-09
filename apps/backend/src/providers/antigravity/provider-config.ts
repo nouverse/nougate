@@ -10,11 +10,6 @@ export interface AntigravityQuotaConfig {
   initialDelayMs: number;
 }
 
-export interface AntigravityEndpointsConfig {
-  sandbox: string[];
-  cli: string[];
-}
-
 /**
  * The jitter fields come from the shared `JitterConfig` so this provider cannot
  * drift from the shape the gateway enforces the `BOTTOM_JITTER` floor against.
@@ -38,9 +33,16 @@ export interface AntigravityModelsConfig {
   blacklist: string[];
 }
 
+/**
+ * Everything about this provider that an operator may change at runtime.
+ *
+ * Upstream endpoints are *not* here: they live in `upstream/endpoints.ts`,
+ * because a wrong URL there can only break a working gateway and the dashboard
+ * has no way to say so. Anything absent from this shape is also absent from the
+ * Provider Config tab — that screen renders exactly what `getConfig()` returns.
+ */
 export interface AntigravityConfig {
   quota: AntigravityQuotaConfig;
-  endpoints: AntigravityEndpointsConfig;
   features: AntigravityFeaturesConfig;
   scheduling: AntigravitySchedulingConfig;
   models: AntigravityModelsConfig;
@@ -71,17 +73,6 @@ const DEFAULT_ANTIGRAVITY_CONFIG: AntigravityConfig = {
   quota: {
     refreshIntervalMs: 300000,
     initialDelayMs: 10000,
-  },
-  endpoints: {
-    sandbox: [
-      'https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse',
-      'https://cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse',
-      'https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:streamGenerateContent?alt=sse',
-    ],
-    cli: [
-      'https://cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse',
-      'https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse',
-    ],
   },
   features: {
     googleSearchGrounding: false,
@@ -158,22 +149,11 @@ function mergeKnownKeys(target: any, source: any): any {
 }
 
 /**
- * Pull provider-owned config fields out of the legacy global config shape.
- */
-function extractLegacyProviderConfig(source: any): Partial<AntigravityConfig> {
-  return {
-    quota: source?.quota,
-    endpoints: source?.endpoints,
-    features: source?.features,
-    scheduling: source?.scheduling,
-    models: {
-      blacklist: source?.models?.blacklist,
-    },
-  };
-}
-
-/**
  * Load provider config from the data directory.
+ *
+ * `mergeKnownKeys` only copies keys the default shape declares, so an
+ * `endpoints` block left in an older `config.json` is ignored on read and
+ * dropped on the next save. Nothing has to migrate the file.
  */
 export async function loadAntigravityConfig(): Promise<AntigravityConfig> {
   try {

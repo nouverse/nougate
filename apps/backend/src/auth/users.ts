@@ -9,9 +9,6 @@ export interface User {
   lastLoginAt: number | null;
 }
 
-export const DEFAULT_USERNAME = 'admin';
-export const DEFAULT_PASSWORD = 'admin123';
-
 const MIN_PASSWORD_LENGTH = 8;
 const MIN_USERNAME_LENGTH = 3;
 const MAX_USERNAME_LENGTH = 254;   // fits the longest legal email address
@@ -71,15 +68,12 @@ function assertValidUsername(username: string): void {
 /**
  * Enforce the password policy.
  *
- * The seeded default is explicitly rejected so "change your password" cannot be
- * satisfied by re-entering the credential everyone already knows.
+ * There is no longer a well-known seeded password to blacklist: the bootstrap
+ * account is created from `INITIAL_ADMIN_PASSWORD` or not at all.
  */
 function assertValidPassword(password: string): void {
   if (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH) {
     throw new AuthError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
-  }
-  if (password === DEFAULT_PASSWORD) {
-    throw new AuthError('Choose a password other than the default one.');
   }
 }
 
@@ -297,29 +291,84 @@ export function loginLockoutSeconds(username: string): number {
 }
 
 /**
- * Create the bootstrap account when the database has no users yet.
+ * Print a boxed startup notice. Callers pass lines, never a password.
+ */
+function announce(title: string, lines: string[]): void {
+  const border = '─'.repeat(74);
+  console.warn(`\n┌${border}┐`);
+  console.warn(`  ${title}`);
+  console.warn(`├${border}┤`);
+  for (const line of lines) {
+    console.warn(`  ${line}`);
+  }
+  console.warn(`└${border}┘\n`);
+}
+
+/**
+ * Create the bootstrap account from the environment, when the database has no
+ * users yet.
  *
- * The seeded credential is flagged for mandatory replacement, so it only ever
- * grants access to the change-password screen.
+ * There is no fallback credential. A gateway that seeds a known username and
+ * password is reachable by anyone who can read its README, and "you were meant
+ * to change it" has never stopped that from being true. If
+ * `INITIAL_ADMIN_USERNAME` and `INITIAL_ADMIN_PASSWORD` are not both set and
+ * valid, no account is created and nobody can sign in — which is a loud,
+ * recoverable failure, unlike a quiet default.
+ *
+ * The password is taken exactly as given — no length rule, no character rule.
+ * The policy in `assertValidPassword` exists to stop *users* picking something
+ * weak through a form; this value is set by whoever runs the deployment, in a
+ * file only they can write, and refusing it would just mean a gateway that
+ * refuses to start. It is also not flagged for mandatory replacement: they chose
+ * it deliberately, so forcing a change would be theatre.
+ *
+ * The username is still checked, because an unusable one is a different problem:
+ * a name with a space cannot be typed back exactly, so the account it creates is
+ * one nobody can sign in to.
+ *
+ * Runs only on an empty user table, so setting these variables on a deployment
+ * that already has users does nothing — they are not a password reset.
  */
 export async function initUsers(): Promise<void> {
   if ((await countUsers()) > 0) {
     return;
   }
 
+  const username = normalizeUsername(process.env.INITIAL_ADMIN_USERNAME ?? '');
+  const password = process.env.INITIAL_ADMIN_PASSWORD ?? '';
+
+  if (!username || !password) {
+    announce('⚠  NO DASHBOARD ACCOUNT — nobody can sign in', [
+      'The user table is empty and INITIAL_ADMIN_USERNAME / INITIAL_ADMIN_PASSWORD',
+      'are not both set, so no account was created. There is no default.',
+      '',
+      'Set both in .env and restart. They are read only while the table is empty.',
+    ]);
+    return;
+  }
+
+  try {
+    assertValidUsername(username);
+  } catch (error) {
+    announce('⚠  NO DASHBOARD ACCOUNT — INITIAL_ADMIN_USERNAME rejected', [
+      (error as Error).message,
+      '',
+      'Fix it in .env and restart.',
+    ]);
+    return;
+  }
+
   await getDb().insert(t.users).values({
     id: crypto.randomUUID(),
-    username: DEFAULT_USERNAME,
-    passwordHash: await hashPassword(DEFAULT_PASSWORD),
-    mustChangePassword: 1,
+    username,
+    passwordHash: await hashPassword(password),
+    mustChangePassword: 0,
     createdAt: Date.now(),
   });
 
-  const border = '─'.repeat(74);
-  console.warn(`\n┌${border}┐`);
-  console.warn('  ⚠  FIRST RUN — default dashboard account created');
-  console.warn(`├${border}┤`);
-  console.warn(`  Sign in with  ${DEFAULT_USERNAME} / ${DEFAULT_PASSWORD}`);
-  console.warn('  You must set a new password before anything else unlocks.');
-  console.warn(`└${border}┘\n`);
+  // The username is printed, the password never is — it came from the operator
+  // and does not need reading back to them out of a log file.
+  announce('✓  FIRST RUN — dashboard account created', [
+    `Sign in as  ${username}  with the password from INITIAL_ADMIN_PASSWORD.`,
+  ]);
 }

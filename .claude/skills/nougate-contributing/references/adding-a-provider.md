@@ -94,8 +94,16 @@ providers/<id>/
 
 Provider-local config belongs in `data/providers/<id>/config.json`, **never** in the
 global `data/config.json`. Global config holds only settings that apply to the whole
-gateway; endpoints, feature flags, polling intervals and blacklists are provider-local
-and are edited from that provider's Provider Config tab.
+gateway; feature flags, polling intervals and blacklists are provider-local and are
+edited from that provider's Provider Config tab.
+
+**Not everything a provider needs is config.** The Provider Config tab renders
+exactly what `getConfig()` returns, as a JSON editor with no validation beyond
+"is it JSON". So a value only belongs in the config shape if a wrong entry is
+*recoverable from that same screen*. Upstream URLs are the counter-example: they
+are code (`providers/antigravity/upstream/endpoints.ts`), because a typo there
+takes the provider down and the editor gives no way to say so. Same test for
+anything else structural — wire-format constants, retry ladders, header sets.
 
 ---
 

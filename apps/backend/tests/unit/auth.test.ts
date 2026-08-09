@@ -6,12 +6,16 @@ import { tmpdir } from "os";
 
 const STATE_DIR = mkdtempSync(join(tmpdir(), "nougate-auth-"));
 const SESSION_SECRET = "test-session-secret-abcdefghijklmnop";
+const ADMIN_USERNAME = "gatekeeper";
+const ADMIN_PASSWORD = "bootstrap-password-1";
 
 // Both the database path and the signing secret are read when their modules are
 // first imported, so they must be set before any dynamic import below.
 process.env.NOUGATE_DB_PATH = join(STATE_DIR, "auth-test.db");
 process.env.SESSION_SECRET_FILE = join(STATE_DIR, ".session-secret");
 process.env.SESSION_SECRET = SESSION_SECRET;
+process.env.INITIAL_ADMIN_USERNAME = ADMIN_USERNAME;
+process.env.INITIAL_ADMIN_PASSWORD = ADMIN_PASSWORD;
 
 const { loadProxyConfig } = await import("@/config/manager");
 const { initDb, closeDb } = await import("@/core/db");
@@ -84,18 +88,24 @@ afterAll(async () => {
 });
 
 describe("First-run seeding", () => {
-  test("creates the default admin flagged for a password change", async () => {
-    const admin = await users.getUserByUsername(users.DEFAULT_USERNAME);
+  test("creates the account named by INITIAL_ADMIN_USERNAME", async () => {
+    const admin = await users.getUserByUsername(ADMIN_USERNAME);
     expect(admin).not.toBeNull();
-    expect(admin!.mustChangePassword).toBe(true);
   });
 
-  test("the default credential authenticates", async () => {
-    const verified = await users.verifyCredentials(
-      users.DEFAULT_USERNAME,
-      users.DEFAULT_PASSWORD,
-    );
-    expect(verified?.username).toBe(users.DEFAULT_USERNAME);
+  test("is not flagged for a password change — the operator chose this one", async () => {
+    const admin = await users.getUserByUsername(ADMIN_USERNAME);
+    expect(admin!.mustChangePassword).toBe(false);
+  });
+
+  test("the configured credential authenticates", async () => {
+    const verified = await users.verifyCredentials(ADMIN_USERNAME, ADMIN_PASSWORD);
+    expect(verified?.username).toBe(ADMIN_USERNAME);
+  });
+
+  test("the old built-in default is gone", async () => {
+    expect(await users.getUserByUsername("admin")).toBeNull();
+    expect(await users.verifyCredentials("admin", "admin123")).toBeNull();
   });
 
   test("does not reseed once a user exists", async () => {
@@ -122,8 +132,6 @@ describe("Credentials", () => {
 
   test("enforces the password policy", async () => {
     await expect(users.createUser("shorty", "abc")).rejects.toThrow(/at least 8/);
-    // The seeded default must not survive a "change your password" step.
-    await expect(users.createUser("lazy", users.DEFAULT_PASSWORD)).rejects.toThrow(/other than the default/);
   });
 
   test("rejects only unusable usernames, and duplicates", async () => {
@@ -201,8 +209,17 @@ describe("Dashboard guard coverage", () => {
 });
 
 describe("Forced password change", () => {
+  // The bootstrap account no longer carries this flag, so the subject is an
+  // account an admin created for someone else — which is the only way the flag
+  // is set now.
+  const INVITEE = "invitee";
+
+  beforeAll(async () => {
+    await users.createUser(INVITEE, "issued-by-the-admin", true);
+  });
+
   test("locks the dashboard down to the change-password endpoints", async () => {
-    const admin = await (await users.getUserByUsername(users.DEFAULT_USERNAME))!;
+    const admin = await (await users.getUserByUsername(INVITEE))!;
     const cookie = sessionCookie(admin);
 
     const denied = await guard("/api/status", cookie);
@@ -218,7 +235,7 @@ describe("Forced password change", () => {
   });
 
   test("does not ask for the current password, which was just used to sign in", async () => {
-    const admin = await (await users.getUserByUsername(users.DEFAULT_USERNAME))!;
+    const admin = await (await users.getUserByUsername(INVITEE))!;
     const cookie = sessionCookie(admin);
 
     // No currentPassword in the body at all.
@@ -228,14 +245,14 @@ describe("Forced password change", () => {
 
     expect(ok?.status).toBe(200);
     expect((await ok!.json()).user.mustChangePassword).toBe(false);
-    expect((await users.getUserByUsername(users.DEFAULT_USERNAME))!.mustChangePassword).toBe(false);
+    expect((await users.getUserByUsername(INVITEE))!.mustChangePassword).toBe(false);
     expect(await guard("/api/status", cookie)).toBeNull();
   });
 
   test("the waiver ends the moment the flag clears", async () => {
     // Same account, same session — but it is now an ordinary one, so a further
     // change has to prove the current password again.
-    const admin = await (await users.getUserByUsername(users.DEFAULT_USERNAME))!;
+    const admin = await (await users.getUserByUsername(INVITEE))!;
     const cookie = sessionCookie(admin);
 
     const withoutPassword = await authRoute("/api/auth/profile", cookie, "POST", {

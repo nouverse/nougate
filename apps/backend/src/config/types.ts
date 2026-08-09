@@ -9,7 +9,6 @@ export interface ProxyConfig {
   headroom?: HeadroomConfig;
   caveman?: CavemanConfig;
   rtk?: RtkConfig;
-  debugLogger?: DebugLoggerConfig;
   metrics?: MetricsConfig;
 }
 
@@ -95,13 +94,4 @@ export interface MetricsConfig {
    */
   defaultInputPricePer1M: number;
   defaultOutputPricePer1M: number;
-}
-
-
-export interface DebugLoggerConfig {
-  enabled: boolean;
-  /** Directory to write debug payloads */
-  outputDir?: string;
-  /** Only log requests matching these model patterns (glob-like). Empty = all */
-  modelFilter?: string[];
 }
