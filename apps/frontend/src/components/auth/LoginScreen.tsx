@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Shield, LogIn } from 'lucide-react';
+import { LogIn } from 'lucide-react';
+import { NougateMark } from '@/components/brand/NougateMark';
 import { AUTH_QUERY_KEY, login } from '@/hooks/useAuth';
 
 /**
@@ -22,9 +23,7 @@ export function AuthShell({
     <div className="min-h-screen flex items-center justify-center bg-base-100 font-sans p-6">
       <div className="w-full max-w-sm">
         <div className="flex items-center justify-center gap-3 mb-8">
-          <div className="bg-primary text-primary-content p-2 rounded-xl">
-            <Shield className="w-6 h-6" />
-          </div>
+          <NougateMark className="w-11 h-11 shrink-0" />
           <div className="text-left">
             <span className="font-extrabold text-base-content text-xl tracking-wider block leading-none">
               NOUGATE

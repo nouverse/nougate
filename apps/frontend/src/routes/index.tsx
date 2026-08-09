@@ -16,10 +16,11 @@ import {
   Cpu,
   KeyRound,
   PlayCircle,
-  Shield,
   Sparkles,
+  Users,
   Workflow,
 } from 'lucide-react';
+import { NougateMark } from '@/components/brand/NougateMark';
 
 export const Route = createFileRoute('/')({
   component: OverviewPage,
@@ -47,9 +48,7 @@ function OverviewHero({
         <div className="flex flex-col xl:flex-row gap-6 xl:items-start">
           <div className="flex-1 space-y-4">
             <div className="flex items-start gap-4">
-              <div className="bg-primary/10 border border-primary/20 p-4 rounded-2xl text-primary shrink-0">
-                <Shield className="w-10 h-10" />
-              </div>
+              <NougateMark className="w-16 h-16 shrink-0" />
 
               <div className="space-y-2">
                 <div>
@@ -388,7 +387,7 @@ function OverviewPage() {
               ? `${topAccountProvider.displayName} leads with ${formatCount(topAccountProvider.accountCount)}`
               : 'No accounts connected yet'
           }
-          icon={<Shield className="w-4 h-4" />}
+          icon={<Users className="w-4 h-4" />}
         />
         <StatTile
           label="Gateway API keys"

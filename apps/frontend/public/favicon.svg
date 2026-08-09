@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="Nougate">
+  <title>Nougate</title>
+  <!--
+    The mark carries its own background on purpose.
+
+    A glyph that inherits the page colour has to be redrawn, re-tinted or
+    duplicated for every surface it lands on — the dark dashboard, the light
+    dashboard, a browser tab, a README rendered on either theme. A self-contained
+    tile has one appearance everywhere, so there is no theme to detect and
+    nothing to keep in sync.
+
+    The glyph is the product: one node, and everything passing straight through
+    it. Earlier attempts drew the routing fan literally and every one of them
+    resolved into a letter at small sizes — "K", "E", "A" — because an
+    asymmetric cluster of strokes is read as type before it is read as a
+    picture. This shape has no such reading.
+
+    Keep it to these two elements. The hexagon is the gateway; the arrow is the
+    traffic. Anything else added inside collapses into a blob at 16px.
+  -->
+  <defs>
+    <linearGradient id="nougate-tile" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3BE9B4"/>
+      <stop offset=".45" stop-color="#0AC48D"/>
+      <stop offset="1" stop-color="#3D34C9"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="48" height="48" rx="11.5" fill="url(#nougate-tile)"/>
+  <!-- Hairline edge: invisible on a light surface, and what keeps the tile's
+       deep indigo corner from dissolving into a dark one. -->
+  <rect x=".75" y=".75" width="46.5" height="46.5" rx="10.75"
+        fill="none" stroke="#fff" stroke-opacity=".2" stroke-width="1.5"/>
+
+  <path d="M24 9.2l12.8 7.4v14.8L24 38.8l-12.8-7.4V16.6z"
+        fill="none" stroke="#fff" stroke-width="3.4" stroke-linejoin="round"/>
+  <g fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M18 24h8.5"/>
+    <path d="M24.8 19.6l4.6 4.4-4.6 4.4"/>
+  </g>
+</svg>

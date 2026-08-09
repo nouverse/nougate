@@ -7,7 +7,8 @@ import { useSSE } from '@/hooks/useSSE';
 import { api } from '@/lib/api';
 import { LogViewer } from '@/components/shared/LogViewer';
 import { useAuth, logout } from '@/hooks/useAuth';
-import { Menu, Settings, Terminal, Shield, List, Sun, Moon, LogOut, BarChart3, KeyRound, Boxes, FlaskConical, UsersRound, UserCog } from 'lucide-react';
+import { Menu, Settings, Terminal, List, Sun, Moon, LogOut, BarChart3, KeyRound, Boxes, FlaskConical, UsersRound, UserCog } from 'lucide-react';
+import { NougateMark } from '@/components/brand/NougateMark';
 
 interface Props {
   children: React.ReactNode;
@@ -113,9 +114,7 @@ export function AppShell({ children }: Props) {
   const navSidebarContent = (
     <div className="flex flex-col h-full bg-base-200 border-r border-base-300">
       <div className="flex items-center gap-3 px-6 py-5 border-b border-base-300">
-        <div className="bg-primary text-primary-content p-1.5 rounded-lg">
-          <Shield className="w-5 h-5" />
-        </div>
+        <NougateMark className="w-9 h-9 shrink-0" />
         <div>
           <span className="font-extrabold text-base-content text-lg tracking-wider">NOUGATE</span>
           <span className="block text-[10px] text-base-content/40 font-mono tracking-widest mt-0.5">NOUVERSE AI GATEWAY</span>
