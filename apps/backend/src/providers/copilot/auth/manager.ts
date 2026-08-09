@@ -185,7 +185,6 @@ export async function getBestAccount(
   });
   if (pool) {
     let candidates = usable.filter(a => {
-      if (model && a.capabilities?.[model] === false) return false;
       // Read with the same scope the executor writes. These used to disagree —
       // written as the model id, read as the family — so a 429 cooldown was
       // never seen and the account was picked again immediately.
@@ -193,7 +192,7 @@ export async function getBestAccount(
     });
 
     if (candidates.length === 0 && !skipRescue) {
-      candidates = usable.filter(a => !(model && a.capabilities?.[model] === false))
+      candidates = usable
         .filter(a => {
           return cooldownExpiry(a.id, pool, model) <= now + 300000; // 5 min rescue window
         })
@@ -319,15 +318,6 @@ export function parseDuration(val: string): number {
   return amount * multipliers[match[2]];
 }
 
-export function flagModelUnsupported(id: string, model: string) {
-  const account = accounts.find(a => a.id === id);
-  if (account) {
-    if (!account.capabilities) account.capabilities = {};
-    account.capabilities[model] = false;
-    saveAccounts(accounts);
-  }
-}
-
 export async function resetAccount(id: string) {
   const account = accounts.find(a => a.id === id);
   if (account) {
@@ -337,10 +327,6 @@ export async function resetAccount(id: string) {
     account.modelScores = {};
     account.status = 'active';
     account.invalidatedAt = undefined;
-    // Selection honours capabilities[model] === false, and nothing else clears
-    // it — the same trap that made Antigravity's flag permanent. Reset is the
-    // way back.
-    account.capabilities = {};
 
     const keysToDelete = [];
     for (const [key] of cooldownMap) {

@@ -2,7 +2,11 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-import { ProviderUnavailableError } from '@/core/upstream-errors';
+import {
+  ModelUnavailableError,
+  ProviderResponseError,
+  ProviderUnavailableError,
+} from '@/core/upstream-errors';
 import { AllKeysCoolingError, shortestCooldownMs } from '@/providers/custom/executor';
 import type { CustomProviderKeyRecord } from '@/providers/custom/store';
 
@@ -106,6 +110,42 @@ describe('streamed responses release the upstream connection', () => {
       'providers/antigravity/mappers/anthropic-out.ts',
     ]) {
       expect(src(path)).toContain('await reader.cancel()');
+    }
+  });
+});
+
+describe('an unknown model fails fast instead of burning the pool', () => {
+  test('Copilot stops rotating on a model the upstream does not know', () => {
+    // Every Copilot seat queries the same catalogue, so rotating dropped the
+    // health score of every healthy account over a caller's typo — then
+    // reported it as "failed after N attempts", hiding the real cause.
+    const text = src('providers/copilot/upstream/executor.ts');
+    expect(text).toContain("classification.kind === 'model_unsupported'");
+    expect(text).toContain('ModelUnavailableError');
+  });
+
+  test('the client is told the model is missing, not that the gateway broke', () => {
+    const error = new ModelUnavailableError('GitHub Copilot does not offer "gpt-9".');
+
+    expect(error).toBeInstanceOf(ProviderResponseError);
+    expect(error.status).toBe(404);
+    expect(error.clientCode).toBe('model_not_found');
+    // No Retry-After: waiting will not make the model exist.
+    expect(error.retryAfterSeconds).toBeUndefined();
+  });
+
+  test('per-account capability flags are gone from Copilot entirely', () => {
+    // The writer was dead code and the readers had nothing to read. Keeping a
+    // per-account shape for a provider with one shared catalogue would only
+    // invite the flag to be set by hand and never cleared.
+    expect(src('providers/copilot/auth/manager.ts')).not.toContain('capabilities');
+  });
+
+  test('handlers translate any provider-supplied status, not just 429', () => {
+    for (const path of ['protocols/openai/handler.ts', 'protocols/anthropic/handler.ts']) {
+      const text = src(path);
+      expect(text).toContain('error instanceof ProviderResponseError');
+      expect(text).toContain('error.status === 429');
     }
   });
 });

@@ -4,7 +4,7 @@ import {
   requireProviderPrefix,
 } from "@/core/model-resolver";
 import type { IProtocolHandler } from "@/core/interfaces";
-import { ProviderUnavailableError } from "@/core/upstream-errors";
+import { ProviderResponseError } from "@/core/upstream-errors";
 import type { RequestContext } from "@/core/request-context";
 import { getAllProviders } from "@/core/registry";
 import { prepareRequestPayload } from "@/core/metrics/compression";
@@ -130,9 +130,9 @@ export class AnthropicProtocolHandler implements IProtocolHandler {
         error,
       );
 
-      // Temporary and self-describing: answer with the wait rather than a flat
-      // 502, which reads to a client as "the gateway is broken".
-      if (error instanceof ProviderUnavailableError) {
+      // Self-describing failures answer in Anthropic's own error shape rather
+      // than a flat 502, which reads to a client as "the gateway is broken".
+      if (error instanceof ProviderResponseError) {
         const headers: Record<string, string> = {
           "Content-Type": "application/json",
           "Access-Control-Allow-Origin": "*",
@@ -144,7 +144,10 @@ export class AnthropicProtocolHandler implements IProtocolHandler {
         return new Response(
           JSON.stringify({
             type: "error",
-            error: { type: "rate_limit_error", message: error.message },
+            error: {
+              type: error.status === 429 ? "rate_limit_error" : "invalid_request_error",
+              message: error.message,
+            },
           }),
           { status: error.status, headers },
         );

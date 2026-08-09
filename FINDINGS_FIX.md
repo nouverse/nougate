@@ -1,14 +1,14 @@
 # Findings & Fixes — Stability Sweep
 
 Hasil audit menyeluruh terhadap provider Antigravity, Copilot, custom provider,
-mapper protokol, lapisan metrics, dan CI. Semua temuan di bawah **sudah diperbaiki
-dan diverifikasi**, kecuali yang ditandai *Tidak diperbaiki*.
+mapper protokol, lapisan metrics, dan CI. Ke-15 temuan **sudah diperbaiki dan diverifikasi**; yang sengaja tidak dikerjakan
+dicantumkan terpisah di bawah.
 
 Setiap temuan diverifikasi langsung ke kode sebelum ditulis — tidak ada dugaan.
 Perbaikan yang bisa dibuktikan disabotase dulu untuk memastikan test-nya benar-benar
 menangkap bug-nya.
 
-**Tanggal:** Agustus 2026 · **Test:** 250 lulus (22 file) · **Typecheck:** bersih backend + frontend
+**Tanggal:** Agustus 2026 · **Test:** 254 lulus (22 file) · **Typecheck:** bersih backend + frontend
 
 ---
 
@@ -30,7 +30,7 @@ menangkap bug-nya.
 | 12 | Merge kuota mempertahankan angka paling optimis | Antigravity | 🟢 Rendah | ✅ |
 | 13 | Timer timeout menyala sebelum jitter | Antigravity | 🟢 Rendah | ✅ |
 | 14 | CI gagal di checkout bersih | CI | 🟠 Tinggi | ✅ |
-| 15 | `flagModelUnsupported` Copilot adalah kode mati | Copilot | 🟢 Rendah | ⚠️ Sebagian |
+| 15 | Model tak dikenal membakar seluruh pool Copilot | Copilot | 🟠 Tinggi | ✅ |
 
 ---
 
@@ -283,20 +283,34 @@ ulang seluruh langkah CI.
 
 ---
 
-### 15. `flagModelUnsupported` Copilot adalah kode mati ⚠️ Sebagian
+### 15. Model tak dikenal membakar seluruh pool Copilot 🟠
 
-**File:** `providers/copilot/auth/manager.ts:322`
+**File:** `providers/copilot/upstream/executor.ts:100` · `auth/manager.ts:322`
 
-Fungsi ini diekspor tapi **tidak pernah dipanggil dari mana pun**. Sementara itu
-`getBestAccount` **membaca** `capabilities[model] === false` (baris 188, 196), dan tidak
-ada yang membersihkannya — perangkap yang sama persis dengan temuan #5.
+Awalnya ini dilaporkan sebagai kode mati: `flagModelUnsupported` diekspor tapi tidak
+pernah dipanggil, sementara `getBestAccount` membaca `capabilities[model] === false` yang
+tidak pernah ada yang menulis.
 
-**Yang diperbaiki:** `resetAccount` Copilot sekarang mengosongkan `capabilities`, jadi
-perangkapnya tertutup.
+Setelah ditelusuri, kode matinya bukan masalahnya — masalahnya adalah **perilaku yang
+hilang**. Cabang `!response.ok` di executor memperlakukan 404 sama seperti error lain:
+rotasi ke akun berikutnya.
 
-**Yang tidak diputuskan:** fungsi matinya dibiarkan. Kemungkinan besar lupa dihubungkan ke
-jalur 404 Copilot — dan menghapus sesuatu yang mungkin disengaja bukan keputusan yang
-pantas diambil tanpa konfirmasi. **Butuh keputusan: hubungkan atau hapus.**
+**Akibat:** setiap seat Copilot menanyakan katalog model yang sama, jadi model yang tidak
+dikenal ditolak oleh semuanya. Gateway merotasi seluruh akun, memanggil
+`updateAccountUsage(false, …)` di tiap akun sehingga **health score semua akun sehat turun
+karena salah ketik nama model**, lalu melempar `Upstream request failed after N attempts` —
+yang tidak menyebut sebabnya sama sekali.
+
+**Perbaikan:**
+- Cabang `!response.ok` mengklasifikasi error. `model_unsupported` → gagal cepat dengan
+  `ModelUnavailableError` (404, `model_not_found`), tanpa rotasi dan tanpa menghukum akun.
+- `flagModelUnsupported` **dihapus**. Bentuk per-akun salah untuk provider yang katalog
+  modelnya sama di semua seat — mempertahankannya hanya mengundang flag yang di-set tangan
+  lalu tidak pernah dibersihkan.
+- Dua pembaca `capabilities` yang jadi yatim ikut dihapus, jadi tidak ada lagi jejak
+  kapabilitas per-akun di Copilot.
+- `ProviderResponseError` di core sekarang membawa status **dan** kode klien; kedua
+  protocol handler menerjemahkan status apa pun dari provider, bukan hanya 429.
 
 ---
 

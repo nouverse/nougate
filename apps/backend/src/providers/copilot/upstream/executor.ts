@@ -1,7 +1,7 @@
 import { type IModelSpec } from '@/core/interfaces';
 import { type CopilotAccount } from '../auth/types';
 import { getBestAccount, updateAccountUsage, markCooldown, cooldownScope } from '../auth/manager';
-import { classifyUpstreamError } from '@/core/upstream-errors';
+import { classifyUpstreamError, ModelUnavailableError } from '@/core/upstream-errors';
 import { getCopilotHeaders } from './headers';
 import { getProxyConfig } from '@/config/manager';
 import { getCopilotConfig } from '../config/provider-config';
@@ -99,7 +99,22 @@ export class CopilotExecutor {
 
         if (!response.ok) {
           const errText = await response.text();
-          console.error(`[Copilot Upstream] Error status ${response.status} from upstream: ${errText}`);
+          const classification = classifyUpstreamError({ status: response.status, body: errText });
+          console.error(
+            `[Copilot Upstream] ${response.status} from upstream (${classification.kind}): ${errText.slice(0, 300)}`,
+          );
+
+          // Every Copilot account queries the same model catalogue, so a model
+          // it does not know is not this account's fault and no other account
+          // will answer differently. Rotating through them all dropped the
+          // health score of every healthy account over a caller's typo, then
+          // reported it as "failed after N attempts" — hiding the real cause.
+          if (classification.kind === 'model_unsupported') {
+            throw new ModelUnavailableError(
+              `GitHub Copilot does not offer "${modelId}". Check the model list on the provider page.`,
+            );
+          }
+
           await updateAccountUsage(account.id, false, modelId, options.modelSpec.pool, options.clientId, response.status);
           continue;
         }

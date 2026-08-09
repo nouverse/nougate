@@ -4,7 +4,7 @@ import {
   requireProviderPrefix,
 } from "@/core/model-resolver";
 import type { IProtocolHandler } from "@/core/interfaces";
-import { ProviderUnavailableError } from "@/core/upstream-errors";
+import { ProviderResponseError } from "@/core/upstream-errors";
 import type { RequestContext } from "@/core/request-context";
 import { getAllProviders } from "@/core/registry";
 import { prepareRequestPayload } from "@/core/metrics/compression";
@@ -162,9 +162,9 @@ export class OpenAIProtocolHandler implements IProtocolHandler {
         error,
       );
 
-      // A provider that knows it is only temporarily out says so, and for how
-      // long. Answering 502 for that told clients the gateway was broken.
-      if (error instanceof ProviderUnavailableError) {
+      // A provider that already knows how the client should be answered says
+      // so. Everything else becomes a 502, which reads as "the gateway broke".
+      if (error instanceof ProviderResponseError) {
         const headers: Record<string, string> = {
           "Content-Type": "application/json",
           "Access-Control-Allow-Origin": "*",
@@ -177,8 +177,8 @@ export class OpenAIProtocolHandler implements IProtocolHandler {
           JSON.stringify({
             error: {
               message: error.message,
-              type: "rate_limit_error",
-              code: "rate_limited",
+              type: error.status === 429 ? "rate_limit_error" : "invalid_request_error",
+              code: error.clientCode,
             },
           }),
           { status: error.status, headers },

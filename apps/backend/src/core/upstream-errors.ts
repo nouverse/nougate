@@ -179,21 +179,51 @@ export function classifyUpstreamError({ status, body, error }: ClassifyInput): U
 
 
 /**
- * A provider is temporarily unable to serve, and it knows for how long.
+ * A provider failure that already knows how the client should be answered.
  *
- * Thrown from a provider's `execute()`; the protocol handlers turn it into the
- * right status for the client's protocol instead of the generic 502 that every
- * other failure becomes. Lives in core so no handler has to import a
- * provider-specific error type.
+ * Thrown from a provider's `execute()`. The protocol handlers translate it into
+ * each protocol's own error shape instead of the generic 502 that every other
+ * failure becomes — a 502 tells a client the gateway is broken, which sends
+ * people debugging the wrong thing.
+ *
+ * Lives in core so no handler has to import a provider-specific error type.
  */
-export class ProviderUnavailableError extends Error {
+export class ProviderResponseError extends Error {
   readonly status: number;
+  /** Machine-readable code for the client, e.g. "model_not_found". */
+  readonly clientCode: string;
   readonly retryAfterSeconds?: number;
 
-  constructor(message: string, status = 429, retryAfterSeconds?: number) {
+  constructor(
+    message: string,
+    options: { status: number; clientCode: string; retryAfterSeconds?: number },
+  ) {
     super(message);
+    this.name = 'ProviderResponseError';
+    this.status = options.status;
+    this.clientCode = options.clientCode;
+    this.retryAfterSeconds = options.retryAfterSeconds;
+  }
+}
+
+/** Temporarily out of capacity, and it knows for how long. */
+export class ProviderUnavailableError extends ProviderResponseError {
+  constructor(message: string, status = 429, retryAfterSeconds?: number) {
+    super(message, { status, clientCode: 'rate_limited', retryAfterSeconds });
     this.name = 'ProviderUnavailableError';
-    this.status = status;
-    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+/**
+ * The upstream does not know this model.
+ *
+ * Distinct from unavailability because no amount of rotating or waiting helps:
+ * every account queries the same catalogue, so trying them all just damages
+ * their health scores and buries the real cause.
+ */
+export class ModelUnavailableError extends ProviderResponseError {
+  constructor(message: string) {
+    super(message, { status: 404, clientCode: 'model_not_found' });
+    this.name = 'ModelUnavailableError';
   }
 }
