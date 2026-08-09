@@ -126,9 +126,26 @@ describe("Credentials", () => {
     await expect(users.createUser("lazy", users.DEFAULT_PASSWORD)).rejects.toThrow(/other than the default/);
   });
 
-  test("rejects malformed usernames and duplicates", async () => {
-    await expect(users.createUser("A B", "a-good-password")).rejects.toThrow(/Username must be/);
+  test("rejects only unusable usernames, and duplicates", async () => {
+    // Whitespace is the one rule: a name with a space cannot be retyped exactly.
+    await expect(users.createUser("A B", "a-good-password")).rejects.toThrow(/cannot contain spaces/);
+    await expect(users.createUser("ab", "a-good-password")).rejects.toThrow(/3–254 characters/);
     await expect(users.createUser("owner", "a-good-password")).rejects.toThrow(/already exists/);
+  });
+
+  test("accepts an email address, or anything else without spaces", async () => {
+    // A username is a label people type, never a URL segment, so it does not
+    // need to be URL-safe. Restricting it to [a-z0-9._-] rejected the shape
+    // most people reach for first.
+    const email = await users.createUser("account@nouverse.tech", "a-good-password");
+    expect(email.username).toBe("account@nouverse.tech");
+    expect(await users.verifyCredentials("account@nouverse.tech", "a-good-password")).not.toBeNull();
+
+    const handle = await users.createUser("gading+work", "a-good-password");
+    expect(handle.username).toBe("gading+work");
+
+    const unicode = await users.createUser("पासवर्ड", "a-good-password");
+    expect(unicode.username).toBe("पासवर्ड");
   });
 
   test("throttles repeated failures for one username", async () => {

@@ -35,6 +35,8 @@ export class CopilotProvider implements IProvider {
   readonly id = 'copilot';
   readonly displayName = 'GitHub Copilot';
 
+  readonly accountFlow = 'device-code' as const;
+
   async init(): Promise<void> {
     await loadCopilotConfig();
     await loadModelSpecOverrides();

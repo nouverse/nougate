@@ -13,7 +13,10 @@ export const DEFAULT_USERNAME = 'admin';
 export const DEFAULT_PASSWORD = 'admin123';
 
 const MIN_PASSWORD_LENGTH = 8;
-const USERNAME_PATTERN = /^[a-z0-9][a-z0-9._-]{2,31}$/;
+const MIN_USERNAME_LENGTH = 3;
+const MAX_USERNAME_LENGTH = 254;   // fits the longest legal email address
+/** Only whitespace is barred — it makes a username impossible to type back exactly. */
+const USERNAME_FORBIDDEN = /\s/;
 
 /** Failed sign-ins are throttled per username to blunt online guessing. */
 const MAX_FAILED_ATTEMPTS = 5;
@@ -46,13 +49,22 @@ export function normalizeUsername(username: string): string {
 }
 
 /**
- * Reject usernames that would be ambiguous or awkward to address in URLs.
+ * Validate a username.
+ *
+ * Deliberately permissive: a username is a label people type, not a URL segment —
+ * it never appears in a path — so an email address, a handle with `+`, or
+ * non-Latin script are all legitimate choices. The only rules are a usable
+ * length and no whitespace, which would make the value impossible to retype
+ * exactly and invisible to compare.
  */
 function assertValidUsername(username: string): void {
-  if (!USERNAME_PATTERN.test(username)) {
+  if (username.length < MIN_USERNAME_LENGTH || username.length > MAX_USERNAME_LENGTH) {
     throw new AuthError(
-      'Username must be 3–32 characters: lowercase letters, digits, dot, dash or underscore, starting with a letter or digit.',
+      `Username must be ${MIN_USERNAME_LENGTH}–${MAX_USERNAME_LENGTH} characters.`,
     );
+  }
+  if (USERNAME_FORBIDDEN.test(username)) {
+    throw new AuthError('Username cannot contain spaces.');
   }
 }
 

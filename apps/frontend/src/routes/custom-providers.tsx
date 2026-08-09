@@ -292,16 +292,21 @@ function CustomProvidersPage() {
 
               </div>
 
-              <label className="label cursor-pointer justify-start gap-3">
+              <label className="flex items-start gap-3 cursor-pointer">
                 <input
                   type="checkbox"
-                  className="toggle toggle-sm toggle-primary"
+                  className="toggle toggle-sm toggle-primary shrink-0 mt-0.5"
                   checked={form.autoLoadModels}
                   onChange={(event) => setForm({ ...form, autoLoadModels: event.target.checked })}
                 />
-                <span className="label-text font-semibold text-xs text-base-content/75">
-                  Auto-load models from the upstream <code className="font-mono">/models</code> endpoint
-                  (needs an API key)
+                <span className="min-w-0">
+                  <span className="label-text font-semibold text-xs text-base-content/75 block">
+                    Auto-load models
+                  </span>
+                  <span className="text-[10px] text-base-content/50 block leading-relaxed">
+                    Import everything the upstream's <code className="font-mono">/models</code>{' '}
+                    endpoint reports. Needs an API key above.
+                  </span>
                 </span>
               </label>
 

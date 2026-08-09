@@ -212,6 +212,9 @@ export interface Account {
   quota?: any[];
 }
 
+/** Which credential flow a provider offers, so the dashboard renders the right form. */
+export type AccountFlow = 'oauth-redirect' | 'device-code' | 'api-key';
+
 /**
  * One upstream usage limit, already normalised by the provider that owns it —
  * the dashboard never knows how it was computed.
@@ -235,7 +238,7 @@ export interface ProviderDetail extends Provider {
   models: ModelSpec[];
   accounts: Account[];
   /** What this provider can do, declared by the backend, not inferred by id. */
-  capabilities: { quota: boolean };
+  capabilities: { quota: boolean; accountFlow: AccountFlow | null };
   /** Empty when the provider supports quotas but has not loaded any yet. */
   quotas: ProviderQuota[];
 }

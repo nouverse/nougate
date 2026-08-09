@@ -131,8 +131,8 @@ function ApiKeysPage() {
       {!data.enabled && (
         <div className="alert alert-warning text-xs font-semibold shadow-sm">
           <span>
-            Key authentication is off — anyone who can reach <code>{baseUrl}/openai/v1</code> can use
-            your providers. Create a key, point your clients at it, then flip the toggle.
+            Key authentication is off — anyone who can reach <code>{baseUrl}</code> can use your
+            providers. Create a key, point your clients at it, then flip the toggle.
           </span>
         </div>
       )}
@@ -162,13 +162,6 @@ function ApiKeysPage() {
                 {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                 {copied ? 'Copied' : 'Copy'}
               </button>
-            </div>
-
-            <div className="bg-base-100 border border-base-300 rounded-lg p-3 space-y-1 font-mono text-[11px] text-base-content/70">
-              <div className="text-base-content/40">OpenAI-compatible clients</div>
-              <div>base_url: {baseUrl}/openai/v1</div>
-              <div>api_key: {freshKey.key.slice(0, 14)}…</div>
-              <div>model: deepseek:deepseek-v4-flash</div>
             </div>
 
             <button

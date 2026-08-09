@@ -98,6 +98,16 @@ export interface IProviderQuota {
 }
 
 /**
+ * How a provider acquires an account, which is the only thing the dashboard needs
+ * to know to render the right "add account" flow.
+ *
+ * Declared rather than inferred: the dashboard used to pick its form by provider
+ * id, so every provider that was not Copilot got Antigravity's Google OAuth
+ * dialog — including custom providers, which only ever wanted an API key.
+ */
+export type AccountFlow = 'oauth-redirect' | 'device-code' | 'api-key';
+
+/**
  * Registry contract for provider-scoped model lookup.
  */
 export interface IModelRegistry {
@@ -111,6 +121,12 @@ export interface IModelRegistry {
 export interface IProvider {
   readonly id: string;
   readonly displayName: string;
+
+  /**
+   * Which credential flow the dashboard should offer. Omitted means the provider
+   * has no way to add an account from the UI, and the list renders read-only.
+   */
+  readonly accountFlow?: AccountFlow;
 
   init(): Promise<void>;
   getBestAccount(options: AccountRequestOptions): Promise<IAccount | null>;

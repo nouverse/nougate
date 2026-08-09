@@ -7,6 +7,7 @@ import { QuotaGrid } from '@/components/providers/shared/QuotaGrid';
 import { ModelRegistryTable } from '@/components/providers/shared/ModelRegistryTable';
 import { AntigravityAccountsTab } from '@/components/providers/antigravity/AntigravityAccountsTab';
 import { CopilotAccountsTab } from '@/components/providers/copilot/CopilotAccountsTab';
+import { ApiKeyAccountsTab } from '@/components/providers/shared/ApiKeyAccountsTab';
 import { ProviderOverviewTab } from '@/components/providers/shared/ProviderOverviewTab';
 import { JsonEditor } from '@/components/shared/JsonEditor';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -75,6 +76,7 @@ function ProviderPage() {
   // the provider id or from whether data happens to be loaded. A provider that
   // implements getQuotas() gets this tab; one that does not, never sees it.
   const hasQuota = detail.capabilities?.quota ?? false;
+  const accountFlow = detail.capabilities?.accountFlow ?? null;
   const activeTab: Tab = tab === 'quota' && !hasQuota ? 'overview' : tab;
 
   const tabs: Array<{ id: Tab; label: string; icon: ReactNode }> = [
@@ -143,11 +145,22 @@ function ProviderPage() {
 
         {activeTab === 'quota' && <QuotaGrid quotas={detail.quotas ?? []} />}
 
+        {/* Which form to show is the provider's declaration, not a guess from its
+            id — the old `id === 'copilot' ? … : Antigravity` fallback handed every
+            custom provider a Google OAuth dialog it had no use for. */}
         {activeTab === 'accounts' && (
-          providerId === 'copilot' ? (
+          accountFlow === 'api-key' ? (
+            <ApiKeyAccountsTab
+              providerId={detail.id}
+              accounts={detail.accounts}
+              refreshQueries={refreshQueries}
+            />
+          ) : accountFlow === 'device-code' ? (
             <CopilotAccountsTab accounts={detail.accounts} refreshQueries={refreshQueries} />
-          ) : (
+          ) : accountFlow === 'oauth-redirect' ? (
             <AntigravityAccountsTab accounts={detail.accounts} refreshQueries={refreshQueries} />
+          ) : (
+            <EmptyState message="This provider does not support adding accounts from the dashboard." />
           )
         )}
 

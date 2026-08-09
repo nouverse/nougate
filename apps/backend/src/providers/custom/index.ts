@@ -31,6 +31,8 @@ import {
   getCustomProvider,
   listProviderKeys,
   listProviderModels,
+  addProviderKey,
+  maskKey,
   removeProviderKey,
   resetProviderKeys,
   persistKeyState,
@@ -96,6 +98,9 @@ export class CustomProvider implements IProvider {
   get displayName(): string {
     return this.record.displayName;
   }
+
+  /** A custom provider's accounts are its upstream API keys. */
+  readonly accountFlow = 'api-key' as const;
 
   /**
    * Keys and model specs are held in memory rather than read per call.
@@ -352,6 +357,22 @@ export class CustomProvider implements IProvider {
       keyCount: this.keys.length,
       modelCount: this.getSupportedModels().length,
     };
+  }
+
+  /**
+   * Add an upstream API key. Reached through the generic
+   * POST /api/providers/:id/accounts/add, so the dashboard needs no
+   * custom-provider-specific endpoint to add one.
+   */
+  async addAccount(body: any): Promise<any> {
+    const apiKey = String(body?.apiKey ?? '').trim();
+    if (!apiKey) {
+      throw new Error('An API key is required.');
+    }
+
+    const key = await addProviderKey(this.id, apiKey, body?.label);
+    await this.refresh();
+    return maskKey(key);
   }
 
   async resetAllAccounts(): Promise<void> {

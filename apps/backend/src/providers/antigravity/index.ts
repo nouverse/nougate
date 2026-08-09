@@ -333,6 +333,8 @@ export class AntigravityProvider implements IProvider {
 
   readonly displayName = 'Antigravity';
 
+  readonly accountFlow = 'oauth-redirect' as const;
+
   /**
    * Initialize provider-owned config, runtime model overrides, and account state.
    */

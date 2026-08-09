@@ -234,7 +234,8 @@ function UsersPage() {
                 <input
                   type="text"
                   required
-                  pattern="[a-z0-9][a-z0-9._\-]{2,31}"
+                  pattern="\S{3,254}"
+                  title="At least 3 characters, no spaces"
                   placeholder="teammate"
                   className="input input-bordered input-sm w-full bg-base-100 font-mono text-xs"
                   value={newUser.username}
@@ -244,7 +245,7 @@ function UsersPage() {
                 />
                 <label className="label py-1">
                   <span className="label-text-alt text-[10px] text-base-content/50">
-                    3–32 chars: lowercase letters, digits, dot, dash or underscore.
+                    Anything without spaces — an email address works too.
                   </span>
                 </label>
               </div>

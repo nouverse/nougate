@@ -484,7 +484,7 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
         config,
         models,
         accounts,
-        capabilities: { quota: supportsQuota },
+        capabilities: { quota: supportsQuota, accountFlow: p.accountFlow ?? null },
         quotas,
       });
     }

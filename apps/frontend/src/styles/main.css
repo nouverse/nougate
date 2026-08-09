@@ -66,3 +66,62 @@
 ::-webkit-scrollbar-thumb:hover {
   background: oklch(45% 0.01 240);
 }
+
+/* ── Mobile typography ──────────────────────────────────────────────────────
+   iOS Safari zooms the viewport whenever a focused form control computes to
+   under 16px, and there is no way back out except pinching. The dashboard uses
+   `input-sm` and `text-xs` throughout for density, which lands well under that
+   threshold — so below the `sm` breakpoint every control is pinned to 16px.
+
+   `!important` is deliberate: the utilities being overridden (`text-xs`,
+   `text-[11px]`, daisyUI's own `--input-font-size`) are themselves single
+   declarations on the element, and this has to win against all of them without
+   editing hundreds of call sites.
+
+   Line height and control height come with it, so a 16px value is not cramped
+   inside a control still sized for 12px text. Body copy gets a matching lift so
+   the form is not visibly larger than the text explaining it. */
+@media (max-width: 639px) {
+  html {
+    font-size: 16px;
+  }
+
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
+  select,
+  textarea {
+    font-size: 16px !important;
+    line-height: 1.4;
+  }
+
+  .input,
+  .select,
+  .textarea {
+    font-size: 16px !important;
+  }
+
+  .input-xs,
+  .input-sm,
+  .select-xs,
+  .select-sm {
+    height: 2.5rem;
+    padding-inline: 0.75rem;
+  }
+
+  .textarea-xs,
+  .textarea-sm {
+    padding: 0.5rem 0.75rem;
+  }
+
+  /* Labels, hints and table text scale with the controls they describe, so the
+     page reads as one size system rather than a 16px form on 10px chrome. */
+  .label-text,
+  .label-text-alt,
+  .btn-xs,
+  .btn-sm {
+    font-size: 0.875rem;
+  }
+
+  .table-sm :where(th, td) {
+    font-size: 0.8125rem;
+  }
+}

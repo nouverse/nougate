@@ -63,7 +63,8 @@ export function AccountSetupScreen({ username }: { username: string }) {
           <input
             type="text"
             required
-            pattern="[a-z0-9][a-z0-9._\-]{2,31}"
+            pattern="\S{3,254}"
+            title="At least 3 characters, no spaces"
             autoComplete="username"
             className="input input-bordered input-sm w-full bg-base-100 font-mono text-xs"
             value={newUsername}

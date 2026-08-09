@@ -67,6 +67,26 @@ describe('quota is a capability, not a provider name', () => {
   });
 });
 
+describe('account flow is declared, not inferred', () => {
+  test('each provider states how the dashboard should add an account', async () => {
+    const { AntigravityProvider } = await import('@/providers/antigravity');
+    const { CopilotProvider } = await import('@/providers/copilot');
+    const { CustomProvider } = await import('@/providers/custom');
+
+    // The dashboard used to pick its add-account form with
+    // `id === 'copilot' ? device : googleOAuth`, so every custom provider was
+    // offered a Google sign-in dialog it could not use.
+    //
+    // Constructed, not read off the prototype: these are class fields, so they
+    // only exist on an instance.
+    expect(new AntigravityProvider().accountFlow).toBe('oauth-redirect');
+    expect(new CopilotProvider().accountFlow).toBe('device-code');
+    expect(new CustomProvider({ id: 'x', baseUrl: 'https://x.dev/v1' } as never).accountFlow).toBe(
+      'api-key',
+    );
+  });
+});
+
 describe('antigravity quota merging', () => {
   test('averages one limit across accounts, so the pool figure is honest', () => {
     const [quota] = mergeAccountQuotas([

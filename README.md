@@ -41,17 +41,25 @@
 
 ### Observability
 - **Real-time Dashboard**: Monitor accounts, quotas, cooldowns, health scores via React + daisyUI web UI.
+- **Per-Provider Overview**: Traffic, spend, top models and account health for any provider, from the same metrics pipeline — plus a **Quota** tab for providers that report upstream limits.
 - **Token & Cost Analytics**: Per-request token usage and estimated spend recorded to SQLite, charted by model, provider and client, with the savings compression earned.
 - **Live System Logs**: Console capture with level filtering, search, auto-scroll.
 - **Debug Payload Logger**: Dump request/response JSON to disk (configurable, model-filterable, fail-safe).
 
 ### Providers
 
-| Provider | Auth | Models |
-|----------|------|--------|
-| **Antigravity** | Google OAuth (multi-account) | Gemini 3/3.1/3.5 Flash, Gemini 3.1 Pro, Claude Sonnet/Opus 4.6 via Gemini |
-| **Copilot** | GitHub Device Flow (multi-account) | Claude Sonnet 4.5, Claude Opus 4.5/4.6, Gemini 2.5 Pro, GPT-4o/4.1/5-mini |
-| **Custom** | Your own API keys (multi-key rotation) | Anything the upstream exposes — auto-discovered from its `/models` endpoint |
+| Provider | Auth | Quota reporting | Models |
+|----------|------|-----------------|--------|
+| **Antigravity** | Google OAuth (multi-account) | Per-model rolling windows, averaged across the pool | Gemini 3/3.1/3.5 Flash, Gemini 3.1 Pro, Claude Sonnet/Opus 4.6 via Gemini |
+| **Copilot** | GitHub Device Flow (multi-account) | Monthly chat / completions / premium-request entitlements per seat | Claude Sonnet 4.5, Claude Opus 4.5/4.6, Gemini 2.5 Pro, GPT-4o/4.1/5-mini |
+| **Custom** | Your own API keys (multi-key rotation) | — | Anything the upstream exposes — auto-discovered from its `/models` endpoint |
+
+Providers are plugins: each owns its auth, accounts, config and model registry, and
+the core never branches on a provider's name. Features like quota reporting are
+**capabilities** — a provider implements one optional method and the matching
+dashboard tab appears, with no changes to the router or the UI. See
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), and `.claude/skills/nougate-contributing/` if you
+are working on the code (or pointing an AI agent at it).
 
 ---
 
@@ -59,24 +67,26 @@
 
 ```
 ├── apps/
-│   ├── backend/          # Bun API backend & routing gateway
-│   │   ├── src/
-│   │   │   ├── core/        # RTK, compressor, signature cache, debug logger
-│   │   │   ├── protocols/   # OpenAI & Anthropic protocol handlers
-│   │   │   ├── providers/   # antigravity/, copilot/ (isolated)
-│   │   │   ├── config/      # Global config types & manager
-│   │   │   └── router/      # Admin API & SSE events
-│   │   └── package.json
-│   └── frontend/         # React SPA dashboard (Vite + TanStack Router)
-│       ├── src/
-│       └── package.json
-├── providers/            # Runtime config & account storage (per-provider)
-│   ├── antigravity/
-│   └── copilot/
-├── config.json           # Global gateway configuration
-├── docker-compose.yml    # Docker services orchestration
-├── Dockerfile            # Multi-stage production build
-└── package.json          # Root workspace (Bun workspaces)
+│   ├── backend/                  # Bun API backend & routing gateway
+│   │   └── src/
+│   │       ├── core/             # contracts, registry, model resolver, paths,
+│   │       │   ├── db/           #   Drizzle: dialect switch, schemas, DDL
+│   │       │   ├── metrics/      #   usage logger, queries, pricing, rollups
+│   │       │   └── mappers/      #   protocol translation shared by all providers
+│   │       ├── protocols/        # openai/, anthropic/ — client-facing wire formats
+│   │       ├── providers/        # antigravity/, copilot/, custom/ (isolated plugins)
+│   │       ├── auth/             # dashboard users, sessions, gateway API keys
+│   │       ├── config/           # global config types & manager
+│   │       ├── router/           # admin, metrics, api-keys, custom-providers, users
+│   │       └── server.ts         # bootstrap & registration order
+│   └── frontend/                 # React 19 SPA (Vite, TanStack Router, daisyUI)
+├── data/                         # ALL runtime state — see "Where State Lives"
+├── .claude/skills/               # contributor guides for AI coding agents
+├── docs/                         # ARCHITECTURE.md, COMPARISON.md, deep dives
+├── config.example.json           # template for data/config.json (never read at runtime)
+├── docker-compose.{dev,prod}.yml
+├── Dockerfile
+└── package.json                  # root workspace (Bun workspaces)
 ```
 
 ---
@@ -184,7 +194,7 @@ or `SESSION_SECRET_FILE`.
 
 ## Configuration
 
-### Global Config (`config.json`)
+### Global Config (`data/config.json`)
 
 ```jsonc
 {
@@ -211,8 +221,8 @@ or `SESSION_SECRET_FILE`.
     "enabled": true,
     "detailRetentionDays": 14,   // per-request rows are pruned after this, rollups keep the trend
     "rollupRetentionDays": 90,
-    "defaultInputPricePer1M": 2.5,   // used only when a model has no price and no price-book match
-    "defaultOutputPricePer1M": 10
+    "defaultInputPricePer1M": 0,     // 0 = off: an unpriceable model is reported "unpriced", not estimated
+    "defaultOutputPricePer1M": 0
   },
   "apiKeys": { "enabled": false }  // true = /openai/v1/* and /anthropic/v1/* require a gateway key
 }
@@ -226,7 +236,7 @@ or `SESSION_SECRET_FILE`.
 > provider's own file and is edited from its **Provider Config** tab, not from
 > Global Config.
 
-### Per-Provider Config (`providers/antigravity/config.json`)
+### Per-Provider Config (`data/providers/antigravity/config.json`)
 
 ```jsonc
 {
@@ -252,7 +262,7 @@ or `SESSION_SECRET_FILE`.
 }
 ```
 
-### Model Spec Overrides (`providers/antigravity/model-specs.json`)
+### Model Spec Overrides (`data/providers/antigravity/model-specs.json`)
 
 Override or add models at runtime without code changes:
 ```jsonc
@@ -271,15 +281,20 @@ Override or add models at runtime without code changes:
 PORT=3000
 BASE_URL=https://nougate.nouverse.tech
 HEADROOM_URL=http://headroom:9999
-NOUGATE_DB_PATH=./data/nougate.db   # metrics, API keys, custom providers (auto-resolved)
-DEFAULT_INPUT_PRICE_1M=2.5          # cost fallback for models with no known price
-DEFAULT_OUTPUT_PRICE_1M=10
+DB_URL=                             # empty = SQLite at data/nougate.db; or postgres://...
+NOUGATE_DB_PATH=./data/nougate.db   # SQLite file location (auto-resolved; rarely needed)
+DEFAULT_INPUT_PRICE_1M=0            # blanket price fallback; 0 = off, models stay "unpriced"
+DEFAULT_OUTPUT_PRICE_1M=0
 
-# Dashboard authentication (all three required to activate it)
-GOOGLE_CLIENT_ID=xxxxxxxx.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=xxxxxxxx
+# Dashboard sessions. Optional — one is generated into data/.session-secret on
+# first run if unset. Set it to keep sessions valid across a wiped data volume.
 SESSION_SECRET=<openssl rand -base64 32>
+SESSION_TTL_HOURS=168
 ```
+
+> Dashboard sign-in is username + password stored in the database. There are no
+> `GOOGLE_CLIENT_*` variables — Google OAuth was removed as a dashboard login and
+> is now only what the *Antigravity provider* uses to add its own accounts.
 
 ### Dashboard Authentication (username + password)
 
@@ -372,6 +387,8 @@ What a custom provider carries:
   OpenAI-style upstream and vice versa.
 - **Multiple API keys** — keys behave like accounts: health-scored, least-recently-used
   rotation, automatic cooldown on `429`/`503`, and failover to the next key mid-request.
+  They appear in the provider's own **Accounts** tab too, with the same reset and
+  cooldown controls the built-in providers get.
 - **Models** — press *Auto-load from upstream* to import everything the upstream's `/models`
   endpoint reports. Re-syncing adds new models and never overwrites prices or overrides you
   edited by hand. Models can also be added one at a time.
@@ -487,6 +504,10 @@ Admin endpoints (behind the dashboard guard):
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
+| `/api/providers` | GET | Every registered provider with account and model counts |
+| `/api/providers/:id` | GET | One provider: config, models, accounts, `capabilities`, `quotas` |
+| `/api/providers/:id/config` | POST | Update that provider's own config |
+| `/api/providers/:id/accounts/add` | POST | Start or complete this provider's account flow |
 | `/api/models` | GET | Full catalogue of callable `provider:model` IDs with resolved pricing |
 | `/api/metrics/token-usage` | GET | Summary, time series, and per-model/provider/client/API-key breakdowns. Query: `lookback`, `clientId`, `provider`, `apiKeyId` |
 | `/api/metrics/recent` | GET | Most recent individual requests |
@@ -602,13 +623,31 @@ curl https://nougate.nouverse.tech/openai/v1/chat/completions \
 2. Click "Add Account" → Device code displayed
 3. Enter code at github.com/login/device → token auto-exchanges
 
-### Tier System
-Accounts are automatically classified based on quota remaining:
+### Custom Provider (API keys)
+1. Dashboard → Custom Providers → **New provider**
+2. Give it an ID (that ID becomes the model prefix), base URL and API style
+3. Add one or more keys — they rotate like accounts, with health scores and cooldowns
+4. **Auto-load from upstream** to import the models it exposes
+
+### Tier System (Antigravity only)
+Antigravity accounts are classified from their remaining quota, and the tier adds a
+bonus to the rotation score:
 - **Ultra**: All quotas > 70% remaining (priority +30)
 - **Pro**: Average quota > 30% (priority +15)
 - **Free**: Everything else (no bonus)
 
-Tiers refresh automatically on quota poll. Manual override available via admin API.
+Tiers refresh on each quota poll; a manual override is available via the admin API.
+Other providers rank purely on health score and least-recently-used.
+
+---
+
+## Documentation
+
+| Document | What it covers |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Planes, request pipeline, contracts, the capability model, persistence, known gaps |
+| [docs/COMPARISON.md](docs/COMPARISON.md) | How Nougate differs from 9Router and OmniRoute, and when to prefer each |
+| `.claude/skills/nougate-contributing/` | Working guide: invariants, adding a provider, the data layer, frontend conventions, and the mistakes already made here |
 
 ---
 

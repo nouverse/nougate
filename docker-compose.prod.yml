@@ -27,13 +27,13 @@ services:
     volumes:
       # Persistent data directory storing config.json and provider account databases
       - ./nougate-data:/app/data:z
-    depends_on:
-      - headroom
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
+  # depends_on:
+  #   - headroom
 
   # Enable this whenever you need headroom compression
   # headroom:
