@@ -417,6 +417,22 @@ describe('custom providers', () => {
     expect(store.maskKey(key).apiKey).not.toContain('upstream');
   });
 
+  test('renaming a provider reaches the live instance, not just the row', async () => {
+    // The registry hands the sidebar and the model catalogue this instance, so
+    // a name copied at construction time would go stale on every edit.
+    const provider = new CustomProvider((await store.getCustomProvider('deepseek'))!);
+    await provider.init();
+    const before = provider.displayName;
+
+    await store.updateCustomProvider('deepseek', { displayName: 'Deep Seek' });
+    await provider.refresh();
+
+    expect(before).not.toBe('Deep Seek');
+    expect(provider.displayName).toBe('Deep Seek');
+
+    await store.updateCustomProvider('deepseek', { displayName: before });
+  });
+
   test('an unlabelled key is named "primary" only while it is the first one', async () => {
     // The form's placeholder says "primary", so the first key has to actually
     // get that name. A second unlabelled key must not collide with it.

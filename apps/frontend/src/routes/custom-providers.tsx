@@ -397,7 +397,6 @@ function CustomProvidersPage() {
                     {detail.keys.length}
                   </span>
                 }
-                defaultOpen
               >
                 {() => (
                   <>
@@ -830,8 +829,10 @@ function ModelEditor({
         </label>
       )}
 
-      <div className="overflow-x-auto min-w-0">
-        <table className="table table-sm">
+      {/* The list scrolls inside its own box: with a few hundred models the
+          toolbar above would otherwise scroll away with them. */}
+      <div className="overflow-auto min-w-0 max-h-[28rem] border border-base-300 rounded-xl">
+        <table className="table table-sm table-pin-rows">
           <thead>
             <tr className="text-base-content/50 text-[10px] uppercase tracking-wider">
               <th className="min-w-[16rem]">Model ID (send this as `model`)</th>

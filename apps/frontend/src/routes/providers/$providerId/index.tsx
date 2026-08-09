@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useProviderDetail } from '@/hooks/useQueries';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -6,13 +7,16 @@ import { QuotaGrid } from '@/components/providers/antigravity/QuotaGrid';
 import { ModelRegistryTable } from '@/components/providers/shared/ModelRegistryTable';
 import { AntigravityAccountsTab } from '@/components/providers/antigravity/AntigravityAccountsTab';
 import { CopilotAccountsTab } from '@/components/providers/copilot/CopilotAccountsTab';
+import { ProviderOverviewTab } from '@/components/providers/shared/ProviderOverviewTab';
 import { JsonEditor } from '@/components/shared/JsonEditor';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { CopyButton } from '@/components/shared/CopyButton';
-import { Users, Cpu, Settings2, BarChart2 } from 'lucide-react';
+import { Users, Cpu, Gauge, Settings2, BarChart2 } from 'lucide-react';
+
+type Tab = 'overview' | 'quota' | 'accounts' | 'models' | 'config';
 
 interface SearchParams {
-  tab?: 'overview' | 'accounts' | 'models' | 'config';
+  tab?: Tab;
 }
 
 export const Route = createFileRoute('/providers/$providerId/')({
@@ -61,7 +65,7 @@ function ProviderPage() {
     );
   }
 
-  const handleTabChange = (t: SearchParams['tab']) => {
+  const handleTabChange = (t: Tab) => {
     navigate({
       search: { tab: t } as any,
     });
@@ -100,6 +104,22 @@ function ProviderPage() {
     };
   });
 
+  // Quotas are a provider capability, not a universal one — only Antigravity
+  // reports them today. The tab appears when there is something in it, so the
+  // other providers do not open onto an empty panel.
+  const hasQuota = mergedQuotas.length > 0;
+  const activeTab: Tab = tab === 'quota' && !hasQuota ? 'overview' : tab;
+
+  const tabs: Array<{ id: Tab; label: string; icon: ReactNode }> = [
+    { id: 'overview', label: 'Overview', icon: <BarChart2 className="w-4 h-4 mr-1.5 text-primary" /> },
+    ...(hasQuota
+      ? [{ id: 'quota' as Tab, label: 'Quota', icon: <Gauge className="w-4 h-4 mr-1.5 text-warning" /> }]
+      : []),
+    { id: 'accounts', label: 'Accounts', icon: <Users className="w-4 h-4 mr-1.5 text-secondary" /> },
+    { id: 'models', label: 'Model Specs', icon: <Cpu className="w-4 h-4 mr-1.5 text-accent" /> },
+    { id: 'config', label: 'Provider Config', icon: <Settings2 className="w-4 h-4 mr-1.5" /> },
+  ];
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 bg-base-200 p-5 rounded-2xl border border-base-300 text-base-content">
@@ -129,53 +149,34 @@ function ProviderPage() {
         </div>
       </div>
 
-      <div className="tabs tabs-lifted border-b border-base-300 text-base-content">
-        <button
-          type="button"
-          className={`tab font-semibold ${tab === 'overview' ? 'tab-active text-primary' : 'text-base-content/60'}`}
-          onClick={() => handleTabChange('overview')}
-        >
-          <BarChart2 className="w-4 h-4 mr-1.5 text-primary" />
-          Overview
-        </button>
-        <button
-          type="button"
-          className={`tab font-semibold ${tab === 'accounts' ? 'tab-active text-primary' : 'text-base-content/60'}`}
-          onClick={() => handleTabChange('accounts')}
-        >
-          <Users className="w-4 h-4 mr-1.5 text-secondary" />
-          Accounts
-        </button>
-        <button
-          type="button"
-          className={`tab font-semibold ${tab === 'models' ? 'tab-active text-primary' : 'text-base-content/60'}`}
-          onClick={() => handleTabChange('models')}
-        >
-          <Cpu className="w-4 h-4 mr-1.5 text-accent" />
-          Model Specs
-        </button>
-        <button
-          type="button"
-          className={`tab font-semibold ${tab === 'config' ? 'tab-active text-primary' : 'text-base-content/60'}`}
-          onClick={() => handleTabChange('config')}
-        >
-          <Settings2 className="w-4 h-4 mr-1.5" />
-          Provider Config
-        </button>
+      <div className="tabs tabs-lifted border-b border-base-300 text-base-content overflow-x-auto">
+        {tabs.map((entry) => (
+          <button
+            key={entry.id}
+            type="button"
+            className={`tab font-semibold whitespace-nowrap ${
+              activeTab === entry.id ? 'tab-active text-primary' : 'text-base-content/60'
+            }`}
+            onClick={() => handleTabChange(entry.id)}
+          >
+            {entry.icon}
+            {entry.label}
+          </button>
+        ))}
       </div>
 
       <div className="mt-4">
-        {tab === 'overview' && (
-          <div className="space-y-6">
-            {mergedQuotas.length > 0 ? (
-              <QuotaGrid quotas={mergedQuotas} />
-            ) : (
-              <EmptyState message="No system quotas detected. Quotas will populate once accounts are successfully verified." />
-            )}
-          </div>
+        {activeTab === 'overview' && (
+          <ProviderOverviewTab
+            providerId={detail.id}
+            accounts={detail.accounts}
+            models={detail.models}
+          />
         )}
 
-        {tab === 'accounts' && (
+        {activeTab === 'quota' && <QuotaGrid quotas={mergedQuotas} />}
+
+        {activeTab === 'accounts' && (
           providerId === 'copilot' ? (
             <CopilotAccountsTab accounts={detail.accounts} refreshQueries={refreshQueries} />
           ) : (
@@ -183,7 +184,7 @@ function ProviderPage() {
           )
         )}
 
-        {tab === 'models' && (
+        {activeTab === 'models' && (
           <div className="space-y-4">
             <h3 className="text-xs font-bold tracking-wider text-base-content/40 uppercase px-1 text-base-content">
               MODEL SPECIFICATIONS
@@ -196,7 +197,7 @@ function ProviderPage() {
           </div>
         )}
 
-        {tab === 'config' && (
+        {activeTab === 'config' && (
           <div className="space-y-4 text-base-content">
             <h3 className="text-xs font-bold tracking-wider text-base-content/40 uppercase px-1">
               PROVIDER SETTINGS

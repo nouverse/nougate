@@ -86,7 +86,16 @@ function passthroughAnthropicBody(body: any, upstreamModelId: string): any {
  */
 export class CustomProvider implements IProvider {
   readonly id: string;
-  readonly displayName: string;
+
+  /**
+   * Read through to the current record rather than being copied in the
+   * constructor: the instance outlives any number of dashboard edits, and a
+   * snapshot taken at registration time would leave the sidebar and the model
+   * catalogue showing the old name until a restart.
+   */
+  get displayName(): string {
+    return this.record.displayName;
+  }
 
   /**
    * Keys and model specs are held in memory rather than read per call.
@@ -102,7 +111,6 @@ export class CustomProvider implements IProvider {
 
   constructor(private record: CustomProviderRecord) {
     this.id = record.id;
-    this.displayName = record.displayName;
   }
 
   async init(): Promise<void> {
