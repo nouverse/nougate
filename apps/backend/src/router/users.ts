@@ -28,7 +28,7 @@ export async function handleUsersRoute(req: Request, url: URL): Promise<Response
     return null;
   }
 
-  const current = getActiveUser(req);
+  const current = await getActiveUser(req);
   if (!current) {
     return json({ error: 'Sign in first.' }, 401);
   }
@@ -36,7 +36,7 @@ export async function handleUsersRoute(req: Request, url: URL): Promise<Response
   try {
     if (url.pathname === '/api/users' && req.method === 'GET') {
       return json(
-        listUsers().map((user) => ({ ...user, isCurrent: user.id === current.id })),
+        (await listUsers()).map((user) => ({ ...user, isCurrent: user.id === current.id })),
       );
     }
 
@@ -71,7 +71,7 @@ export async function handleUsersRoute(req: Request, url: URL): Promise<Response
         return json({ error: 'You cannot delete the account you are signed in with.' }, 409);
       }
 
-      deleteUser(targetId);
+      await deleteUser(targetId);
       console.log(`[Users] ${current.username} deleted user ${targetId}`);
       return json({ ok: true });
     }

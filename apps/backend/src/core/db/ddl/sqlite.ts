@@ -1,0 +1,129 @@
+/**
+ * SQLite DDL, mirroring `../schema/sqlite.ts`. Every statement is
+ * `IF NOT EXISTS`, so running them on every boot is idempotent.
+ */
+export const ddl = [
+  // ─── Token usage & cost ─────────────────────────────────────────────────────
+  `CREATE TABLE IF NOT EXISTS token_usage_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp INTEGER NOT NULL,
+    session_id TEXT,
+    client_id TEXT NOT NULL DEFAULT 'unknown',
+    api_key_id TEXT,
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    full_model_name TEXT NOT NULL,
+    protocol TEXT NOT NULL DEFAULT 'openai',
+    streamed INTEGER NOT NULL DEFAULT 0,
+    status_code INTEGER NOT NULL DEFAULT 200,
+    duration_ms INTEGER NOT NULL DEFAULT 0,
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cached_input_tokens INTEGER NOT NULL DEFAULT 0,
+    tokens_before_compression INTEGER,
+    tokens_after_compression INTEGER,
+    tokens_saved INTEGER NOT NULL DEFAULT 0,
+    estimated INTEGER NOT NULL DEFAULT 0,
+    input_cost REAL NOT NULL DEFAULT 0,
+    output_cost REAL NOT NULL DEFAULT 0,
+    cost_saved REAL NOT NULL DEFAULT 0
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_token_logs_timestamp ON token_usage_logs (timestamp)`,
+  `CREATE INDEX IF NOT EXISTS idx_token_logs_model ON token_usage_logs (full_model_name)`,
+  `CREATE INDEX IF NOT EXISTS idx_token_logs_client ON token_usage_logs (client_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_token_logs_provider ON token_usage_logs (provider)`,
+
+  // api_key_id is part of the key so long-window charts can be filtered by
+  // gateway key, not just by client. '' means "recorded while key auth was off".
+  `CREATE TABLE IF NOT EXISTS token_usage_daily_rollups (
+    date TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    full_model_name TEXT NOT NULL,
+    client_id TEXT NOT NULL,
+    api_key_id TEXT NOT NULL DEFAULT '',
+    total_requests INTEGER NOT NULL DEFAULT 0,
+    total_input_tokens INTEGER NOT NULL DEFAULT 0,
+    total_output_tokens INTEGER NOT NULL DEFAULT 0,
+    total_tokens_saved INTEGER NOT NULL DEFAULT 0,
+    total_input_cost REAL NOT NULL DEFAULT 0,
+    total_output_cost REAL NOT NULL DEFAULT 0,
+    total_cost_saved REAL NOT NULL DEFAULT 0,
+    PRIMARY KEY (date, full_model_name, client_id, api_key_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_rollups_date ON token_usage_daily_rollups (date)`,
+  `CREATE INDEX IF NOT EXISTS idx_rollups_api_key ON token_usage_daily_rollups (api_key_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_token_logs_api_key ON token_usage_logs (api_key_id)`,
+
+  // ─── Dashboard users ────────────────────────────────────────────────────────
+  // COLLATE NOCASE on the unique username so "Admin" cannot be registered
+  // alongside "admin".
+  `CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    password_hash TEXT NOT NULL,
+    must_change_password INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    last_login_at INTEGER
+  )`,
+
+  // ─── Gateway API keys ───────────────────────────────────────────────────────
+  `CREATE TABLE IF NOT EXISTS api_keys (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    key_hash TEXT NOT NULL UNIQUE,
+    key_prefix TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_used_at INTEGER,
+    expires_at INTEGER,
+    revoked INTEGER NOT NULL DEFAULT 0,
+    request_count INTEGER NOT NULL DEFAULT 0,
+    allowed_providers TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys (key_hash)`,
+
+  // ─── Custom providers ───────────────────────────────────────────────────────
+  `CREATE TABLE IF NOT EXISTS custom_providers (
+    id TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL,
+    base_url TEXT NOT NULL,
+    api_style TEXT NOT NULL DEFAULT 'openai',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    extra_headers TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
+
+  `CREATE TABLE IF NOT EXISTS custom_provider_keys (
+    id TEXT PRIMARY KEY,
+    provider_id TEXT NOT NULL,
+    label TEXT NOT NULL,
+    api_key TEXT NOT NULL,
+    health_score INTEGER NOT NULL DEFAULT 100,
+    last_used INTEGER NOT NULL DEFAULT 0,
+    cooldown_until INTEGER NOT NULL DEFAULT 0,
+    consecutive_failures INTEGER NOT NULL DEFAULT 0,
+    token_usage INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (provider_id) REFERENCES custom_providers (id) ON DELETE CASCADE
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_custom_keys_provider ON custom_provider_keys (provider_id)`,
+
+  `CREATE TABLE IF NOT EXISTS custom_provider_models (
+    provider_id TEXT NOT NULL,
+    model_id TEXT NOT NULL,
+    display_name TEXT,
+    upstream_model_id TEXT,
+    pool TEXT NOT NULL DEFAULT 'cli',
+    is_thinking INTEGER NOT NULL DEFAULT 0,
+    thinking_mode TEXT,
+    thinking_budget INTEGER,
+    max_output_tokens INTEGER NOT NULL DEFAULT 8192,
+    timeout_ms INTEGER NOT NULL DEFAULT 60000,
+    input_price_per_1m REAL,
+    output_price_per_1m REAL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (provider_id, model_id),
+    FOREIGN KEY (provider_id) REFERENCES custom_providers (id) ON DELETE CASCADE
+  )`,
+];

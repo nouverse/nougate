@@ -1,4 +1,5 @@
-import { dbAll, dbGet, dbPrepare, dbRun, dbTransaction } from '@/core/db';
+import { and, asc, eq, sql } from 'drizzle-orm';
+import { getDb, t } from '@/core/db';
 import { getProvider } from '@/core/registry';
 
 export type CustomApiStyle = 'openai' | 'anthropic';
@@ -62,13 +63,13 @@ export class CustomProviderError extends Error {
 function rowToProvider(row: any): CustomProviderRecord {
   return {
     id: row.id,
-    displayName: row.display_name,
-    baseUrl: row.base_url,
-    apiStyle: row.api_style === 'anthropic' ? 'anthropic' : 'openai',
+    displayName: row.displayName,
+    baseUrl: row.baseUrl,
+    apiStyle: row.apiStyle === 'anthropic' ? 'anthropic' : 'openai',
     enabled: row.enabled === 1,
-    extraHeaders: row.extra_headers ? safeParseHeaders(row.extra_headers) : {},
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    extraHeaders: row.extraHeaders ? safeParseHeaders(row.extraHeaders) : {},
+    createdAt: Number(row.createdAt),
+    updatedAt: Number(row.updatedAt),
   };
 }
 
@@ -84,32 +85,32 @@ function safeParseHeaders(value: string): Record<string, string> {
 function rowToKey(row: any): CustomProviderKeyRecord {
   return {
     id: row.id,
-    providerId: row.provider_id,
+    providerId: row.providerId,
     label: row.label,
-    apiKey: row.api_key,
-    healthScore: row.health_score,
-    lastUsed: row.last_used,
-    cooldownUntil: row.cooldown_until,
-    consecutiveFailures: row.consecutive_failures,
-    tokenUsage: row.token_usage,
-    createdAt: row.created_at,
+    apiKey: row.apiKey,
+    healthScore: row.healthScore,
+    lastUsed: Number(row.lastUsed),
+    cooldownUntil: Number(row.cooldownUntil),
+    consecutiveFailures: row.consecutiveFailures,
+    tokenUsage: Number(row.tokenUsage),
+    createdAt: Number(row.createdAt),
   };
 }
 
 function rowToModel(row: any): CustomProviderModelRecord {
   return {
-    providerId: row.provider_id,
-    modelId: row.model_id,
-    displayName: row.display_name ?? null,
-    upstreamModelId: row.upstream_model_id ?? null,
+    providerId: row.providerId,
+    modelId: row.modelId,
+    displayName: row.displayName ?? null,
+    upstreamModelId: row.upstreamModelId ?? null,
     pool: row.pool === 'sandbox' ? 'sandbox' : 'cli',
-    isThinking: row.is_thinking === 1,
-    thinkingMode: row.thinking_mode ?? null,
-    thinkingBudget: row.thinking_budget ?? null,
-    maxOutputTokens: row.max_output_tokens,
-    timeoutMs: row.timeout_ms,
-    inputPricePer1M: row.input_price_per_1m ?? null,
-    outputPricePer1M: row.output_price_per_1m ?? null,
+    isThinking: row.isThinking === 1,
+    thinkingMode: row.thinkingMode ?? null,
+    thinkingBudget: row.thinkingBudget ?? null,
+    maxOutputTokens: row.maxOutputTokens,
+    timeoutMs: row.timeoutMs,
+    inputPricePer1M: row.inputPricePer1M ?? null,
+    outputPricePer1M: row.outputPricePer1M ?? null,
     enabled: row.enabled === 1,
   };
 }
@@ -127,13 +128,17 @@ function normalizeBaseUrl(baseUrl: string): string {
 
 // ─── Providers ────────────────────────────────────────────────────────────────
 
-export function listCustomProviders(): CustomProviderRecord[] {
-  const rows = dbAll('SELECT * FROM custom_providers ORDER BY created_at ASC');
+export async function listCustomProviders(): Promise<CustomProviderRecord[]> {
+  const rows = await getDb().select().from(t.customProviders).orderBy(asc(t.customProviders.createdAt));
   return rows.map(rowToProvider);
 }
 
-export function getCustomProvider(id: string): CustomProviderRecord | null {
-  const row = dbGet('SELECT * FROM custom_providers WHERE id = $id', { $id: id });
+export async function getCustomProvider(id: string): Promise<CustomProviderRecord | null> {
+  const [row] = await getDb()
+    .select()
+    .from(t.customProviders)
+    .where(eq(t.customProviders.id, id))
+    .limit(1);
   return row ? rowToProvider(row) : null;
 }
 
@@ -146,7 +151,7 @@ export interface CreateCustomProviderInput {
   enabled?: boolean;
 }
 
-export function createCustomProvider(input: CreateCustomProviderInput): CustomProviderRecord {
+export async function createCustomProvider(input: CreateCustomProviderInput): Promise<CustomProviderRecord> {
   const id = (input.id ?? '').trim().toLowerCase();
 
   if (!PROVIDER_ID_PATTERN.test(id)) {
@@ -157,7 +162,7 @@ export function createCustomProvider(input: CreateCustomProviderInput): CustomPr
 
   // Built-in providers are registered before custom ones, so a collision would
   // silently shadow one of them at model-resolution time.
-  if (getProvider(id) || getCustomProvider(id)) {
+  if (getProvider(id) || (await getCustomProvider(id))) {
     throw new CustomProviderError(`Provider id "${id}" is already in use.`, 409);
   }
 
@@ -173,34 +178,27 @@ export function createCustomProvider(input: CreateCustomProviderInput): CustomPr
     updatedAt: now,
   };
 
-  dbRun(
-    `INSERT INTO custom_providers (
-       id, display_name, base_url, api_style, enabled, extra_headers,
-       created_at, updated_at
-     ) VALUES ($id, $displayName, $baseUrl, $apiStyle, $enabled, $extraHeaders,
-       $createdAt, $updatedAt)`,
-    {
-      $id: record.id,
-      $displayName: record.displayName,
-      $baseUrl: record.baseUrl,
-      $apiStyle: record.apiStyle,
-      $enabled: record.enabled ? 1 : 0,
-      $extraHeaders: JSON.stringify(record.extraHeaders),
-      $createdAt: record.createdAt,
-      $updatedAt: record.updatedAt,
-    },
-  );
+  await getDb().insert(t.customProviders).values({
+    id: record.id,
+    displayName: record.displayName,
+    baseUrl: record.baseUrl,
+    apiStyle: record.apiStyle,
+    enabled: record.enabled ? 1 : 0,
+    extraHeaders: JSON.stringify(record.extraHeaders),
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  });
 
   return record;
 }
 
 export type UpdateCustomProviderInput = Partial<Omit<CreateCustomProviderInput, 'id'>>;
 
-export function updateCustomProvider(
+export async function updateCustomProvider(
   id: string,
   updates: UpdateCustomProviderInput,
-): CustomProviderRecord {
-  const existing = getCustomProvider(id);
+): Promise<CustomProviderRecord> {
+  const existing = await getCustomProvider(id);
   if (!existing) {
     throw new CustomProviderError(`Custom provider "${id}" not found.`, 404);
   }
@@ -215,47 +213,51 @@ export function updateCustomProvider(
     updatedAt: Date.now(),
   };
 
-  dbRun(
-    `UPDATE custom_providers SET
-       display_name = $displayName, base_url = $baseUrl, api_style = $apiStyle,
-       enabled = $enabled, extra_headers = $extraHeaders,
-       updated_at = $updatedAt
-     WHERE id = $id`,
-    {
-      $id: merged.id,
-      $displayName: merged.displayName,
-      $baseUrl: merged.baseUrl,
-      $apiStyle: merged.apiStyle,
-      $enabled: merged.enabled ? 1 : 0,
-      $extraHeaders: JSON.stringify(merged.extraHeaders),
-      $updatedAt: merged.updatedAt,
-    },
-  );
+  await getDb()
+    .update(t.customProviders)
+    .set({
+      displayName: merged.displayName,
+      baseUrl: merged.baseUrl,
+      apiStyle: merged.apiStyle,
+      enabled: merged.enabled ? 1 : 0,
+      extraHeaders: JSON.stringify(merged.extraHeaders),
+      updatedAt: merged.updatedAt,
+    })
+    .where(eq(t.customProviders.id, merged.id));
 
   return merged;
 }
 
-export function deleteCustomProvider(id: string): boolean {
-  const result = dbRun('DELETE FROM custom_providers WHERE id = $id', { $id: id });
-  return result.changes > 0;
+export async function deleteCustomProvider(id: string): Promise<boolean> {
+  if (!(await getCustomProvider(id))) {
+    return false;
+  }
+
+  // Models and keys are removed explicitly rather than relying on cascade,
+  // which SQLite only honours when foreign keys are switched on.
+  await getDb().delete(t.customProviderModels).where(eq(t.customProviderModels.providerId, id));
+  await getDb().delete(t.customProviderKeys).where(eq(t.customProviderKeys.providerId, id));
+  await getDb().delete(t.customProviders).where(eq(t.customProviders.id, id));
+  return true;
 }
 
 // ─── Keys (rotated like accounts) ─────────────────────────────────────────────
 
-export function listProviderKeys(providerId: string): CustomProviderKeyRecord[] {
-  const rows = dbAll(
-    'SELECT * FROM custom_provider_keys WHERE provider_id = $providerId ORDER BY created_at ASC',
-    { $providerId: providerId },
-  );
+export async function listProviderKeys(providerId: string): Promise<CustomProviderKeyRecord[]> {
+  const rows = await getDb()
+    .select()
+    .from(t.customProviderKeys)
+    .where(eq(t.customProviderKeys.providerId, providerId))
+    .orderBy(asc(t.customProviderKeys.createdAt));
   return rows.map(rowToKey);
 }
 
-export function addProviderKey(
+export async function addProviderKey(
   providerId: string,
   apiKey: string,
   label?: string,
-): CustomProviderKeyRecord {
-  if (!getCustomProvider(providerId)) {
+): Promise<CustomProviderKeyRecord> {
+  if (!(await getCustomProvider(providerId))) {
     throw new CustomProviderError(`Custom provider "${providerId}" not found.`, 404);
   }
 
@@ -277,64 +279,65 @@ export function addProviderKey(
     createdAt: Date.now(),
   };
 
-  dbRun(
-    `INSERT INTO custom_provider_keys (
-       id, provider_id, label, api_key, health_score, last_used,
-       cooldown_until, consecutive_failures, token_usage, created_at
-     ) VALUES ($id, $providerId, $label, $apiKey, 100, 0, 0, 0, 0, $createdAt)`,
-    {
-      $id: record.id,
-      $providerId: record.providerId,
-      $label: record.label,
-      $apiKey: record.apiKey,
-      $createdAt: record.createdAt,
-    },
-  );
+  await getDb().insert(t.customProviderKeys).values({
+    id: record.id,
+    providerId: record.providerId,
+    label: record.label,
+    apiKey: record.apiKey,
+    healthScore: 100,
+    lastUsed: 0,
+    cooldownUntil: 0,
+    consecutiveFailures: 0,
+    tokenUsage: 0,
+    createdAt: record.createdAt,
+  });
 
   return record;
 }
 
-export function removeProviderKey(providerId: string, keyId: string): boolean {
-  const result = dbRun(
-    'DELETE FROM custom_provider_keys WHERE provider_id = $providerId AND id = $id',
-    { $providerId: providerId, $id: keyId },
-  );
-  return result.changes > 0;
+export async function removeProviderKey(providerId: string, keyId: string): Promise<boolean> {
+  const [existing] = await getDb()
+    .select({ id: t.customProviderKeys.id })
+    .from(t.customProviderKeys)
+    .where(and(eq(t.customProviderKeys.providerId, providerId), eq(t.customProviderKeys.id, keyId)));
+  if (!existing) {
+    return false;
+  }
+
+  await getDb()
+    .delete(t.customProviderKeys)
+    .where(and(eq(t.customProviderKeys.providerId, providerId), eq(t.customProviderKeys.id, keyId)));
+  return true;
 }
 
-export function persistKeyState(key: CustomProviderKeyRecord): void {
-  dbRun(
-    `UPDATE custom_provider_keys SET
-       health_score = $healthScore, last_used = $lastUsed, cooldown_until = $cooldownUntil,
-       consecutive_failures = $consecutiveFailures, token_usage = $tokenUsage
-     WHERE id = $id`,
-    {
-      $id: key.id,
-      $healthScore: key.healthScore,
-      $lastUsed: key.lastUsed,
-      $cooldownUntil: key.cooldownUntil,
-      $consecutiveFailures: key.consecutiveFailures,
-      $tokenUsage: key.tokenUsage,
-    },
-  );
+export async function persistKeyState(key: CustomProviderKeyRecord): Promise<void> {
+  await getDb()
+    .update(t.customProviderKeys)
+    .set({
+      healthScore: key.healthScore,
+      lastUsed: key.lastUsed,
+      cooldownUntil: key.cooldownUntil,
+      consecutiveFailures: key.consecutiveFailures,
+      tokenUsage: key.tokenUsage,
+    })
+    .where(eq(t.customProviderKeys.id, key.id));
 }
 
-export function resetProviderKeys(providerId: string): void {
-  dbRun(
-    `UPDATE custom_provider_keys
-     SET health_score = 100, cooldown_until = 0, consecutive_failures = 0
-     WHERE provider_id = $providerId`,
-    { $providerId: providerId },
-  );
+export async function resetProviderKeys(providerId: string): Promise<void> {
+  await getDb()
+    .update(t.customProviderKeys)
+    .set({ healthScore: 100, cooldownUntil: 0, consecutiveFailures: 0 })
+    .where(eq(t.customProviderKeys.providerId, providerId));
 }
 
 // ─── Models ───────────────────────────────────────────────────────────────────
 
-export function listProviderModels(providerId: string): CustomProviderModelRecord[] {
-  const rows = dbAll(
-    'SELECT * FROM custom_provider_models WHERE provider_id = $providerId ORDER BY model_id ASC',
-    { $providerId: providerId },
-  );
+export async function listProviderModels(providerId: string): Promise<CustomProviderModelRecord[]> {
+  const rows = await getDb()
+    .select()
+    .from(t.customProviderModels)
+    .where(eq(t.customProviderModels.providerId, providerId))
+    .orderBy(asc(t.customProviderModels.modelId));
   return rows.map(rowToModel);
 }
 
@@ -359,81 +362,81 @@ export interface UpsertModelInput {
  * `preserveExisting` is what makes auto-sync safe to re-run: discovered models
  * are added, but prices and overrides a user already set are left untouched.
  */
-export function upsertProviderModels(
+export async function upsertProviderModels(
   providerId: string,
   models: UpsertModelInput[],
   preserveExisting = false,
-): number {
-  if (!getCustomProvider(providerId)) {
+): Promise<number> {
+  if (!(await getCustomProvider(providerId))) {
     throw new CustomProviderError(`Custom provider "${providerId}" not found.`, 404);
   }
 
-  const existing = new Set(listProviderModels(providerId).map((model) => model.modelId));
+  const existing = new Set((await listProviderModels(providerId)).map((model) => model.modelId));
 
-  const statement = dbPrepare(
-    `INSERT INTO custom_provider_models (
-       provider_id, model_id, display_name, upstream_model_id, pool, is_thinking,
-       thinking_mode, thinking_budget, max_output_tokens, timeout_ms,
-       input_price_per_1m, output_price_per_1m, enabled
-     ) VALUES (
-       $providerId, $modelId, $displayName, $upstreamModelId, $pool, $isThinking,
-       $thinkingMode, $thinkingBudget, $maxOutputTokens, $timeoutMs,
-       $inputPrice, $outputPrice, $enabled
-     )
-     ON CONFLICT (provider_id, model_id) DO UPDATE SET
-       display_name = excluded.display_name,
-       upstream_model_id = excluded.upstream_model_id,
-       pool = excluded.pool,
-       is_thinking = excluded.is_thinking,
-       thinking_mode = excluded.thinking_mode,
-       thinking_budget = excluded.thinking_budget,
-       max_output_tokens = excluded.max_output_tokens,
-       timeout_ms = excluded.timeout_ms,
-       input_price_per_1m = excluded.input_price_per_1m,
-       output_price_per_1m = excluded.output_price_per_1m,
-       enabled = excluded.enabled`,
-  );
+  const rows = models
+    .map((entry) => ({ entry, modelId: (entry.modelId ?? '').trim() }))
+    .filter(({ modelId }) => modelId)
+    .filter(({ modelId }) => !(preserveExisting && existing.has(modelId)))
+    .map(({ entry, modelId }) => ({
+      providerId,
+      modelId,
+      displayName: entry.displayName ?? modelId,
+      upstreamModelId: entry.upstreamModelId ?? modelId,
+      pool: entry.pool ?? 'cli',
+      isThinking: entry.isThinking ? 1 : 0,
+      thinkingMode: entry.thinkingMode ?? null,
+      thinkingBudget: entry.thinkingBudget ?? null,
+      maxOutputTokens: entry.maxOutputTokens ?? 8192,
+      timeoutMs: entry.timeoutMs ?? 60000,
+      inputPricePer1M: entry.inputPricePer1M ?? null,
+      outputPricePer1M: entry.outputPricePer1M ?? null,
+      enabled: entry.enabled === false ? 0 : 1,
+    }));
 
-  let written = 0;
-  const write = dbTransaction((entries: UpsertModelInput[]) => {
-    for (const entry of entries) {
-      const modelId = (entry.modelId ?? '').trim();
-      if (!modelId) {
-        continue;
-      }
-      if (preserveExisting && existing.has(modelId)) {
-        continue;
-      }
+  if (rows.length === 0) {
+    return 0;
+  }
 
-      statement.run({
-        $providerId: providerId,
-        $modelId: modelId,
-        $displayName: entry.displayName ?? modelId,
-        $upstreamModelId: entry.upstreamModelId ?? modelId,
-        $pool: entry.pool ?? 'cli',
-        $isThinking: entry.isThinking ? 1 : 0,
-        $thinkingMode: entry.thinkingMode ?? null,
-        $thinkingBudget: entry.thinkingBudget ?? null,
-        $maxOutputTokens: entry.maxOutputTokens ?? 8192,
-        $timeoutMs: entry.timeoutMs ?? 60000,
-        $inputPrice: entry.inputPricePer1M ?? null,
-        $outputPrice: entry.outputPricePer1M ?? null,
-        $enabled: entry.enabled === false ? 0 : 1,
-      });
-      written += 1;
-    }
-  });
+  // Upsert keyed on (provider, model): both dialects speak this ON CONFLICT form.
+  await getDb()
+    .insert(t.customProviderModels)
+    .values(rows)
+    .onConflictDoUpdate({
+      target: [t.customProviderModels.providerId, t.customProviderModels.modelId],
+      set: {
+        displayName: sql`excluded.display_name`,
+        upstreamModelId: sql`excluded.upstream_model_id`,
+        pool: sql`excluded.pool`,
+        isThinking: sql`excluded.is_thinking`,
+        thinkingMode: sql`excluded.thinking_mode`,
+        thinkingBudget: sql`excluded.thinking_budget`,
+        maxOutputTokens: sql`excluded.max_output_tokens`,
+        timeoutMs: sql`excluded.timeout_ms`,
+        inputPricePer1M: sql`excluded.input_price_per_1m`,
+        outputPricePer1M: sql`excluded.output_price_per_1m`,
+        enabled: sql`excluded.enabled`,
+      },
+    });
 
-  write(models);
-  return written;
+  return rows.length;
 }
 
-export function deleteProviderModel(providerId: string, modelId: string): boolean {
-  const result = dbRun(
-    'DELETE FROM custom_provider_models WHERE provider_id = $providerId AND model_id = $modelId',
-    { $providerId: providerId, $modelId: modelId },
+export async function deleteProviderModel(providerId: string, modelId: string): Promise<boolean> {
+  const where = and(
+    eq(t.customProviderModels.providerId, providerId),
+    eq(t.customProviderModels.modelId, modelId),
   );
-  return result.changes > 0;
+
+  const [existing] = await getDb()
+    .select({ modelId: t.customProviderModels.modelId })
+    .from(t.customProviderModels)
+    .where(where);
+  if (!existing) {
+    return false;
+  }
+
+  await getDb().delete(t.customProviderModels).where(where);
+  return true;
 }
 
 /**

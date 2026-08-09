@@ -40,7 +40,7 @@ function request(path: string, cookie?: string, method = "GET", body?: unknown):
   });
 }
 
-function guard(path: string, cookie?: string): Response | null {
+function guard(path: string, cookie?: string): Promise<Response | null> {
   return enforceDashboardAuth(request(path, cookie), new URL(`http://localhost:3000${path}`));
 }
 
@@ -71,21 +71,21 @@ let ownerCookie: string;
 
 beforeAll(async () => {
   await loadProxyConfig();
-  initDb();
+  await initDb();
   await users.initUsers();
 
   owner = await users.createUser("owner", "correct-horse-battery");
   ownerCookie = sessionCookie(owner);
 });
 
-afterAll(() => {
-  closeDb();
+afterAll(async () => {
+  await closeDb();
   rmSync(STATE_DIR, { recursive: true, force: true });
 });
 
 describe("First-run seeding", () => {
-  test("creates the default admin flagged for a password change", () => {
-    const admin = users.getUserByUsername(users.DEFAULT_USERNAME);
+  test("creates the default admin flagged for a password change", async () => {
+    const admin = await users.getUserByUsername(users.DEFAULT_USERNAME);
     expect(admin).not.toBeNull();
     expect(admin!.mustChangePassword).toBe(true);
   });
@@ -99,15 +99,15 @@ describe("First-run seeding", () => {
   });
 
   test("does not reseed once a user exists", async () => {
-    const before = users.countUsers();
+    const before = await users.countUsers();
     await users.initUsers();
-    expect(users.countUsers()).toBe(before);
+    expect(await users.countUsers()).toBe(before);
   });
 });
 
 describe("Credentials", () => {
-  test("stores a hash, never the password", () => {
-    const row: any = users.getUserByUsername("owner");
+  test("stores a hash, never the password", async () => {
+    const row: any = await users.getUserByUsername("owner");
     expect(JSON.stringify(row)).not.toContain("correct-horse-battery");
   });
 
@@ -121,14 +121,14 @@ describe("Credentials", () => {
   });
 
   test("enforces the password policy", async () => {
-    expect(users.createUser("shorty", "abc")).rejects.toThrow(/at least 8/);
+    await expect(users.createUser("shorty", "abc")).rejects.toThrow(/at least 8/);
     // The seeded default must not survive a "change your password" step.
-    expect(users.createUser("lazy", users.DEFAULT_PASSWORD)).rejects.toThrow(/other than the default/);
+    await expect(users.createUser("lazy", users.DEFAULT_PASSWORD)).rejects.toThrow(/other than the default/);
   });
 
   test("rejects malformed usernames and duplicates", async () => {
-    expect(users.createUser("A B", "a-good-password")).rejects.toThrow(/Username must be/);
-    expect(users.createUser("owner", "a-good-password")).rejects.toThrow(/already exists/);
+    await expect(users.createUser("A B", "a-good-password")).rejects.toThrow(/Username must be/);
+    await expect(users.createUser("owner", "a-good-password")).rejects.toThrow(/already exists/);
   });
 
   test("throttles repeated failures for one username", async () => {
@@ -142,66 +142,66 @@ describe("Credentials", () => {
 });
 
 describe("Dashboard guard coverage", () => {
-  test("blocks the admin API without a session", () => {
-    expect(guard("/api/status")?.status).toBe(401);
-    expect(guard("/api/sse")?.status).toBe(401);
-    expect(guard("/api/providers/antigravity/accounts")?.status).toBe(401);
-    expect(guard("/api/config")?.status).toBe(401);
-    expect(guard("/api/users")?.status).toBe(401);
+  test("blocks the admin API without a session", async () => {
+    expect((await guard("/api/status"))?.status).toBe(401);
+    expect((await guard("/api/sse"))?.status).toBe(401);
+    expect((await guard("/api/providers/antigravity/accounts"))?.status).toBe(401);
+    expect((await guard("/api/config"))?.status).toBe(401);
+    expect((await guard("/api/users"))?.status).toBe(401);
   });
 
-  test("blocks the provider OAuth entry points", () => {
-    expect(guard("/oauth/start")?.status).toBe(401);
-    expect(guard("/oauth-callback")?.status).toBe(401);
+  test("blocks the provider OAuth entry points", async () => {
+    expect((await guard("/oauth/start"))?.status).toBe(401);
+    expect((await guard("/oauth-callback"))?.status).toBe(401);
   });
 
-  test("leaves the LLM proxy routes open", () => {
+  test("leaves the LLM proxy routes open", async () => {
     // CLI clients cannot hold a browser session, so these stay unguarded here.
-    expect(guard("/openai/v1/chat/completions")).toBeNull();
-    expect(guard("/openai/v1/models")).toBeNull();
-    expect(guard("/anthropic/v1/messages")).toBeNull();
-    expect(guard("/anthropic/v1/models")).toBeNull();
+    expect(await guard("/openai/v1/chat/completions")).toBeNull();
+    expect(await guard("/openai/v1/models")).toBeNull();
+    expect(await guard("/anthropic/v1/messages")).toBeNull();
+    expect(await guard("/anthropic/v1/models")).toBeNull();
   });
 
-  test("leaves the static bundle and auth endpoints open", () => {
-    expect(guard("/frontend/assets/index.js")).toBeNull();
-    expect(guard("/api/auth/me")).toBeNull();
-    expect(guard("/api/auth/login")).toBeNull();
+  test("leaves the static bundle and auth endpoints open", async () => {
+    expect(await guard("/frontend/assets/index.js")).toBeNull();
+    expect(await guard("/api/auth/me")).toBeNull();
+    expect(await guard("/api/auth/login")).toBeNull();
   });
 
-  test("admits a valid session", () => {
-    expect(guard("/api/status", ownerCookie)).toBeNull();
+  test("admits a valid session", async () => {
+    expect(await guard("/api/status", ownerCookie)).toBeNull();
   });
 
   test("revokes the session of a deleted user", async () => {
     const doomed = await users.createUser("doomed", "a-good-password-1");
     const cookie = sessionCookie(doomed);
-    expect(guard("/api/status", cookie)).toBeNull();
+    expect(await guard("/api/status", cookie)).toBeNull();
 
-    users.deleteUser(doomed.id);
-    expect(guard("/api/status", cookie)?.status).toBe(401);
+    await users.deleteUser(doomed.id);
+    expect((await guard("/api/status", cookie))?.status).toBe(401);
   });
 });
 
 describe("Forced password change", () => {
   test("locks the dashboard down to the change-password endpoints", async () => {
-    const admin = users.getUserByUsername(users.DEFAULT_USERNAME)!;
+    const admin = await (await users.getUserByUsername(users.DEFAULT_USERNAME))!;
     const cookie = sessionCookie(admin);
 
-    const denied = guard("/api/status", cookie);
+    const denied = await guard("/api/status", cookie);
     expect(denied?.status).toBe(403);
     expect((await denied!.json()).code).toBe("password_change_required");
 
-    expect(guard("/api/users", cookie)?.status).toBe(403);
-    expect(guard("/api/api-keys", cookie)?.status).toBe(403);
+    expect((await guard("/api/users", cookie))?.status).toBe(403);
+    expect((await guard("/api/api-keys", cookie))?.status).toBe(403);
 
     // The escape hatch stays reachable, or the account could never recover.
-    expect(guard("/api/auth/profile", cookie)).toBeNull();
-    expect(guard("/api/auth/me", cookie)).toBeNull();
+    expect(await guard("/api/auth/profile", cookie)).toBeNull();
+    expect(await guard("/api/auth/me", cookie)).toBeNull();
   });
 
   test("does not ask for the current password, which was just used to sign in", async () => {
-    const admin = users.getUserByUsername(users.DEFAULT_USERNAME)!;
+    const admin = await (await users.getUserByUsername(users.DEFAULT_USERNAME))!;
     const cookie = sessionCookie(admin);
 
     // No currentPassword in the body at all.
@@ -211,14 +211,14 @@ describe("Forced password change", () => {
 
     expect(ok?.status).toBe(200);
     expect((await ok!.json()).user.mustChangePassword).toBe(false);
-    expect(users.getUserByUsername(users.DEFAULT_USERNAME)!.mustChangePassword).toBe(false);
-    expect(guard("/api/status", cookie)).toBeNull();
+    expect((await users.getUserByUsername(users.DEFAULT_USERNAME))!.mustChangePassword).toBe(false);
+    expect(await guard("/api/status", cookie)).toBeNull();
   });
 
   test("the waiver ends the moment the flag clears", async () => {
     // Same account, same session — but it is now an ordinary one, so a further
     // change has to prove the current password again.
-    const admin = users.getUserByUsername(users.DEFAULT_USERNAME)!;
+    const admin = await (await users.getUserByUsername(users.DEFAULT_USERNAME))!;
     const cookie = sessionCookie(admin);
 
     const withoutPassword = await authRoute("/api/auth/profile", cookie, "POST", {
@@ -249,35 +249,35 @@ describe("Profile updates", () => {
     // The cookie carries the username, so it has to be reissued.
     expect(res!.headers.get("set-cookie")).toContain("nougate_session=");
 
-    expect(users.getUserByUsername("renamed")).not.toBeNull();
-    expect(users.getUserByUsername("renameme")).toBeNull();
+    expect(await users.getUserByUsername("renamed")).not.toBeNull();
+    expect(await users.getUserByUsername("renameme")).toBeNull();
     // The old password still works under the new name.
     expect(await users.verifyCredentials("renamed", "a-good-password-3")).not.toBeNull();
   });
 
-  test("a rename alone does not clear an outstanding password change", () => {
-    const renamed = users.getUserByUsername("renamed")!;
+  test("a rename alone does not clear an outstanding password change", async () => {
+    const renamed = (await users.getUserByUsername("renamed"))!;
     expect(renamed.mustChangePassword).toBe(false);
 
-    const seeded = users.setUsername(renamed.id, "renamed");
+    const seeded = await users.setUsername(renamed.id, "renamed");
     // Renaming to the current name is a no-op, not a conflict.
     expect(seeded.username).toBe("renamed");
   });
 
   test("refuses a username already taken by someone else", async () => {
-    const target = users.getUserByUsername("renamed")!;
-    expect(() => users.setUsername(target.id, "owner")).toThrow(/already exists/);
+    const target = (await users.getUserByUsername("renamed"))!;
+    await expect(users.setUsername(target.id, "owner")).rejects.toThrow(/already exists/);
   });
 
   test("requires the current password to rename", async () => {
-    const target = users.getUserByUsername("renamed")!;
+    const target = (await users.getUserByUsername("renamed"))!;
     const res = await authRoute("/api/auth/profile", sessionCookie(target), "POST", {
       currentPassword: "wrong",
       newUsername: "hijacked",
     });
 
     expect(res?.status).toBe(401);
-    expect(users.getUserByUsername("hijacked")).toBeNull();
+    expect(await users.getUserByUsername("hijacked")).toBeNull();
   });
 
   test("rejects an empty update", async () => {
@@ -302,13 +302,13 @@ describe("Profile updates", () => {
 });
 
 describe("Session cookie", () => {
-  test("round-trips the signed identity", () => {
+  test("round-trips the signed identity", async () => {
     const payload = readSession(request("/", ownerCookie));
     expect(payload?.sub).toBe(owner.id);
     expect(payload?.username).toBe("owner");
   });
 
-  test("is HttpOnly and SameSite=Lax, and Secure only over https", () => {
+  test("is HttpOnly and SameSite=Lax, and Secure only over https", async () => {
     const insecure = createSessionCookie(owner, "http://localhost:3000");
     expect(insecure).toContain("HttpOnly");
     expect(insecure).toContain("SameSite=Lax");
@@ -316,28 +316,28 @@ describe("Session cookie", () => {
     expect(createSessionCookie(owner, "https://nougate.nouverse.tech")).toContain("Secure");
   });
 
-  test("rejects a payload swapped onto a stolen signature", () => {
+  test("rejects a payload swapped onto a stolen signature", async () => {
     const signature = ownerCookie.split(".")[1];
     const payload = Buffer.from(
       JSON.stringify({ sub: "someone-else", username: "attacker", iat: 0, exp: 9999999999 }),
     ).toString("base64url");
-    expect(guard("/api/status", `nougate_session=${payload}.${signature}`)?.status).toBe(401);
+    expect((await guard("/api/status", `nougate_session=${payload}.${signature}`))?.status).toBe(401);
   });
 
-  test("rejects malformed and unsigned cookies", () => {
-    expect(guard("/api/status", "nougate_session=notatoken")?.status).toBe(401);
-    expect(guard("/api/status", "nougate_session=abc.def")?.status).toBe(401);
+  test("rejects malformed and unsigned cookies", async () => {
+    expect((await guard("/api/status", "nougate_session=notatoken"))?.status).toBe(401);
+    expect((await guard("/api/status", "nougate_session=abc.def"))?.status).toBe(401);
   });
 
-  test("rejects a correctly signed but expired session", () => {
+  test("rejects a correctly signed but expired session", async () => {
     const payload = Buffer.from(
       JSON.stringify({ sub: owner.id, username: owner.username, iat: 1, exp: 2 }),
     ).toString("base64url");
     const signature = createHmac("sha256", SESSION_SECRET).update(payload).digest("base64url");
-    expect(guard("/api/status", `nougate_session=${payload}.${signature}`)?.status).toBe(401);
+    expect((await guard("/api/status", `nougate_session=${payload}.${signature}`))?.status).toBe(401);
   });
 
-  test("generates and reuses a signing secret when SESSION_SECRET is unset", () => {
+  test("generates and reuses a signing secret when SESSION_SECRET is unset", async () => {
     delete process.env.SESSION_SECRET;
 
     const generated = getSessionSecret();
@@ -421,14 +421,14 @@ describe("User management", () => {
     expect(res?.status).toBe(409);
   });
 
-  test("refuses to delete the last remaining user", () => {
-    for (const user of users.listUsers()) {
-      if (users.countUsers() > 1) {
-        users.deleteUser(user.id);
+  test("refuses to delete the last remaining user", async () => {
+    for (const user of await users.listUsers()) {
+      if (await users.countUsers() > 1) {
+        await users.deleteUser(user.id);
       }
     }
 
-    expect(users.countUsers()).toBe(1);
-    expect(() => users.deleteUser(users.listUsers()[0].id)).toThrow(/last remaining user/);
+    expect(await users.countUsers()).toBe(1);
+    await expect(users.deleteUser((await users.listUsers())[0].id)).rejects.toThrow(/last remaining user/);
   });
 });

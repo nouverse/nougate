@@ -101,7 +101,7 @@ function cooldownMs(): number {
   }
 }
 
-function penalize(key: CustomProviderKeyRecord, statusCode: number): void {
+async function penalize(key: CustomProviderKeyRecord, statusCode: number): Promise<void> {
   const config = (() => {
     try {
       return getProxyConfig().scoring;
@@ -122,10 +122,10 @@ function penalize(key: CustomProviderKeyRecord, statusCode: number): void {
     key.cooldownUntil = Date.now() + cooldownMs();
   }
 
-  persistKeyState(key);
+  await persistKeyState(key);
 }
 
-function reward(key: CustomProviderKeyRecord): void {
+async function reward(key: CustomProviderKeyRecord): Promise<void> {
   const config = (() => {
     try {
       return getProxyConfig().scoring;
@@ -140,7 +140,7 @@ function reward(key: CustomProviderKeyRecord): void {
   key.lastUsed = Date.now();
   key.cooldownUntil = 0;
 
-  persistKeyState(key);
+  await persistKeyState(key);
 }
 
 export interface CustomExecuteOptions {
@@ -158,7 +158,7 @@ export async function executeCustomRequest(
   options: CustomExecuteOptions,
 ): Promise<CustomExecuteResult> {
   const { provider, body, modelSpec } = options;
-  const keys = listProviderKeys(provider.id);
+  const keys = await listProviderKeys(provider.id);
 
   if (keys.length === 0) {
     throw new NoUsableKeyError(provider.id);
@@ -203,7 +203,7 @@ export async function executeCustomRequest(
       clearTimeout(timeout);
 
       if (response.ok) {
-        reward(key);
+        await reward(key);
         return { response, keyId: key.id, attempts };
       }
 
@@ -211,7 +211,7 @@ export async function executeCustomRequest(
       console.warn(
         `[${provider.id}] Key "${key.label}" failed with ${response.status}: ${lastError.slice(0, 300)}`,
       );
-      penalize(key, response.status);
+      await penalize(key, response.status);
       adminEventBus.emit(
         'log',
         `⚠️ [${provider.id}] key "${key.label}" returned ${response.status}`,
@@ -235,7 +235,7 @@ export async function executeCustomRequest(
         ? `Upstream timed out after ${modelSpec.timeoutMs ?? 60_000}ms`
         : error?.message || String(error);
       console.error(`[${provider.id}] Request failed on key "${key.label}":`, lastError);
-      penalize(key, 500);
+      await penalize(key, 500);
     }
   }
 

@@ -1,4 +1,5 @@
-import { dbAll, dbGet, dbRun } from '@/core/db';
+import { and, eq, ne, sql } from 'drizzle-orm';
+import { getDb, t } from '@/core/db';
 
 export interface User {
   id: string;
@@ -6,13 +7,6 @@ export interface User {
   mustChangePassword: boolean;
   createdAt: number;
   lastLoginAt: number | null;
-}
-
-interface UserRow extends Omit<User, 'mustChangePassword'> {
-  password_hash: string;
-  must_change_password: number;
-  created_at: number;
-  last_login_at: number | null;
 }
 
 export const DEFAULT_USERNAME = 'admin';
@@ -41,9 +35,9 @@ function rowToUser(row: any): User {
   return {
     id: row.id,
     username: row.username,
-    mustChangePassword: row.must_change_password === 1,
-    createdAt: row.created_at,
-    lastLoginAt: row.last_login_at ?? null,
+    mustChangePassword: row.mustChangePassword === 1,
+    createdAt: Number(row.createdAt),
+    lastLoginAt: row.lastLoginAt === null || row.lastLoginAt === undefined ? null : Number(row.lastLoginAt),
   };
 }
 
@@ -92,24 +86,31 @@ function getDummyHash(): Promise<string> {
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
-export function listUsers(): User[] {
-  return dbAll<UserRow>('SELECT * FROM users ORDER BY created_at ASC').map(rowToUser);
+export async function listUsers(): Promise<User[]> {
+  const rows = await getDb().select().from(t.users).orderBy(t.users.createdAt);
+  return rows.map(rowToUser);
 }
 
-export function countUsers(): number {
-  const row = dbGet<{ total: number }>('SELECT COUNT(*) AS total FROM users');
-  return row?.total ?? 0;
+export async function countUsers(): Promise<number> {
+  const [row] = await getDb()
+    .select({ total: sql<number>`count(*)` })
+    .from(t.users);
+  return Number(row?.total ?? 0);
 }
 
-export function getUserById(id: string): User | null {
-  const row = dbGet<UserRow>('SELECT * FROM users WHERE id = $id', { $id: id });
+export async function getUserById(id: string): Promise<User | null> {
+  const [row] = await getDb().select().from(t.users).where(eq(t.users.id, id)).limit(1);
   return row ? rowToUser(row) : null;
 }
 
-export function getUserByUsername(username: string): User | null {
-  const row = dbGet<UserRow>('SELECT * FROM users WHERE username = $username', {
-    $username: normalizeUsername(username),
-  });
+export async function getUserByUsername(username: string): Promise<User | null> {
+  // Usernames are stored lowercased, so an exact match is enough on both
+  // dialects — no reliance on SQLite's NOCASE collation.
+  const [row] = await getDb()
+    .select()
+    .from(t.users)
+    .where(eq(t.users.username, normalizeUsername(username)))
+    .limit(1);
   return row ? rowToUser(row) : null;
 }
 
@@ -128,7 +129,7 @@ export async function createUser(
   assertValidUsername(normalized);
   assertValidPassword(password);
 
-  if (getUserByUsername(normalized)) {
+  if (await getUserByUsername(normalized)) {
     throw new AuthError(`User "${normalized}" already exists.`, 409);
   }
 
@@ -140,17 +141,13 @@ export async function createUser(
     lastLoginAt: null,
   };
 
-  dbRun(
-    `INSERT INTO users (id, username, password_hash, must_change_password, created_at)
-     VALUES ($id, $username, $hash, $mustChange, $createdAt)`,
-    {
-      $id: user.id,
-      $username: user.username,
-      $hash: await hashPassword(password),
-      $mustChange: mustChangePassword ? 1 : 0,
-      $createdAt: user.createdAt,
-    },
-  );
+  await getDb().insert(t.users).values({
+    id: user.id,
+    username: user.username,
+    passwordHash: await hashPassword(password),
+    mustChangePassword: mustChangePassword ? 1 : 0,
+    createdAt: user.createdAt,
+  });
 
   return user;
 }
@@ -161,11 +158,11 @@ export async function createUser(
  * Returns the updated record. Renaming to the current name is a no-op rather
  * than a conflict, so a settings form can submit unchanged fields safely.
  */
-export function setUsername(userId: string, newUsername: string): User {
+export async function setUsername(userId: string, newUsername: string): Promise<User> {
   const normalized = normalizeUsername(newUsername);
   assertValidUsername(normalized);
 
-  const current = getUserById(userId);
+  const current = await getUserById(userId);
   if (!current) {
     throw new AuthError('User not found.', 404);
   }
@@ -174,15 +171,12 @@ export function setUsername(userId: string, newUsername: string): User {
     return current;
   }
 
-  const taken = getUserByUsername(normalized);
+  const taken = await getUserByUsername(normalized);
   if (taken && taken.id !== userId) {
     throw new AuthError(`User "${normalized}" already exists.`, 409);
   }
 
-  dbRun('UPDATE users SET username = $username WHERE id = $id', {
-    $id: userId,
-    $username: normalized,
-  });
+  await getDb().update(t.users).set({ username: normalized }).where(eq(t.users.id, userId));
 
   return { ...current, username: normalized };
 }
@@ -193,29 +187,32 @@ export function setUsername(userId: string, newUsername: string): User {
 export async function setPassword(userId: string, newPassword: string): Promise<void> {
   assertValidPassword(newPassword);
 
-  const result = dbRun(
-    `UPDATE users SET password_hash = $hash, must_change_password = 0 WHERE id = $id`,
-    { $id: userId, $hash: await hashPassword(newPassword) },
-  );
-
-  if (result.changes === 0) {
+  const existing = await getUserById(userId);
+  if (!existing) {
     throw new AuthError('User not found.', 404);
   }
+
+  await getDb()
+    .update(t.users)
+    .set({ passwordHash: await hashPassword(newPassword), mustChangePassword: 0 })
+    .where(eq(t.users.id, userId));
 }
 
 /**
  * Delete a user, refusing to remove the last one — that would lock everybody out
  * of a dashboard whose only recovery path is editing the database by hand.
  */
-export function deleteUser(userId: string): void {
-  if (countUsers() <= 1) {
+export async function deleteUser(userId: string): Promise<void> {
+  if ((await countUsers()) <= 1) {
     throw new AuthError('Cannot delete the last remaining user.', 409);
   }
 
-  const result = dbRun('DELETE FROM users WHERE id = $id', { $id: userId });
-  if (result.changes === 0) {
+  const existing = await getUserById(userId);
+  if (!existing) {
     throw new AuthError('User not found.', 404);
   }
+
+  await getDb().delete(t.users).where(eq(t.users.id, userId));
 }
 
 // ─── Authentication ───────────────────────────────────────────────────────────
@@ -253,13 +250,15 @@ export async function verifyCredentials(
   password: string,
 ): Promise<User | null> {
   const normalized = normalizeUsername(username);
-  const row = dbGet<UserRow>('SELECT * FROM users WHERE username = $username', {
-    $username: normalized,
-  });
+  const [row] = await getDb()
+    .select()
+    .from(t.users)
+    .where(eq(t.users.username, normalized))
+    .limit(1);
 
   let matches = false;
   if (row) {
-    matches = await Bun.password.verify(password ?? '', row.password_hash).catch(() => false);
+    matches = await Bun.password.verify(password ?? '', row.passwordHash).catch(() => false);
   } else {
     // Unknown username: still perform one verify so the response time does not
     // reveal whether the account exists.
@@ -272,12 +271,10 @@ export async function verifyCredentials(
   }
 
   failedAttempts.delete(normalized);
-  dbRun('UPDATE users SET last_login_at = $now WHERE id = $id', {
-    $now: Date.now(),
-    $id: row.id,
-  });
+  const now = Date.now();
+  await getDb().update(t.users).set({ lastLoginAt: now }).where(eq(t.users.id, row.id));
 
-  return rowToUser({ ...row, last_login_at: Date.now() });
+  return rowToUser({ ...row, lastLoginAt: now });
 }
 
 /**
@@ -294,20 +291,17 @@ export function loginLockoutSeconds(username: string): number {
  * grants access to the change-password screen.
  */
 export async function initUsers(): Promise<void> {
-  if (countUsers() > 0) {
+  if ((await countUsers()) > 0) {
     return;
   }
 
-  dbRun(
-    `INSERT INTO users (id, username, password_hash, must_change_password, created_at)
-     VALUES ($id, $username, $hash, 1, $createdAt)`,
-    {
-      $id: crypto.randomUUID(),
-      $username: DEFAULT_USERNAME,
-      $hash: await hashPassword(DEFAULT_PASSWORD),
-      $createdAt: Date.now(),
-    },
-  );
+  await getDb().insert(t.users).values({
+    id: crypto.randomUUID(),
+    username: DEFAULT_USERNAME,
+    passwordHash: await hashPassword(DEFAULT_PASSWORD),
+    mustChangePassword: 1,
+    createdAt: Date.now(),
+  });
 
   const border = '─'.repeat(74);
   console.warn(`\n┌${border}┐`);

@@ -133,6 +133,36 @@ data/
     └── copilot/{accounts,config}.json
 ```
 
+### SQLite or Postgres
+
+The database layer is [Drizzle ORM](https://orm.drizzle.team) over two schemas —
+one SQLite, one Postgres — selected by `DB_URL`:
+
+| `DB_URL` | Backend |
+|---|---|
+| *(empty)* | SQLite at `data/nougate.db` — no server needed, the default |
+| `sqlite:/path/to/file.db` | SQLite at that path |
+| `postgres://user:pass@host:5432/db` | Postgres |
+
+Switching is config-only: tables are created on first boot for whichever backend
+is selected, and no application code branches on it. The whole test suite runs
+green against both.
+
+Two things make that possible, and are worth knowing before editing the schema:
+
+- **The two schemas must stay in step.** Drizzle types its tables per dialect, so
+  `core/db/schema/sqlite.ts` and `core/db/schema/pg.ts` are the same tables
+  written twice. Change one, change the other. Postgres deliberately stores epoch
+  milliseconds as `bigint` and booleans as `0/1 integer`, so values round-trip
+  identically and no call site has to know which database it is on.
+- **Every query is written with `await`.** The SQLite driver is synchronous and
+  the Postgres one is not; Drizzle's SQLite builders are also thenable, so
+  awaiting everything is what lets one set of queries serve both.
+
+The only fragment the dialects genuinely disagree on is bucketing a timestamp
+into an hour or day label, which is isolated as `timeBucket()` in each schema
+file.
+
 Provider accounts and configs stay plain JSON so they remain easy to inspect, diff, and
 hand-edit. They are written atomically (temp file + rename) and coalesced, so the OAuth
 tokens they hold cannot be lost to a crash mid-write.

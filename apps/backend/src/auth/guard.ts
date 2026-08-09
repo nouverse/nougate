@@ -44,24 +44,24 @@ function denied(status: number, code: string, message: string): Response {
  * The user is re-read from the database on every request so deleting an account
  * revokes its sessions immediately instead of waiting for the cookie to expire.
  */
-export function getActiveUser(req: Request): User | null {
+export async function getActiveUser(req: Request): Promise<User | null> {
   const session = readSession(req);
   if (!session) {
     return null;
   }
-  return getUserById(session.sub);
+  return await getUserById(session.sub);
 }
 
 /**
  * Reject unauthenticated access to the dashboard API.
  * Returns null when the request may proceed.
  */
-export function enforceDashboardAuth(req: Request, url: URL): Response | null {
+export async function enforceDashboardAuth(req: Request, url: URL): Promise<Response | null> {
   if (!isGuardedPath(url.pathname)) {
     return null;
   }
 
-  const user = getActiveUser(req);
+  const user = await getActiveUser(req);
   if (!user) {
     return denied(401, "unauthenticated", "Sign in to access the dashboard");
   }

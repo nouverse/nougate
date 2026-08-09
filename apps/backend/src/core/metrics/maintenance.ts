@@ -1,4 +1,5 @@
-import { dbRun } from '@/core/db';
+import { and, lt, sql } from 'drizzle-orm';
+import { dialect, getDb, t, timeBucket } from '@/core/db';
 import { getProxyConfig } from '@/config/manager';
 import { tokenMetricsLogger } from '@/core/metrics/logger';
 
@@ -24,35 +25,72 @@ function retentionDays(): { detail: number; rollup: number } {
  * Only whole days that have already passed are rolled up, so today's numbers
  * are never double-counted between the detail table and the rollups.
  */
-export function runRollup(): number {
+export async function runRollup(): Promise<number> {
+  const logs = t.tokenUsageLogs;
+  const rollups = t.tokenUsageDailyRollups;
   const todayStartMs = new Date(new Date().toISOString().slice(0, 10)).getTime();
 
-  const result = dbRun(
-    `INSERT INTO token_usage_daily_rollups (
-       date, provider, model, full_model_name, client_id, api_key_id,
-       total_requests, total_input_tokens, total_output_tokens, total_tokens_saved,
-       total_input_cost, total_output_cost, total_cost_saved
-     )
-     SELECT strftime('%Y-%m-%d', timestamp / 1000, 'unixepoch') AS day,
-            provider, model, full_model_name, client_id,
-            COALESCE(api_key_id, '') AS key_id,
-            COUNT(*), SUM(input_tokens), SUM(output_tokens), SUM(tokens_saved),
-            SUM(input_cost), SUM(output_cost), SUM(cost_saved)
-     FROM token_usage_logs
-     WHERE timestamp < $todayStart
-     GROUP BY day, provider, model, full_model_name, client_id, key_id
-     ON CONFLICT (date, full_model_name, client_id, api_key_id) DO UPDATE SET
-       total_requests = excluded.total_requests,
-       total_input_tokens = excluded.total_input_tokens,
-       total_output_tokens = excluded.total_output_tokens,
-       total_tokens_saved = excluded.total_tokens_saved,
-       total_input_cost = excluded.total_input_cost,
-       total_output_cost = excluded.total_output_cost,
-       total_cost_saved = excluded.total_cost_saved`,
-    { $todayStart: todayStartMs },
-  );
+  const day = timeBucket(logs.timestamp, 'day');
+  // COALESCE, because detail rows store NULL for "no key" while rollups use ''.
+  const keyId = sql<string>`coalesce(${logs.apiKeyId}, '')`;
 
-  return result.changes;
+  const grouped = await getDb()
+    .select({
+      date: day,
+      provider: logs.provider,
+      model: logs.model,
+      fullModelName: logs.fullModelName,
+      clientId: logs.clientId,
+      apiKeyId: keyId,
+      totalRequests: sql<number>`count(*)`,
+      totalInputTokens: sql<number>`sum(${logs.inputTokens})`,
+      totalOutputTokens: sql<number>`sum(${logs.outputTokens})`,
+      totalTokensSaved: sql<number>`sum(${logs.tokensSaved})`,
+      totalInputCost: sql<number>`sum(${logs.inputCost})`,
+      totalOutputCost: sql<number>`sum(${logs.outputCost})`,
+      totalCostSaved: sql<number>`sum(${logs.costSaved})`,
+    })
+    .from(logs)
+    .where(lt(logs.timestamp, todayStartMs))
+    .groupBy(day, logs.provider, logs.model, logs.fullModelName, logs.clientId, keyId);
+
+  if (grouped.length === 0) {
+    return 0;
+  }
+
+  await getDb()
+    .insert(rollups)
+    .values(
+      grouped.map((row) => ({
+        date: row.date,
+        provider: row.provider,
+        model: row.model,
+        fullModelName: row.fullModelName,
+        clientId: row.clientId,
+        apiKeyId: row.apiKeyId,
+        totalRequests: Number(row.totalRequests),
+        totalInputTokens: Number(row.totalInputTokens),
+        totalOutputTokens: Number(row.totalOutputTokens),
+        totalTokensSaved: Number(row.totalTokensSaved),
+        totalInputCost: Number(row.totalInputCost),
+        totalOutputCost: Number(row.totalOutputCost),
+        totalCostSaved: Number(row.totalCostSaved),
+      })),
+    )
+    .onConflictDoUpdate({
+      target: [rollups.date, rollups.fullModelName, rollups.clientId, rollups.apiKeyId],
+      set: {
+        totalRequests: sql`excluded.total_requests`,
+        totalInputTokens: sql`excluded.total_input_tokens`,
+        totalOutputTokens: sql`excluded.total_output_tokens`,
+        totalTokensSaved: sql`excluded.total_tokens_saved`,
+        totalInputCost: sql`excluded.total_input_cost`,
+        totalOutputCost: sql`excluded.total_output_cost`,
+        totalCostSaved: sql`excluded.total_cost_saved`,
+      },
+    });
+
+  return grouped.length;
 }
 
 /**
@@ -61,7 +99,7 @@ export function runRollup(): number {
  * Detail rows are pruned only after they have been rolled up, so long-range
  * charts keep working off the aggregate table.
  */
-export function runPruning(): { prunedLogs: number; prunedRollups: number } {
+export async function runPruning(): Promise<{ prunedLogs: number; prunedRollups: number }> {
   const { detail, rollup } = retentionDays();
 
   const detailCutoff = Date.now() - detail * 24 * 60 * 60 * 1000;
@@ -69,24 +107,32 @@ export function runPruning(): { prunedLogs: number; prunedRollups: number } {
     .toISOString()
     .slice(0, 10);
 
-  const logs = dbRun(`DELETE FROM token_usage_logs WHERE timestamp < $cutoff`, {
-    $cutoff: detailCutoff,
-  });
-  const rollups = dbRun(`DELETE FROM token_usage_daily_rollups WHERE date < $cutoff`, {
-    $cutoff: rollupCutoff,
-  });
+  // Counted first: neither driver reports affected rows the same way.
+  const [logCount] = await getDb()
+    .select({ total: sql<number>`count(*)` })
+    .from(t.tokenUsageLogs)
+    .where(lt(t.tokenUsageLogs.timestamp, detailCutoff));
+  const [rollupCount] = await getDb()
+    .select({ total: sql<number>`count(*)` })
+    .from(t.tokenUsageDailyRollups)
+    .where(lt(t.tokenUsageDailyRollups.date, rollupCutoff));
 
-  return { prunedLogs: logs.changes, prunedRollups: rollups.changes };
+  await getDb().delete(t.tokenUsageLogs).where(lt(t.tokenUsageLogs.timestamp, detailCutoff));
+  await getDb()
+    .delete(t.tokenUsageDailyRollups)
+    .where(lt(t.tokenUsageDailyRollups.date, rollupCutoff));
+
+  return { prunedLogs: Number(logCount?.total ?? 0), prunedRollups: Number(rollupCount?.total ?? 0) };
 }
 
 /**
  * Run one full maintenance pass: flush pending writes, roll up, then prune.
  */
-export function runMaintenance(): void {
+export async function runMaintenance(): Promise<void> {
   try {
-    tokenMetricsLogger.flush();
-    const rolled = runRollup();
-    const { prunedLogs, prunedRollups } = runPruning();
+    await tokenMetricsLogger.flush();
+    const rolled = await runRollup();
+    const { prunedLogs, prunedRollups } = await runPruning();
 
     if (rolled || prunedLogs || prunedRollups) {
       console.log(
@@ -107,9 +153,9 @@ export function startMetricsMaintenance(): void {
     return;
   }
 
-  const initial = setTimeout(() => runMaintenance(), 30_000);
+  const initial = setTimeout(() => void runMaintenance(), 30_000);
   initial.unref?.();
 
-  timer = setInterval(() => runMaintenance(), MAINTENANCE_INTERVAL_MS);
+  timer = setInterval(() => void runMaintenance(), MAINTENANCE_INTERVAL_MS);
   timer.unref?.();
 }

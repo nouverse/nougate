@@ -92,7 +92,7 @@ export async function handleRequest(req: Request): Promise<Response> {
     return authResponse;
   }
 
-  const authDenial = enforceDashboardAuth(req, routedUrl);
+  const authDenial = await enforceDashboardAuth(req, routedUrl);
   if (authDenial) {
     return withCorsHeaders(authDenial);
   }

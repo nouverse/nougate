@@ -20,7 +20,7 @@ export interface ModelSyncResult {
  * a bare array is also accepted since some self-hosted gateways return one.
  */
 async function fetchUpstreamModels(provider: CustomProviderRecord): Promise<string[]> {
-  const keys = listProviderKeys(provider.id);
+  const keys = await listProviderKeys(provider.id);
   if (keys.length === 0) {
     throw new CustomProviderError(
       `Add at least one API key to "${provider.id}" before syncing models.`,
@@ -93,7 +93,7 @@ export async function syncProviderModels(
     upstreamModelId: modelId,
   }));
 
-  const imported = upsertProviderModels(provider.id, models, true);
+  const imported = await upsertProviderModels(provider.id, models, true);
 
   return {
     discovered,

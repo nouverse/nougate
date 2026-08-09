@@ -1,4 +1,5 @@
-import { dbAll, dbPrepare, dbRun, dbTransaction } from '@/core/db';
+import { eq, sql } from 'drizzle-orm';
+import { getDb, t } from '@/core/db';
 import { getProxyConfig } from '@/config/manager';
 
 export interface ApiKeyRecord {
@@ -36,40 +37,52 @@ function rowToRecord(row: any): ApiKeyRecord {
   return {
     id: row.id,
     name: row.name,
-    keyPrefix: row.key_prefix,
-    createdAt: row.created_at,
-    lastUsedAt: row.last_used_at ?? null,
-    expiresAt: row.expires_at ?? null,
+    keyPrefix: row.keyPrefix,
+    createdAt: Number(row.createdAt),
+    lastUsedAt: row.lastUsedAt === null || row.lastUsedAt === undefined ? null : Number(row.lastUsedAt),
+    expiresAt: row.expiresAt === null || row.expiresAt === undefined ? null : Number(row.expiresAt),
     revoked: row.revoked === 1,
-    requestCount: row.request_count ?? 0,
-    allowedProviders: row.allowed_providers ? JSON.parse(row.allowed_providers) : [],
+    requestCount: row.requestCount ?? 0,
+    allowedProviders: row.allowedProviders ? JSON.parse(row.allowedProviders) : [],
   };
 }
 
-function loadCache(): Map<string, ApiKeyRecord> {
+/**
+ * Verification runs on every proxy request, so it reads an in-memory map rather
+ * than the database. The map is (re)built here and invalidated on any mutation.
+ */
+async function loadCache(): Promise<Map<string, ApiKeyRecord>> {
   if (cache) {
     return cache;
   }
 
-  const rows = dbAll('SELECT * FROM api_keys WHERE revoked = 0');
+  const rows = await getDb().select().from(t.apiKeys).where(eq(t.apiKeys.revoked, 0));
   const next = new Map<string, ApiKeyRecord>();
   for (const row of rows) {
-    next.set(row.key_hash, rowToRecord(row));
+    next.set(row.keyHash, rowToRecord(row));
   }
 
   cache = next;
   return cache;
 }
 
-function invalidateCache(): void {
+/**
+ * Rebuild the verification map after a mutation.
+ *
+ * It is refreshed rather than dropped: `verifyApiKey` is synchronous because it
+ * runs on every proxy request, so a null cache would reject every key until
+ * something happened to reload it.
+ */
+async function refreshCache(): Promise<void> {
   cache = null;
+  await loadCache();
 }
 
 /**
  * Warm the verification cache during startup.
  */
-export function initApiKeys(): void {
-  loadCache();
+export async function initApiKeys(): Promise<void> {
+  await loadCache();
 }
 
 /**
@@ -86,11 +99,11 @@ export function isApiKeyAuthEnabled(): boolean {
 /**
  * Mint a new gateway key. The plaintext is returned exactly once.
  */
-export function createApiKey(options: {
+export async function createApiKey(options: {
   name: string;
   expiresInDays?: number | null;
   allowedProviders?: string[];
-}): CreatedApiKey {
+}): Promise<CreatedApiKey> {
   const name = options.name?.trim() || 'Unnamed key';
   const secret = Buffer.from(crypto.getRandomValues(new Uint8Array(SECRET_BYTES)))
     .toString('base64url');
@@ -103,22 +116,18 @@ export function createApiKey(options: {
       : null;
   const allowedProviders = options.allowedProviders?.filter(Boolean) ?? [];
 
-  dbRun(
-    `INSERT INTO api_keys (id, name, key_hash, key_prefix, created_at, expires_at, allowed_providers)
-     VALUES ($id, $name, $hash, $prefix, $createdAt, $expiresAt, $allowedProviders)`,
-    {
-      $id: id,
-      $name: name,
-      $hash: sha256(key),
-      // Enough of the key to recognize it in a list, never enough to use it.
-      $prefix: `${key.slice(0, KEY_PREFIX.length + 6)}...${key.slice(-4)}`,
-      $createdAt: createdAt,
-      $expiresAt: expiresAt,
-      $allowedProviders: allowedProviders.length ? JSON.stringify(allowedProviders) : null,
-    },
-  );
+  await getDb().insert(t.apiKeys).values({
+    id,
+    name,
+    keyHash: sha256(key),
+    // Enough of the key to recognize it in a list, never enough to use it.
+    keyPrefix: `${key.slice(0, KEY_PREFIX.length + 6)}...${key.slice(-4)}`,
+    createdAt,
+    expiresAt,
+    allowedProviders: allowedProviders.length ? JSON.stringify(allowedProviders) : null,
+  });
 
-  invalidateCache();
+  await refreshCache();
 
   return {
     id,
@@ -137,27 +146,37 @@ export function createApiKey(options: {
 /**
  * List every key, including revoked ones, for the dashboard.
  */
-export function listApiKeys(): ApiKeyRecord[] {
-  const rows = dbAll('SELECT * FROM api_keys ORDER BY created_at DESC');
+export async function listApiKeys(): Promise<ApiKeyRecord[]> {
+  const rows = await getDb().select().from(t.apiKeys).orderBy(sql`${t.apiKeys.createdAt} DESC`);
   return rows.map(rowToRecord);
 }
 
 /**
  * Revoke a key without deleting its usage history.
  */
-export function revokeApiKey(id: string): boolean {
-  const result = dbRun('UPDATE api_keys SET revoked = 1 WHERE id = $id', { $id: id });
-  invalidateCache();
-  return result.changes > 0;
+export async function revokeApiKey(id: string): Promise<boolean> {
+  const [existing] = await getDb().select({ id: t.apiKeys.id }).from(t.apiKeys).where(eq(t.apiKeys.id, id));
+  if (!existing) {
+    return false;
+  }
+
+  await getDb().update(t.apiKeys).set({ revoked: 1 }).where(eq(t.apiKeys.id, id));
+  await refreshCache();
+  return true;
 }
 
 /**
  * Permanently delete a key row.
  */
-export function deleteApiKey(id: string): boolean {
-  const result = dbRun('DELETE FROM api_keys WHERE id = $id', { $id: id });
-  invalidateCache();
-  return result.changes > 0;
+export async function deleteApiKey(id: string): Promise<boolean> {
+  const [existing] = await getDb().select({ id: t.apiKeys.id }).from(t.apiKeys).where(eq(t.apiKeys.id, id));
+  if (!existing) {
+    return false;
+  }
+
+  await getDb().delete(t.apiKeys).where(eq(t.apiKeys.id, id));
+  await refreshCache();
+  return true;
 }
 
 /**
@@ -193,7 +212,9 @@ export function verifyApiKey(raw: string | null): ApiKeyVerification {
     return { ok: false, reason: 'missing' };
   }
 
-  const record = loadCache().get(sha256(raw));
+  // Synchronous on purpose: this sits on every proxy request. `initApiKeys()`
+  // warms the map at boot and every mutation invalidates it.
+  const record = cache?.get(sha256(raw));
   if (!record) {
     return { ok: false, reason: 'invalid' };
   }
@@ -214,7 +235,7 @@ let usageTimer: ReturnType<typeof setInterval> | null = null;
 /**
  * Write buffered key usage counters to SQLite.
  */
-export function flushApiKeyUsage(): void {
+export async function flushApiKeyUsage(): Promise<void> {
   if (pendingUsage.size === 0) {
     return;
   }
@@ -223,17 +244,15 @@ export function flushApiKeyUsage(): void {
   pendingUsage.clear();
 
   try {
-    const statement = dbPrepare(
-      `UPDATE api_keys
-       SET last_used_at = $lastUsedAt, request_count = request_count + $count
-       WHERE id = $id`,
-    );
-    const write = dbTransaction(() => {
-      for (const [id, usage] of batch) {
-        statement.run({ $id: id, $count: usage.count, $lastUsedAt: usage.lastUsedAt });
-      }
-    });
-    write();
+    for (const [id, usage] of batch) {
+      await getDb()
+        .update(t.apiKeys)
+        .set({
+          lastUsedAt: usage.lastUsedAt,
+          requestCount: sql`${t.apiKeys.requestCount} + ${usage.count}`,
+        })
+        .where(eq(t.apiKeys.id, id));
+    }
   } catch (error) {
     console.warn('[ApiKeys] Failed to flush key usage:', error);
   }
@@ -266,7 +285,7 @@ export function touchApiKey(id: string): void {
   }
 
   if (!usageTimer) {
-    usageTimer = setInterval(() => flushApiKeyUsage(), 30_000);
+    usageTimer = setInterval(() => void flushApiKeyUsage(), 30_000);
     usageTimer.unref?.();
   }
 }

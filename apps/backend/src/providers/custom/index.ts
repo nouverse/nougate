@@ -25,6 +25,7 @@ import {
 } from '@/core/mappers/openai-to-anthropic';
 import { executeCustomRequest } from './executor';
 import {
+  type CustomProviderKeyRecord,
   type CustomProviderModelRecord,
   type CustomProviderRecord,
   getCustomProvider,
@@ -87,8 +88,17 @@ export class CustomProvider implements IProvider {
   readonly id: string;
   readonly displayName: string;
 
-  /** Model specs cached per request-burst; invalidated whenever models change. */
-  private specCache: Map<string, IModelSpec> | null = null;
+  /**
+   * Keys and model specs are held in memory rather than read per call.
+   *
+   * `IProvider` and `IModelRegistry` are synchronous contracts — `getAccounts`,
+   * `getSpec` and friends are called on the request path — but a database read
+   * is async once Postgres is a supported backend. The snapshot is refreshed
+   * whenever anything changes it, which also keeps the hot path off the
+   * database entirely.
+   */
+  private keys: CustomProviderKeyRecord[] = [];
+  private specs = new Map<string, IModelSpec>();
 
   constructor(private record: CustomProviderRecord) {
     this.id = record.id;
@@ -96,19 +106,28 @@ export class CustomProvider implements IProvider {
   }
 
   async init(): Promise<void> {
-    this.refresh();
+    await this.refresh();
   }
 
   /**
-   * Re-read this provider's row and drop the model cache. Called after any
-   * dashboard edit so changes take effect without a restart.
+   * Re-read this provider's row, keys and models. Called after any dashboard
+   * edit so changes take effect without a restart.
    */
-  refresh(): void {
-    const fresh = getCustomProvider(this.id);
+  async refresh(): Promise<void> {
+    const fresh = await getCustomProvider(this.id);
     if (fresh) {
       this.record = fresh;
     }
-    this.specCache = null;
+
+    this.keys = await listProviderKeys(this.id);
+
+    const specs = new Map<string, IModelSpec>();
+    for (const model of await listProviderModels(this.id)) {
+      if (model.enabled) {
+        specs.set(model.modelId.toLowerCase(), toModelSpec(model));
+      }
+    }
+    this.specs = specs;
   }
 
   getRecord(): CustomProviderRecord {
@@ -116,19 +135,7 @@ export class CustomProvider implements IProvider {
   }
 
   private getSpecs(): Map<string, IModelSpec> {
-    if (this.specCache) {
-      return this.specCache;
-    }
-
-    const specs = new Map<string, IModelSpec>();
-    for (const model of listProviderModels(this.id)) {
-      if (model.enabled) {
-        specs.set(model.modelId.toLowerCase(), toModelSpec(model));
-      }
-    }
-
-    this.specCache = specs;
-    return specs;
+    return this.specs;
   }
 
   getModelRegistry(): IModelRegistry {
@@ -172,7 +179,7 @@ export class CustomProvider implements IProvider {
    * score, and they show up in the dashboard's account views.
    */
   getAccounts(): IAccount[] {
-    return listProviderKeys(this.id).map((key) => ({
+    return this.keys.map((key) => ({
       id: key.id,
       providerId: this.id,
       healthScore: key.healthScore,
@@ -206,7 +213,7 @@ export class CustomProvider implements IProvider {
   }
 
   async updateAccountUsage(accountId: string, success: boolean): Promise<void> {
-    const key = listProviderKeys(this.id).find((candidate) => candidate.id === accountId);
+    const key = this.keys.find((candidate) => candidate.id === accountId);
     if (!key) {
       return;
     }
@@ -217,7 +224,7 @@ export class CustomProvider implements IProvider {
     } else {
       key.consecutiveFailures += 1;
     }
-    persistKeyState(key);
+    await persistKeyState(key);
   }
 
   async execute(params: ProviderExecuteParams): Promise<Response> {
@@ -334,43 +341,45 @@ export class CustomProvider implements IProvider {
   getConfig(): any {
     return {
       ...this.record,
-      keyCount: listProviderKeys(this.id).length,
+      keyCount: this.keys.length,
       modelCount: this.getSupportedModels().length,
     };
   }
 
   async resetAllAccounts(): Promise<void> {
-    resetProviderKeys(this.id);
+    await resetProviderKeys(this.id);
+    await this.refresh();
   }
 
   async resetAccount(accountId: string): Promise<void> {
-    const key = listProviderKeys(this.id).find((candidate) => candidate.id === accountId);
+    const key = this.keys.find((candidate) => candidate.id === accountId);
     if (!key) {
       return;
     }
     key.healthScore = 100;
     key.cooldownUntil = 0;
     key.consecutiveFailures = 0;
-    persistKeyState(key);
+    await persistKeyState(key);
   }
 
   async removeAccount(accountId: string): Promise<void> {
-    removeProviderKey(this.id, accountId);
+    await removeProviderKey(this.id, accountId);
+    await this.refresh();
   }
 
   async markAccountCooldown(accountId: string, _pool: string, duration?: string): Promise<void> {
-    const key = listProviderKeys(this.id).find((candidate) => candidate.id === accountId);
+    const key = this.keys.find((candidate) => candidate.id === accountId);
     if (!key) {
       return;
     }
     const seconds = duration ? parseInt(duration.replace(/[^0-9]/g, ''), 10) || 60 : 60;
     key.cooldownUntil = Date.now() + seconds * 1000;
-    persistKeyState(key);
+    await persistKeyState(key);
   }
 
   getCooldowns(): Record<string, number> {
     const cooldowns: Record<string, number> = {};
-    for (const key of listProviderKeys(this.id)) {
+    for (const key of this.keys) {
       if (key.cooldownUntil > Date.now()) {
         cooldowns[key.id] = key.cooldownUntil;
       }

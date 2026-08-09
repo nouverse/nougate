@@ -29,7 +29,7 @@ import { resolvePricing } from '@/core/metrics/pricing';
  * The price book lives in the backend, so the dashboard cannot work out on its
  * own whether a row left on "auto" ends up priced or unpriced.
  */
-function withPricingStatus(models: ReturnType<typeof listProviderModels>) {
+function withPricingStatus(models: Awaited<ReturnType<typeof listProviderModels>>) {
   return models.map((model) => {
     const pricing = resolvePricing({
       modelId: model.modelId,
@@ -67,16 +67,16 @@ function fail(error: unknown): Response {
 /**
  * Build the dashboard payload for a provider, with API keys masked.
  */
-function describeProvider(id: string) {
-  const record = getCustomProvider(id);
+async function describeProvider(id: string) {
+  const record = await getCustomProvider(id);
   if (!record) {
     return null;
   }
 
   return {
     ...record,
-    keys: listProviderKeys(id).map(maskKey),
-    models: withPricingStatus(listProviderModels(id)),
+    keys: (await listProviderKeys(id)).map(maskKey),
+    models: withPricingStatus(await listProviderModels(id)),
   };
 }
 
@@ -101,74 +101,77 @@ export async function handleCustomProvidersRoute(
     // ── Collection ───────────────────────────────────────────────────────────
     if (!providerId) {
       if (req.method === 'GET') {
+        const providers = await listCustomProviders();
         return json(
-          listCustomProviders().map((record) => ({
-            ...record,
-            keyCount: listProviderKeys(record.id).length,
-            modelCount: listProviderModels(record.id).length,
-          })),
+          await Promise.all(
+            providers.map(async (record) => ({
+              ...record,
+              keyCount: (await listProviderKeys(record.id)).length,
+              modelCount: (await listProviderModels(record.id)).length,
+            })),
+          ),
         );
       }
 
       if (req.method === 'POST') {
         const body = (await req.json().catch(() => ({}))) as any;
-        const record = createCustomProvider(body);
+        const record = await createCustomProvider(body);
 
         // Optional one-shot setup: accept the first API key with the provider.
         if (body.apiKey) {
-          addProviderKey(record.id, body.apiKey, body.keyLabel);
+          await addProviderKey(record.id, body.apiKey, body.keyLabel);
         }
 
-        syncCustomProvider(record);
+        await syncCustomProvider(record);
 
         // Only attempt discovery when there is a key to authenticate with.
         let modelSync: unknown = null;
         if (body.autoLoadModels && body.apiKey) {
           try {
             modelSync = await syncProviderModels(record);
-            refreshCustomProvider(record.id);
+            await refreshCustomProvider(record.id);
           } catch (error: any) {
             modelSync = { error: error?.message || String(error) };
           }
         }
 
         adminEventBus.emit('update', {});
-        return json({ provider: describeProvider(record.id), modelSync }, 201);
+        return json({ provider: await describeProvider(record.id), modelSync }, 201);
       }
     }
 
     // Checked before the single-provider routes so "reload" is not mistaken
     // for a provider ID.
     if (providerId === 'reload' && req.method === 'POST') {
-      initCustomProviders();
+      await initCustomProviders();
       return json({ ok: true });
     }
 
     // ── Single provider ──────────────────────────────────────────────────────
     if (providerId && !action) {
       if (req.method === 'GET') {
-        const described = describeProvider(providerId);
+        const described = await describeProvider(providerId);
         return described ? json(described) : json({ error: 'Provider not found' }, 404);
       }
 
       if (req.method === 'POST') {
         const body = (await req.json().catch(() => ({}))) as any;
-        const record = updateCustomProvider(providerId, body);
+        const record = await updateCustomProvider(providerId, body);
 
         if (record.enabled) {
-          syncCustomProvider(record);
-          refreshCustomProvider(record.id);
+          await syncCustomProvider(record);
+          await refreshCustomProvider(record.id);
         } else {
           removeCustomProviderInstance(record.id);
         }
 
         adminEventBus.emit('update', {});
-        return json(describeProvider(record.id));
+        return json(await describeProvider(record.id));
       }
 
       if (req.method === 'DELETE') {
         removeCustomProviderInstance(providerId);
-        const removed = deleteCustomProvider(providerId);
+        const removed = await deleteCustomProvider(providerId);
         adminEventBus.emit('update', {});
         return removed ? json({ ok: true }) : json({ error: 'Provider not found' }, 404);
       }
@@ -177,19 +180,19 @@ export async function handleCustomProvidersRoute(
     // ── Keys ─────────────────────────────────────────────────────────────────
     if (providerId && action === 'keys') {
       if (req.method === 'GET') {
-        return json(listProviderKeys(providerId).map(maskKey));
+        return json((await listProviderKeys(providerId)).map(maskKey));
       }
 
       if (req.method === 'POST' && !resourceId) {
         const body = (await req.json().catch(() => ({}))) as any;
-        const key = addProviderKey(providerId, body.apiKey, body.label);
-        refreshCustomProvider(providerId);
+        const key = await addProviderKey(providerId, body.apiKey, body.label);
+        await refreshCustomProvider(providerId);
         adminEventBus.emit('update', {});
         return json(maskKey(key), 201);
       }
 
       if (req.method === 'DELETE' && resourceId) {
-        const removed = removeProviderKey(providerId, resourceId);
+        const removed = await removeProviderKey(providerId, resourceId);
         adminEventBus.emit('update', {});
         return removed ? json({ ok: true }) : json({ error: 'Key not found' }, 404);
       }
@@ -198,7 +201,7 @@ export async function handleCustomProvidersRoute(
     // ── Models ───────────────────────────────────────────────────────────────
     if (providerId && action === 'models') {
       if (req.method === 'GET') {
-        return json(withPricingStatus(listProviderModels(providerId)));
+        return json(await withPricingStatus(await listProviderModels(providerId)));
       }
 
       if (req.method === 'POST' && !resourceId) {
@@ -208,15 +211,15 @@ export async function handleCustomProvidersRoute(
           return json({ error: 'Expected a "models" array.' }, 400);
         }
 
-        const written = upsertProviderModels(providerId, models);
-        refreshCustomProvider(providerId);
+        const written = await upsertProviderModels(providerId, models);
+        await refreshCustomProvider(providerId);
         adminEventBus.emit('update', {});
-        return json({ written, models: withPricingStatus(listProviderModels(providerId)) });
+        return json({ written, models: await withPricingStatus(await listProviderModels(providerId)) });
       }
 
       if (req.method === 'DELETE' && resourceId) {
-        const removed = deleteProviderModel(providerId, resourceId);
-        refreshCustomProvider(providerId);
+        const removed = await deleteProviderModel(providerId, resourceId);
+        await refreshCustomProvider(providerId);
         adminEventBus.emit('update', {});
         return removed ? json({ ok: true }) : json({ error: 'Model not found' }, 404);
       }
@@ -224,15 +227,15 @@ export async function handleCustomProvidersRoute(
 
     // ── Model auto-discovery ─────────────────────────────────────────────────
     if (providerId && action === 'sync-models' && req.method === 'POST') {
-      const record = getCustomProvider(providerId);
+      const record = await getCustomProvider(providerId);
       if (!record) {
         return json({ error: 'Provider not found' }, 404);
       }
 
       const result = await syncProviderModels(record);
-      refreshCustomProvider(providerId);
+      await refreshCustomProvider(providerId);
       adminEventBus.emit('update', {});
-      return json({ ...result, models: withPricingStatus(listProviderModels(providerId)) });
+      return json({ ...result, models: await withPricingStatus(await listProviderModels(providerId)) });
     }
 
     return json({ error: 'Unknown custom provider endpoint' }, 404);

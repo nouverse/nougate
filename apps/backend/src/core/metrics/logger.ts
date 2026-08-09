@@ -1,5 +1,4 @@
-import type { Statement } from 'bun:sqlite';
-import { getDb } from '@/core/db';
+import { getDb, t } from '@/core/db';
 
 export interface TokenLogEntry {
   timestamp: number;
@@ -30,20 +29,6 @@ const BATCH_LIMIT = 50;
 const FLUSH_INTERVAL_MS = 5000;
 const MAX_QUEUE_SIZE = 2000;
 
-const INSERT_SQL = `INSERT INTO token_usage_logs (
-  timestamp, session_id, client_id, api_key_id, provider, model, full_model_name,
-  protocol, streamed, status_code, duration_ms,
-  input_tokens, output_tokens, cached_input_tokens,
-  tokens_before_compression, tokens_after_compression, tokens_saved, estimated,
-  input_cost, output_cost, cost_saved
-) VALUES (
-  $timestamp, $sessionId, $clientId, $apiKeyId, $provider, $model, $fullModelName,
-  $protocol, $streamed, $statusCode, $durationMs,
-  $inputTokens, $outputTokens, $cachedInputTokens,
-  $tokensBefore, $tokensAfter, $tokensSaved, $estimated,
-  $inputCost, $outputCost, $costSaved
-)`;
-
 /**
  * Buffers token usage rows in memory and flushes them to SQLite in batches so
  * that a slow or locked database can never stall an in-flight LLM response.
@@ -51,8 +36,8 @@ const INSERT_SQL = `INSERT INTO token_usage_logs (
 class TokenMetricsLogger {
   private queue: TokenLogEntry[] = [];
   private timer: ReturnType<typeof setInterval> | null = null;
-  private insertStatement: Statement | null = null;
-  private flushTransaction: ((batch: TokenLogEntry[]) => void) | null = null;
+  /** Guards against two flushes overlapping once writes became async. */
+  private flushing = false;
 
   /**
    * Enqueue one request's metrics. Never throws — telemetry must not break proxying.
@@ -63,7 +48,7 @@ class TokenMetricsLogger {
       this.ensureTimer();
 
       if (this.queue.length >= BATCH_LIMIT) {
-        this.flush();
+        void this.flush();
       }
     } catch (error) {
       console.warn('[Metrics] Failed to enqueue token usage:', error);
@@ -73,22 +58,25 @@ class TokenMetricsLogger {
   /**
    * Write everything currently queued. Safe to call at any time.
    */
-  flush(): void {
-    if (this.queue.length === 0) {
+  async flush(): Promise<void> {
+    if (this.queue.length === 0 || this.flushing) {
       return;
     }
 
+    this.flushing = true;
     const batch = this.queue;
     this.queue = [];
 
     try {
-      this.getFlushTransaction()(batch);
+      await getDb().insert(t.tokenUsageLogs).values(batch.map(toRow));
     } catch (error) {
       console.error('[Metrics] Failed to persist token usage batch:', error);
 
-      // Put the batch back so a transient lock does not lose data, but cap the
-      // buffer so a permanently broken database cannot leak memory.
+      // Put the batch back so a transient failure does not lose data, but cap
+      // the buffer so a permanently broken database cannot leak memory.
       this.queue = [...batch, ...this.queue].slice(-MAX_QUEUE_SIZE);
+    } finally {
+      this.flushing = false;
     }
   }
 
@@ -104,50 +92,39 @@ class TokenMetricsLogger {
       return;
     }
 
-    this.timer = setInterval(() => this.flush(), FLUSH_INTERVAL_MS);
+    this.timer = setInterval(() => void this.flush(), FLUSH_INTERVAL_MS);
     // Do not hold the process open just for the metrics flush loop.
     this.timer.unref?.();
   }
+}
 
-  private getFlushTransaction(): (batch: TokenLogEntry[]) => void {
-    if (this.flushTransaction) {
-      return this.flushTransaction;
-    }
-
-    const db = getDb();
-    this.insertStatement = db.prepare(INSERT_SQL);
-    const statement = this.insertStatement;
-
-    this.flushTransaction = db.transaction((batch: TokenLogEntry[]) => {
-      for (const entry of batch) {
-        statement.run({
-          $timestamp: entry.timestamp,
-          $sessionId: entry.sessionId ?? null,
-          $clientId: entry.clientId,
-          $apiKeyId: entry.apiKeyId ?? null,
-          $provider: entry.provider,
-          $model: entry.model,
-          $fullModelName: entry.fullModelName,
-          $protocol: entry.protocol,
-          $streamed: entry.streamed ? 1 : 0,
-          $statusCode: entry.statusCode,
-          $durationMs: Math.round(entry.durationMs),
-          $inputTokens: Math.round(entry.inputTokens),
-          $outputTokens: Math.round(entry.outputTokens),
-          $cachedInputTokens: Math.round(entry.cachedInputTokens),
-          $tokensBefore: entry.tokensBeforeCompression ?? null,
-          $tokensAfter: entry.tokensAfterCompression ?? null,
-          $tokensSaved: Math.round(entry.tokensSaved),
-          $estimated: entry.estimated ? 1 : 0,
-          $inputCost: entry.inputCost,
-          $outputCost: entry.outputCost,
-          $costSaved: entry.costSaved,
-        });
-      }
-    });
-
-    return this.flushTransaction;
-  }
+/**
+ * Map one buffered entry onto its table row.
+ */
+function toRow(entry: TokenLogEntry) {
+  return {
+    timestamp: entry.timestamp,
+    sessionId: entry.sessionId ?? null,
+    clientId: entry.clientId,
+    apiKeyId: entry.apiKeyId ?? null,
+    provider: entry.provider,
+    model: entry.model,
+    fullModelName: entry.fullModelName,
+    protocol: entry.protocol,
+    streamed: entry.streamed ? 1 : 0,
+    statusCode: entry.statusCode,
+    durationMs: Math.round(entry.durationMs),
+    inputTokens: Math.round(entry.inputTokens),
+    outputTokens: Math.round(entry.outputTokens),
+    cachedInputTokens: Math.round(entry.cachedInputTokens),
+    tokensBeforeCompression: entry.tokensBeforeCompression ?? null,
+    tokensAfterCompression: entry.tokensAfterCompression ?? null,
+    tokensSaved: Math.round(entry.tokensSaved),
+    estimated: entry.estimated ? 1 : 0,
+    inputCost: entry.inputCost,
+    outputCost: entry.outputCost,
+    costSaved: entry.costSaved,
+  };
 }
 
 export const tokenMetricsLogger = new TokenMetricsLogger();

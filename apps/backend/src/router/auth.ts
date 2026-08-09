@@ -81,7 +81,7 @@ async function handleLogin(req: Request): Promise<Response> {
  * account settings page (where either may be changed alone).
  */
 async function handleUpdateProfile(req: Request): Promise<Response> {
-  const user = getActiveUser(req);
+  const user = await getActiveUser(req);
   if (!user) {
     return jsonResponse({ error: "Sign in first." }, 401);
   }
@@ -114,7 +114,7 @@ async function handleUpdateProfile(req: Request): Promise<Response> {
 
   try {
     if (newUsername) {
-      updated = setUsername(user.id, newUsername);
+      updated = await setUsername(user.id, newUsername);
     }
     if (newPassword) {
       await setPassword(user.id, newPassword);
@@ -148,7 +148,7 @@ export async function handleAuthRoute(req: Request, url: URL): Promise<Response 
   }
 
   if (url.pathname === "/api/auth/me" && req.method === "GET") {
-    const user = getActiveUser(req);
+    const user = await getActiveUser(req);
     if (!user) {
       return jsonResponse({ user: null }, 401);
     }

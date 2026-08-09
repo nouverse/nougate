@@ -1,4 +1,5 @@
-import { type SqlParams, dbAll, dbGet } from '@/core/db';
+import { and, asc, desc, eq, gte, isNull, sql, type SQL } from 'drizzle-orm';
+import { getDb, t, timeBucket } from '@/core/db';
 import { tokenMetricsLogger } from '@/core/metrics/logger';
 
 export type Lookback = '24h' | '7d' | '14d' | '30d' | '60d' | '90d';
@@ -17,6 +18,9 @@ const LOOKBACK_DAYS: Record<Lookback, number> = {
  * otherwise the chart silently loses its tail.
  */
 const ROLLUP_THRESHOLD_DAYS = 14;
+
+/** Filter value for requests made while gateway key auth was off. */
+export const NO_API_KEY = 'none';
 
 export interface UsageFilters {
   lookback: Lookback;
@@ -46,9 +50,6 @@ export interface ModelStat {
   totalTokens: number;
   totalCost: number;
 }
-
-/** Filter value for requests made while gateway key auth was off. */
-export const NO_API_KEY = 'none';
 
 export interface ApiKeyStat {
   apiKeyId: string;
@@ -96,284 +97,345 @@ function usesRollup(lookback: Lookback): boolean {
   return LOOKBACK_DAYS[lookback] > ROLLUP_THRESHOLD_DAYS;
 }
 
-interface Scope {
-  clause: string;
-  params: SqlParams;
-  /** True when the rollup table backs this window. */
-  rollup: boolean;
+/** Numeric columns arrive as strings from some drivers; normalise once. */
+function num(value: unknown): number {
+  return Number(value ?? 0);
 }
 
 /**
- * Resolve which table serves a window and build its WHERE clause + bindings.
+ * Build the WHERE clause for a window, against whichever table serves it.
  */
-function buildScope(filters: UsageFilters): Scope {
-  const rollup = usesRollup(filters.lookback);
-  const timeColumn = rollup ? 'date' : 'timestamp';
-  const since = rollup ? windowStartDate(filters.lookback) : windowStartMs(filters.lookback);
-
-  const conditions = [`${timeColumn} >= $since`];
-  const params: SqlParams = { $since: since };
+function scopeLogs(filters: UsageFilters): SQL {
+  const conditions = [gte(t.tokenUsageLogs.timestamp, windowStartMs(filters.lookback))];
 
   if (filters.clientId && filters.clientId !== 'all') {
-    conditions.push('client_id = $clientId');
-    params.$clientId = filters.clientId;
+    conditions.push(eq(t.tokenUsageLogs.clientId, filters.clientId));
   }
-
   if (filters.provider && filters.provider !== 'all') {
-    conditions.push('provider = $provider');
-    params.$provider = filters.provider;
+    conditions.push(eq(t.tokenUsageLogs.provider, filters.provider));
   }
-
   if (filters.apiKeyId && filters.apiKeyId !== 'all') {
-    if (filters.apiKeyId === NO_API_KEY) {
+    conditions.push(
       // Detail rows store NULL for "no key"; rollups store ''.
-      conditions.push(rollup ? "api_key_id = ''" : 'api_key_id IS NULL');
-    } else {
-      conditions.push('api_key_id = $apiKeyId');
-      params.$apiKeyId = filters.apiKeyId;
-    }
+      filters.apiKeyId === NO_API_KEY
+        ? isNull(t.tokenUsageLogs.apiKeyId)
+        : eq(t.tokenUsageLogs.apiKeyId, filters.apiKeyId),
+    );
   }
 
-  return { clause: conditions.join(' AND '), params, rollup };
+  return and(...conditions)!;
+}
+
+function scopeRollups(filters: UsageFilters): SQL {
+  const rollups = t.tokenUsageDailyRollups;
+  const conditions = [gte(rollups.date, windowStartDate(filters.lookback))];
+
+  if (filters.clientId && filters.clientId !== 'all') {
+    conditions.push(eq(rollups.clientId, filters.clientId));
+  }
+  if (filters.provider && filters.provider !== 'all') {
+    conditions.push(eq(rollups.provider, filters.provider));
+  }
+  if (filters.apiKeyId && filters.apiKeyId !== 'all') {
+    conditions.push(
+      eq(rollups.apiKeyId, filters.apiKeyId === NO_API_KEY ? '' : filters.apiKeyId),
+    );
+  }
+
+  return and(...conditions)!;
 }
 
 /**
  * Time-series of spend, tokens and savings for the dashboard chart.
  */
-export function getUsageSeries(filters: UsageFilters): UsagePoint[] {
-  const { clause, params, rollup } = buildScope(filters);
+export async function getUsageSeries(filters: UsageFilters): Promise<UsagePoint[]> {
+  const rollups = t.tokenUsageDailyRollups;
 
-  if (rollup) {
-    return dbAll<UsagePoint>(
-      `SELECT date AS period,
-              SUM(total_requests) AS requests,
-              SUM(total_input_tokens) AS inputTokens,
-              SUM(total_output_tokens) AS outputTokens,
-              SUM(total_input_tokens + total_output_tokens) AS totalTokens,
-              SUM(total_tokens_saved) AS tokensSaved,
-              SUM(total_input_cost + total_output_cost) AS totalCost,
-              SUM(total_cost_saved) AS costSaved
-       FROM token_usage_daily_rollups
-       WHERE ${clause}
-       GROUP BY period
-       ORDER BY period ASC`,
-      params,
-    );
+  if (usesRollup(filters.lookback)) {
+    const rows = await getDb()
+      .select({
+        period: rollups.date,
+        requests: sql<number>`sum(${rollups.totalRequests})`,
+        inputTokens: sql<number>`sum(${rollups.totalInputTokens})`,
+        outputTokens: sql<number>`sum(${rollups.totalOutputTokens})`,
+        tokensSaved: sql<number>`sum(${rollups.totalTokensSaved})`,
+        totalCost: sql<number>`sum(${rollups.totalInputCost} + ${rollups.totalOutputCost})`,
+        costSaved: sql<number>`sum(${rollups.totalCostSaved})`,
+      })
+      .from(rollups)
+      .where(scopeRollups(filters))
+      .groupBy(rollups.date)
+      .orderBy(asc(rollups.date));
+
+    return rows.map((row) => ({
+      period: row.period,
+      requests: num(row.requests),
+      inputTokens: num(row.inputTokens),
+      outputTokens: num(row.outputTokens),
+      totalTokens: num(row.inputTokens) + num(row.outputTokens),
+      tokensSaved: num(row.tokensSaved),
+      totalCost: num(row.totalCost),
+      costSaved: num(row.costSaved),
+    }));
   }
 
   // '24h' is charted hourly; the shorter multi-day windows are charted daily.
-  const bucket = filters.lookback === '24h' ? '%Y-%m-%dT%H:00' : '%Y-%m-%d';
+  const logs = t.tokenUsageLogs;
+  const bucket = timeBucket(logs.timestamp, filters.lookback === '24h' ? 'hour' : 'day');
 
-  return dbAll<UsagePoint>(
-    `SELECT strftime('${bucket}', timestamp / 1000, 'unixepoch') AS period,
-            COUNT(*) AS requests,
-            SUM(input_tokens) AS inputTokens,
-            SUM(output_tokens) AS outputTokens,
-            SUM(input_tokens + output_tokens) AS totalTokens,
-            SUM(tokens_saved) AS tokensSaved,
-            SUM(input_cost + output_cost) AS totalCost,
-            SUM(cost_saved) AS costSaved
-     FROM token_usage_logs
-     WHERE ${clause}
-     GROUP BY period
-     ORDER BY period ASC`,
-    params,
-  );
+  const rows = await getDb()
+    .select({
+      period: bucket,
+      requests: sql<number>`count(*)`,
+      inputTokens: sql<number>`sum(${logs.inputTokens})`,
+      outputTokens: sql<number>`sum(${logs.outputTokens})`,
+      tokensSaved: sql<number>`sum(${logs.tokensSaved})`,
+      totalCost: sql<number>`sum(${logs.inputCost} + ${logs.outputCost})`,
+      costSaved: sql<number>`sum(${logs.costSaved})`,
+    })
+    .from(logs)
+    .where(scopeLogs(filters))
+    .groupBy(bucket)
+    .orderBy(asc(bucket));
+
+  return rows.map((row) => ({
+    period: row.period,
+    requests: num(row.requests),
+    inputTokens: num(row.inputTokens),
+    outputTokens: num(row.outputTokens),
+    totalTokens: num(row.inputTokens) + num(row.outputTokens),
+    tokensSaved: num(row.tokensSaved),
+    totalCost: num(row.totalCost),
+    costSaved: num(row.costSaved),
+  }));
 }
 
 /**
  * Per-model leaderboard for the selected window.
  */
-export function getModelStats(filters: UsageFilters): ModelStat[] {
-  const { clause, params, rollup } = buildScope(filters);
+export async function getModelStats(filters: UsageFilters): Promise<ModelStat[]> {
+  const rollups = t.tokenUsageDailyRollups;
+  const logs = t.tokenUsageLogs;
 
-  if (rollup) {
-    return dbAll<ModelStat>(
-      `SELECT full_model_name AS fullModelName,
-              provider,
-              SUM(total_requests) AS requests,
-              SUM(total_input_tokens) AS inputTokens,
-              SUM(total_output_tokens) AS outputTokens,
-              SUM(total_input_tokens + total_output_tokens) AS totalTokens,
-              SUM(total_input_cost + total_output_cost) AS totalCost
-       FROM token_usage_daily_rollups
-       WHERE ${clause}
-       GROUP BY full_model_name, provider
-       ORDER BY totalTokens DESC`,
-      params,
-    );
-  }
+  const rows = usesRollup(filters.lookback)
+    ? await getDb()
+        .select({
+          fullModelName: rollups.fullModelName,
+          provider: rollups.provider,
+          requests: sql<number>`sum(${rollups.totalRequests})`,
+          inputTokens: sql<number>`sum(${rollups.totalInputTokens})`,
+          outputTokens: sql<number>`sum(${rollups.totalOutputTokens})`,
+          totalCost: sql<number>`sum(${rollups.totalInputCost} + ${rollups.totalOutputCost})`,
+        })
+        .from(rollups)
+        .where(scopeRollups(filters))
+        .groupBy(rollups.fullModelName, rollups.provider)
+    : await getDb()
+        .select({
+          fullModelName: logs.fullModelName,
+          provider: logs.provider,
+          requests: sql<number>`count(*)`,
+          inputTokens: sql<number>`sum(${logs.inputTokens})`,
+          outputTokens: sql<number>`sum(${logs.outputTokens})`,
+          totalCost: sql<number>`sum(${logs.inputCost} + ${logs.outputCost})`,
+        })
+        .from(logs)
+        .where(scopeLogs(filters))
+        .groupBy(logs.fullModelName, logs.provider);
 
-  return dbAll<ModelStat>(
-    `SELECT full_model_name AS fullModelName,
-            provider,
-            COUNT(*) AS requests,
-            SUM(input_tokens) AS inputTokens,
-            SUM(output_tokens) AS outputTokens,
-            SUM(input_tokens + output_tokens) AS totalTokens,
-            SUM(input_cost + output_cost) AS totalCost
-     FROM token_usage_logs
-     WHERE ${clause}
-     GROUP BY full_model_name, provider
-     ORDER BY totalTokens DESC`,
-    params,
-  );
+  return rows
+    .map((row) => ({
+      fullModelName: row.fullModelName,
+      provider: row.provider,
+      requests: num(row.requests),
+      inputTokens: num(row.inputTokens),
+      outputTokens: num(row.outputTokens),
+      totalTokens: num(row.inputTokens) + num(row.outputTokens),
+      totalCost: num(row.totalCost),
+    }))
+    .sort((a, b) => b.totalTokens - a.totalTokens);
 }
 
 /**
  * Spend grouped by provider, for the breakdown panel.
  */
-export function getProviderStats(filters: UsageFilters): Array<GroupStat & { provider: string }> {
-  const { clause, params, rollup } = buildScope(filters);
+export async function getProviderStats(
+  filters: UsageFilters,
+): Promise<Array<GroupStat & { provider: string }>> {
+  const rollups = t.tokenUsageDailyRollups;
+  const logs = t.tokenUsageLogs;
 
-  if (rollup) {
-    return dbAll(
-      `SELECT provider,
-              SUM(total_requests) AS requests,
-              SUM(total_input_tokens + total_output_tokens) AS totalTokens,
-              SUM(total_input_cost + total_output_cost) AS totalCost
-       FROM token_usage_daily_rollups
-       WHERE ${clause}
-       GROUP BY provider
-       ORDER BY totalTokens DESC`,
-      params,
-    );
-  }
+  const rows = usesRollup(filters.lookback)
+    ? await getDb()
+        .select({
+          provider: rollups.provider,
+          requests: sql<number>`sum(${rollups.totalRequests})`,
+          totalTokens: sql<number>`sum(${rollups.totalInputTokens} + ${rollups.totalOutputTokens})`,
+          totalCost: sql<number>`sum(${rollups.totalInputCost} + ${rollups.totalOutputCost})`,
+        })
+        .from(rollups)
+        .where(scopeRollups(filters))
+        .groupBy(rollups.provider)
+    : await getDb()
+        .select({
+          provider: logs.provider,
+          requests: sql<number>`count(*)`,
+          totalTokens: sql<number>`sum(${logs.inputTokens} + ${logs.outputTokens})`,
+          totalCost: sql<number>`sum(${logs.inputCost} + ${logs.outputCost})`,
+        })
+        .from(logs)
+        .where(scopeLogs(filters))
+        .groupBy(logs.provider);
 
-  return dbAll(
-    `SELECT provider,
-            COUNT(*) AS requests,
-            SUM(input_tokens + output_tokens) AS totalTokens,
-            SUM(input_cost + output_cost) AS totalCost
-     FROM token_usage_logs
-     WHERE ${clause}
-     GROUP BY provider
-     ORDER BY totalTokens DESC`,
-    params,
-  );
+  return rows
+    .map((row) => ({
+      provider: row.provider,
+      requests: num(row.requests),
+      totalTokens: num(row.totalTokens),
+      totalCost: num(row.totalCost),
+    }))
+    .sort((a, b) => b.totalTokens - a.totalTokens);
 }
 
 /**
  * Spend grouped by client, used for per-client budgeting views.
  */
-export function getClientStats(filters: UsageFilters): Array<GroupStat & { clientId: string }> {
-  const { clause, params, rollup } = buildScope(filters);
+export async function getClientStats(
+  filters: UsageFilters,
+): Promise<Array<GroupStat & { clientId: string }>> {
+  const rollups = t.tokenUsageDailyRollups;
+  const logs = t.tokenUsageLogs;
 
-  if (rollup) {
-    return dbAll(
-      `SELECT client_id AS clientId,
-              SUM(total_requests) AS requests,
-              SUM(total_input_tokens + total_output_tokens) AS totalTokens,
-              SUM(total_input_cost + total_output_cost) AS totalCost
-       FROM token_usage_daily_rollups
-       WHERE ${clause}
-       GROUP BY client_id
-       ORDER BY totalCost DESC`,
-      params,
-    );
-  }
+  const rows = usesRollup(filters.lookback)
+    ? await getDb()
+        .select({
+          clientId: rollups.clientId,
+          requests: sql<number>`sum(${rollups.totalRequests})`,
+          totalTokens: sql<number>`sum(${rollups.totalInputTokens} + ${rollups.totalOutputTokens})`,
+          totalCost: sql<number>`sum(${rollups.totalInputCost} + ${rollups.totalOutputCost})`,
+        })
+        .from(rollups)
+        .where(scopeRollups(filters))
+        .groupBy(rollups.clientId)
+    : await getDb()
+        .select({
+          clientId: logs.clientId,
+          requests: sql<number>`count(*)`,
+          totalTokens: sql<number>`sum(${logs.inputTokens} + ${logs.outputTokens})`,
+          totalCost: sql<number>`sum(${logs.inputCost} + ${logs.outputCost})`,
+        })
+        .from(logs)
+        .where(scopeLogs(filters))
+        .groupBy(logs.clientId);
 
-  return dbAll(
-    `SELECT client_id AS clientId,
-            COUNT(*) AS requests,
-            SUM(input_tokens + output_tokens) AS totalTokens,
-            SUM(input_cost + output_cost) AS totalCost
-     FROM token_usage_logs
-     WHERE ${clause}
-     GROUP BY client_id
-     ORDER BY totalCost DESC`,
-    params,
-  );
+  return rows
+    .map((row) => ({
+      clientId: row.clientId,
+      requests: num(row.requests),
+      totalTokens: num(row.totalTokens),
+      totalCost: num(row.totalCost),
+    }))
+    .sort((a, b) => b.totalCost - a.totalCost);
 }
 
 /**
  * Spend grouped by the gateway API key that authorised each request.
  */
-export function getApiKeyStats(filters: UsageFilters): ApiKeyStat[] {
-  const { clause, params, rollup } = buildScope(filters);
-  const table = rollup ? 'token_usage_daily_rollups' : 'token_usage_logs';
-  const requests = rollup ? 'SUM(total_requests)' : 'COUNT(*)';
-  const tokens = rollup
-    ? 'SUM(total_input_tokens + total_output_tokens)'
-    : 'SUM(input_tokens + output_tokens)';
-  const cost = rollup
-    ? 'SUM(total_input_cost + total_output_cost)'
-    : 'SUM(input_cost + output_cost)';
+export async function getApiKeyStats(filters: UsageFilters): Promise<ApiKeyStat[]> {
+  const rollups = t.tokenUsageDailyRollups;
+  const logs = t.tokenUsageLogs;
+  const keys = t.apiKeys;
 
-  const rows = dbAll<any>(
-    `SELECT COALESCE(usage.api_key_id, '') AS apiKeyId,
-            k.name AS name,
-            COALESCE(k.revoked, 0) AS revoked,
-            ${requests} AS requests,
-            ${tokens} AS totalTokens,
-            ${cost} AS totalCost
-     FROM ${table} AS usage
-     LEFT JOIN api_keys AS k ON k.id = usage.api_key_id
-     WHERE ${clause.replace(/\b(timestamp|date|client_id|provider|api_key_id)\b/g, 'usage.$1')}
-     GROUP BY apiKeyId
-     ORDER BY totalCost DESC, totalTokens DESC`,
-    params,
-  );
+  const rows = usesRollup(filters.lookback)
+    ? await getDb()
+        .select({
+          apiKeyId: rollups.apiKeyId,
+          name: keys.name,
+          revoked: keys.revoked,
+          requests: sql<number>`sum(${rollups.totalRequests})`,
+          totalTokens: sql<number>`sum(${rollups.totalInputTokens} + ${rollups.totalOutputTokens})`,
+          totalCost: sql<number>`sum(${rollups.totalInputCost} + ${rollups.totalOutputCost})`,
+        })
+        .from(rollups)
+        .leftJoin(keys, eq(keys.id, rollups.apiKeyId))
+        .where(scopeRollups(filters))
+        .groupBy(rollups.apiKeyId, keys.name, keys.revoked)
+    : await getDb()
+        .select({
+          apiKeyId: logs.apiKeyId,
+          name: keys.name,
+          revoked: keys.revoked,
+          requests: sql<number>`count(*)`,
+          totalTokens: sql<number>`sum(${logs.inputTokens} + ${logs.outputTokens})`,
+          totalCost: sql<number>`sum(${logs.inputCost} + ${logs.outputCost})`,
+        })
+        .from(logs)
+        .leftJoin(keys, eq(keys.id, logs.apiKeyId))
+        .where(scopeLogs(filters))
+        .groupBy(logs.apiKeyId, keys.name, keys.revoked);
 
-  return rows.map((row) => ({
-    apiKeyId: row.apiKeyId || NO_API_KEY,
-    name: row.name || (row.apiKeyId ? 'deleted key' : 'no key'),
-    revoked: row.revoked === 1,
-    requests: row.requests ?? 0,
-    totalTokens: row.totalTokens ?? 0,
-    totalCost: row.totalCost ?? 0,
-  }));
+  return rows
+    .map((row) => ({
+      apiKeyId: row.apiKeyId || NO_API_KEY,
+      name: row.name || (row.apiKeyId ? 'deleted key' : 'no key'),
+      revoked: row.revoked === 1,
+      requests: num(row.requests),
+      totalTokens: num(row.totalTokens),
+      totalCost: num(row.totalCost),
+    }))
+    .sort((a, b) => b.totalCost - a.totalCost || b.totalTokens - a.totalTokens);
 }
 
 /**
  * Headline numbers for the stat cards.
  */
-export function getUsageSummary(filters: UsageFilters): UsageSummary {
-  const { clause, params, rollup } = buildScope(filters);
+export async function getUsageSummary(filters: UsageFilters): Promise<UsageSummary> {
+  const rollups = t.tokenUsageDailyRollups;
+  const logs = t.tokenUsageLogs;
 
-  const row = rollup
-    ? dbGet<any>(
-        `SELECT COALESCE(SUM(total_requests), 0) AS requests,
-                COALESCE(SUM(total_input_tokens), 0) AS inputTokens,
-                COALESCE(SUM(total_output_tokens), 0) AS outputTokens,
-                COALESCE(SUM(total_tokens_saved), 0) AS tokensSaved,
-                COALESCE(SUM(total_input_cost + total_output_cost), 0) AS totalCost,
-                COALESCE(SUM(total_cost_saved), 0) AS costSaved,
-                0 AS avgDurationMs
-         FROM token_usage_daily_rollups
-         WHERE ${clause}`,
-        params,
-      )
-    : dbGet<any>(
-        `SELECT COUNT(*) AS requests,
-                COALESCE(SUM(input_tokens), 0) AS inputTokens,
-                COALESCE(SUM(output_tokens), 0) AS outputTokens,
-                COALESCE(SUM(tokens_saved), 0) AS tokensSaved,
-                COALESCE(SUM(input_cost + output_cost), 0) AS totalCost,
-                COALESCE(SUM(cost_saved), 0) AS costSaved,
-                COALESCE(AVG(duration_ms), 0) AS avgDurationMs
-         FROM token_usage_logs
-         WHERE ${clause}`,
-        params,
-      );
+  const [row] = usesRollup(filters.lookback)
+    ? await getDb()
+        .select({
+          requests: sql<number>`coalesce(sum(${rollups.totalRequests}), 0)`,
+          inputTokens: sql<number>`coalesce(sum(${rollups.totalInputTokens}), 0)`,
+          outputTokens: sql<number>`coalesce(sum(${rollups.totalOutputTokens}), 0)`,
+          tokensSaved: sql<number>`coalesce(sum(${rollups.totalTokensSaved}), 0)`,
+          totalCost: sql<number>`coalesce(sum(${rollups.totalInputCost} + ${rollups.totalOutputCost}), 0)`,
+          costSaved: sql<number>`coalesce(sum(${rollups.totalCostSaved}), 0)`,
+          avgDurationMs: sql<number>`0`,
+        })
+        .from(rollups)
+        .where(scopeRollups(filters))
+    : await getDb()
+        .select({
+          requests: sql<number>`count(*)`,
+          inputTokens: sql<number>`coalesce(sum(${logs.inputTokens}), 0)`,
+          outputTokens: sql<number>`coalesce(sum(${logs.outputTokens}), 0)`,
+          tokensSaved: sql<number>`coalesce(sum(${logs.tokensSaved}), 0)`,
+          totalCost: sql<number>`coalesce(sum(${logs.inputCost} + ${logs.outputCost}), 0)`,
+          costSaved: sql<number>`coalesce(sum(${logs.costSaved}), 0)`,
+          avgDurationMs: sql<number>`coalesce(avg(${logs.durationMs}), 0)`,
+        })
+        .from(logs)
+        .where(scopeLogs(filters));
 
-  const inputTokens = row?.inputTokens ?? 0;
-  const outputTokens = row?.outputTokens ?? 0;
-  const totalCost = row?.totalCost ?? 0;
-  const costSaved = row?.costSaved ?? 0;
+  const inputTokens = num(row?.inputTokens);
+  const outputTokens = num(row?.outputTokens);
+  const totalCost = num(row?.totalCost);
+  const costSaved = num(row?.costSaved);
   const originalCost = totalCost + costSaved;
 
   return {
-    requests: row?.requests ?? 0,
+    requests: num(row?.requests),
     inputTokens,
     outputTokens,
     totalTokens: inputTokens + outputTokens,
-    tokensSaved: row?.tokensSaved ?? 0,
+    tokensSaved: num(row?.tokensSaved),
     totalCost,
     costSaved,
     originalCost,
     savingsPercent: originalCost > 0 ? (costSaved / originalCost) * 100 : 0,
-    avgDurationMs: row?.avgDurationMs ?? 0,
+    avgDurationMs: num(row?.avgDurationMs),
     pendingWrites: tokenMetricsLogger.pendingCount(),
   };
 }
@@ -381,31 +443,50 @@ export function getUsageSummary(filters: UsageFilters): UsageSummary {
 /**
  * Most recent individual requests, for the live activity table.
  */
-export function getRecentLogs(limit = 50): any[] {
+export async function getRecentLogs(limit = 50): Promise<any[]> {
+  const logs = t.tokenUsageLogs;
+  const keys = t.apiKeys;
   const capped = Math.min(Math.max(limit, 1), 500);
 
-  return dbAll(
-    `SELECT l.id, l.timestamp, l.client_id AS clientId, l.full_model_name AS fullModelName,
-            l.provider, l.protocol, l.streamed, l.status_code AS statusCode,
-            l.duration_ms AS durationMs, l.input_tokens AS inputTokens,
-            l.output_tokens AS outputTokens, l.tokens_saved AS tokensSaved,
-            l.estimated, (l.input_cost + l.output_cost) AS totalCost,
-            l.api_key_id AS apiKeyId, k.name AS apiKeyName
-     FROM token_usage_logs AS l
-     LEFT JOIN api_keys AS k ON k.id = l.api_key_id
-     ORDER BY l.timestamp DESC
-     LIMIT $limit`,
-    { $limit: capped },
-  );
+  const rows = await getDb()
+    .select({
+      id: logs.id,
+      timestamp: logs.timestamp,
+      clientId: logs.clientId,
+      fullModelName: logs.fullModelName,
+      provider: logs.provider,
+      protocol: logs.protocol,
+      streamed: logs.streamed,
+      statusCode: logs.statusCode,
+      durationMs: logs.durationMs,
+      inputTokens: logs.inputTokens,
+      outputTokens: logs.outputTokens,
+      tokensSaved: logs.tokensSaved,
+      estimated: logs.estimated,
+      totalCost: sql<number>`${logs.inputCost} + ${logs.outputCost}`,
+      apiKeyId: logs.apiKeyId,
+      apiKeyName: keys.name,
+    })
+    .from(logs)
+    .leftJoin(keys, eq(keys.id, logs.apiKeyId))
+    .orderBy(desc(logs.timestamp))
+    .limit(capped);
+
+  return rows.map((row) => ({
+    ...row,
+    timestamp: num(row.timestamp),
+    totalCost: num(row.totalCost),
+  }));
 }
 
 /**
  * Distinct client IDs seen in the retention window, for the filter dropdown.
  */
-export function getKnownClients(): string[] {
-  const rows = dbAll<{ clientId: string }>(
-    'SELECT DISTINCT client_id AS clientId FROM token_usage_logs ORDER BY client_id ASC',
-  );
+export async function getKnownClients(): Promise<string[]> {
+  const rows = await getDb()
+    .selectDistinct({ clientId: t.tokenUsageLogs.clientId })
+    .from(t.tokenUsageLogs)
+    .orderBy(asc(t.tokenUsageLogs.clientId));
   return rows.map((row) => row.clientId);
 }
 
@@ -428,47 +509,46 @@ const CSV_COLUMNS = [
   'input_cost',
   'output_cost',
   'cost_saved',
-];
+] as const;
 
 /**
  * Flatten the detail log into CSV for the export button.
  */
-export function exportLogsCsv(filters: UsageFilters): string {
+export async function exportLogsCsv(filters: UsageFilters): Promise<string> {
+  const logs = t.tokenUsageLogs;
+
   // Export always reads the detail table: the rollup has no per-request rows.
-  const conditions = ['timestamp >= $since'];
-  const params: SqlParams = { $since: windowStartMs(filters.lookback) };
-
-  if (filters.clientId && filters.clientId !== 'all') {
-    conditions.push('client_id = $clientId');
-    params.$clientId = filters.clientId;
-  }
-  if (filters.provider && filters.provider !== 'all') {
-    conditions.push('provider = $provider');
-    params.$provider = filters.provider;
-  }
-  if (filters.apiKeyId && filters.apiKeyId !== 'all') {
-    if (filters.apiKeyId === NO_API_KEY) {
-      conditions.push('api_key_id IS NULL');
-    } else {
-      conditions.push('api_key_id = $apiKeyId');
-      params.$apiKeyId = filters.apiKeyId;
-    }
-  }
-
-  const rows = dbAll<Record<string, unknown>>(
-    `SELECT ${CSV_COLUMNS.join(', ')}
-     FROM token_usage_logs
-     WHERE ${conditions.join(' AND ')}
-     ORDER BY timestamp ASC`,
-    params,
-  );
+  const rows = await getDb()
+    .select({
+      timestamp: logs.timestamp,
+      client_id: logs.clientId,
+      api_key_id: logs.apiKeyId,
+      provider: logs.provider,
+      model: logs.model,
+      full_model_name: logs.fullModelName,
+      protocol: logs.protocol,
+      streamed: logs.streamed,
+      status_code: logs.statusCode,
+      duration_ms: logs.durationMs,
+      input_tokens: logs.inputTokens,
+      output_tokens: logs.outputTokens,
+      cached_input_tokens: logs.cachedInputTokens,
+      tokens_saved: logs.tokensSaved,
+      estimated: logs.estimated,
+      input_cost: logs.inputCost,
+      output_cost: logs.outputCost,
+      cost_saved: logs.costSaved,
+    })
+    .from(logs)
+    .where(scopeLogs(filters))
+    .orderBy(asc(logs.timestamp));
 
   const lines = [CSV_COLUMNS.join(',')];
-  for (const row of rows) {
+  for (const row of rows as Record<string, unknown>[]) {
     lines.push(
       CSV_COLUMNS.map((column) => {
         const value =
-          column === 'timestamp' ? new Date(Number(row.timestamp)).toISOString() : row[column];
+          column === 'timestamp' ? new Date(num(row.timestamp)).toISOString() : row[column];
         const text = value === null || value === undefined ? '' : String(value);
         return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
       }).join(','),

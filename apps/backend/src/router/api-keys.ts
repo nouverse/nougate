@@ -28,11 +28,11 @@ export async function handleApiKeysRoute(req: Request, url: URL): Promise<Respon
     if (url.pathname === '/api/api-keys' && req.method === 'GET') {
       // Usage counters buffer in memory between timer flushes; write them out
       // first so the dashboard never shows a stale request count.
-      flushApiKeyUsage();
+      await flushApiKeyUsage();
 
       return json({
         enabled: isApiKeyAuthEnabled(),
-        keys: listApiKeys(),
+        keys: await listApiKeys(),
       });
     }
 
@@ -42,7 +42,7 @@ export async function handleApiKeysRoute(req: Request, url: URL): Promise<Respon
         return json({ error: 'A name is required so the key can be identified later.' }, 400);
       }
 
-      const created = createApiKey({
+      const created = await createApiKey({
         name: body.name,
         expiresInDays: body.expiresInDays ?? null,
         allowedProviders: Array.isArray(body.allowedProviders) ? body.allowedProviders : [],
@@ -56,7 +56,7 @@ export async function handleApiKeysRoute(req: Request, url: URL): Promise<Respon
       const body = (await req.json().catch(() => ({}))) as any;
       const enabled = body?.enabled === true;
 
-      if (enabled && listApiKeys().filter((key) => !key.revoked).length === 0) {
+      if (enabled && (await listApiKeys()).filter((key) => !key.revoked).length === 0) {
         return json(
           { error: 'Create at least one API key before enforcing key authentication.' },
           400,
@@ -73,13 +73,13 @@ export async function handleApiKeysRoute(req: Request, url: URL): Promise<Respon
 
     const revokeMatch = url.pathname.match(/^\/api\/api-keys\/([^/]+)\/revoke$/);
     if (revokeMatch && req.method === 'POST') {
-      const ok = revokeApiKey(decodeURIComponent(revokeMatch[1]));
+      const ok = await revokeApiKey(decodeURIComponent(revokeMatch[1]));
       return ok ? json({ ok: true }) : json({ error: 'Key not found' }, 404);
     }
 
     const deleteMatch = url.pathname.match(/^\/api\/api-keys\/([^/]+)$/);
     if (deleteMatch && req.method === 'DELETE') {
-      const ok = deleteApiKey(decodeURIComponent(deleteMatch[1]));
+      const ok = await deleteApiKey(decodeURIComponent(deleteMatch[1]));
       return ok ? json({ ok: true }) : json({ error: 'Key not found' }, 404);
     }
 

@@ -43,33 +43,33 @@ export async function handleMetricsRoute(req: Request, url: URL): Promise<Respon
     // Flush buffered rows first so the dashboard reflects requests that just
     // finished instead of lagging one batch behind.
     if (req.method === 'GET') {
-      tokenMetricsLogger.flush();
+      await tokenMetricsLogger.flush();
     }
 
     if (url.pathname === '/api/metrics/token-usage' && req.method === 'GET') {
       const filters = readFilters(url);
       return json({
         lookback: filters.lookback,
-        summary: getUsageSummary(filters),
-        usageData: getUsageSeries(filters),
-        modelStats: getModelStats(filters),
-        providerStats: getProviderStats(filters),
-        clientStats: getClientStats(filters),
+        summary: await getUsageSummary(filters),
+        usageData: await getUsageSeries(filters),
+        modelStats: await getModelStats(filters),
+        providerStats: await getProviderStats(filters),
+        clientStats: await getClientStats(filters),
         // Computed without the key filter, so the dropdown keeps listing every
         // key even while one of them is selected.
-        apiKeyStats: getApiKeyStats({ ...filters, apiKeyId: 'all' }),
-        clients: getKnownClients(),
+        apiKeyStats: await getApiKeyStats({ ...filters, apiKeyId: 'all' }),
+        clients: await getKnownClients(),
       });
     }
 
     if (url.pathname === '/api/metrics/recent' && req.method === 'GET') {
       const limit = parseInt(url.searchParams.get('limit') || '50', 10);
-      return json(getRecentLogs(Number.isFinite(limit) ? limit : 50));
+      return json(await getRecentLogs(Number.isFinite(limit) ? limit : 50));
     }
 
     if (url.pathname === '/api/metrics/export' && req.method === 'GET') {
       const filters = readFilters(url);
-      const csv = exportLogsCsv(filters);
+      const csv = await exportLogsCsv(filters);
       return new Response(csv, {
         status: 200,
         headers: {
@@ -80,7 +80,7 @@ export async function handleMetricsRoute(req: Request, url: URL): Promise<Respon
     }
 
     if (url.pathname === '/api/metrics/maintenance' && req.method === 'POST') {
-      runMaintenance();
+      await runMaintenance();
       return json({ ok: true });
     }
 

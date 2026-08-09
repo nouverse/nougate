@@ -16,9 +16,9 @@ import { projectPath } from "@/core/paths";
 
 await loadProxyConfig();
 setupLogCapture();
-initDb();
+await initDb();
 await initUsers();
-initApiKeys();
+await initApiKeys();
 
 const antigravityProvider = new AntigravityProvider();
 await antigravityProvider.init();
@@ -29,7 +29,7 @@ await copilotProvider.init();
 registerProvider(copilotProvider);
 
 // Registered last so a custom provider can never shadow a built-in ID.
-initCustomProviders();
+await initCustomProviders();
 startMetricsMaintenance();
 
 registerOpenAIProtocol();

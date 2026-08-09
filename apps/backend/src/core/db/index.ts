@@ -1,261 +1,171 @@
 import { Database } from 'bun:sqlite';
 import { existsSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
+import { drizzle as drizzleSqlite } from 'drizzle-orm/bun-sqlite';
+import { drizzle as drizzlePg } from 'drizzle-orm/postgres-js';
+import postgres from 'postgres';
+
 import { dataPath } from '@/core/paths';
+import * as sqliteSchema from '@/core/db/schema/sqlite';
+import * as pgSchema from '@/core/db/schema/pg';
+
+export type Dialect = 'sqlite' | 'postgres';
 
 /**
- * Resolve the on-disk location of the SQLite database.
+ * Which database backs this process.
  *
- * Anchored to the project root rather than `process.cwd()` — see `core/paths`
- * for why that distinction matters.
+ * `DB_URL` decides: empty (or a sqlite:/file: path) keeps the embedded SQLite
+ * file, a postgres URL connects there instead. Nothing else in the codebase
+ * branches on this — the two schemas are structurally identical, and every
+ * query is written with `await`, which both drivers accept.
  */
-function resolveDbPath(): string {
+export function resolveDialect(url = process.env.DB_URL): Dialect {
+  const trimmed = (url ?? '').trim();
+
+  if (!trimmed || trimmed.startsWith('sqlite:') || trimmed.startsWith('file:')) {
+    return 'sqlite';
+  }
+  if (trimmed.startsWith('postgres://') || trimmed.startsWith('postgresql://')) {
+    return 'postgres';
+  }
+
+  throw new Error(
+    `[DB] Unsupported DB_URL "${trimmed}". Use postgres://…, sqlite:<path>, ` +
+      'or leave it empty for the built-in SQLite file.',
+  );
+}
+
+/**
+ * Where the SQLite file lives, when SQLite is the backend.
+ */
+export function resolveSqlitePath(url = process.env.DB_URL): string {
+  const trimmed = (url ?? '').trim();
+
+  if (trimmed.startsWith('sqlite:') || trimmed.startsWith('file:')) {
+    const path = trimmed.replace(/^(sqlite:\/\/|sqlite:|file:\/\/|file:)/, '');
+    if (path) {
+      return path;
+    }
+  }
+
   return process.env.NOUGATE_DB_PATH || dataPath('nougate.db');
 }
 
-let database: Database | null = null;
-let resolvedPath: string | null = null;
+export const dialect: Dialect = resolveDialect();
 
 /**
- * Statements that bring an empty (or older) database up to the current schema.
- * Every statement is idempotent so it can run on every boot.
+ * The active tables.
+ *
+ * Typed as the SQLite variant so call sites see one concrete set of types. The
+ * Postgres schema is built to match column-for-column, and a test asserts the
+ * two stay in step — this cast is the single point where they meet.
  */
-const SCHEMA_STATEMENTS = [
-  // ─── Token usage & cost ─────────────────────────────────────────────────────
-  `CREATE TABLE IF NOT EXISTS token_usage_logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp INTEGER NOT NULL,
-    session_id TEXT,
-    client_id TEXT NOT NULL DEFAULT 'unknown',
-    api_key_id TEXT,
-    provider TEXT NOT NULL,
-    model TEXT NOT NULL,
-    full_model_name TEXT NOT NULL,
-    protocol TEXT NOT NULL DEFAULT 'openai',
-    streamed INTEGER NOT NULL DEFAULT 0,
-    status_code INTEGER NOT NULL DEFAULT 200,
-    duration_ms INTEGER NOT NULL DEFAULT 0,
-    input_tokens INTEGER NOT NULL DEFAULT 0,
-    output_tokens INTEGER NOT NULL DEFAULT 0,
-    cached_input_tokens INTEGER NOT NULL DEFAULT 0,
-    tokens_before_compression INTEGER,
-    tokens_after_compression INTEGER,
-    tokens_saved INTEGER NOT NULL DEFAULT 0,
-    estimated INTEGER NOT NULL DEFAULT 0,
-    input_cost REAL NOT NULL DEFAULT 0,
-    output_cost REAL NOT NULL DEFAULT 0,
-    cost_saved REAL NOT NULL DEFAULT 0
-  )`,
-  `CREATE INDEX IF NOT EXISTS idx_token_logs_timestamp ON token_usage_logs (timestamp)`,
-  `CREATE INDEX IF NOT EXISTS idx_token_logs_model ON token_usage_logs (full_model_name)`,
-  `CREATE INDEX IF NOT EXISTS idx_token_logs_client ON token_usage_logs (client_id)`,
-  `CREATE INDEX IF NOT EXISTS idx_token_logs_provider ON token_usage_logs (provider)`,
-
-  // api_key_id is part of the key so long-window charts can be filtered by
-  // gateway key, not just by client. '' means "recorded while key auth was off".
-  `CREATE TABLE IF NOT EXISTS token_usage_daily_rollups (
-    date TEXT NOT NULL,
-    provider TEXT NOT NULL,
-    model TEXT NOT NULL,
-    full_model_name TEXT NOT NULL,
-    client_id TEXT NOT NULL,
-    api_key_id TEXT NOT NULL DEFAULT '',
-    total_requests INTEGER NOT NULL DEFAULT 0,
-    total_input_tokens INTEGER NOT NULL DEFAULT 0,
-    total_output_tokens INTEGER NOT NULL DEFAULT 0,
-    total_tokens_saved INTEGER NOT NULL DEFAULT 0,
-    total_input_cost REAL NOT NULL DEFAULT 0,
-    total_output_cost REAL NOT NULL DEFAULT 0,
-    total_cost_saved REAL NOT NULL DEFAULT 0,
-    PRIMARY KEY (date, full_model_name, client_id, api_key_id)
-  )`,
-  `CREATE INDEX IF NOT EXISTS idx_rollups_date ON token_usage_daily_rollups (date)`,
-  `CREATE INDEX IF NOT EXISTS idx_rollups_api_key ON token_usage_daily_rollups (api_key_id)`,
-  `CREATE INDEX IF NOT EXISTS idx_token_logs_api_key ON token_usage_logs (api_key_id)`,
-
-  // ─── Dashboard users ────────────────────────────────────────────────────────
-  // COLLATE NOCASE on the unique username so "Admin" cannot be registered
-  // alongside "admin".
-  `CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    username TEXT NOT NULL COLLATE NOCASE UNIQUE,
-    password_hash TEXT NOT NULL,
-    must_change_password INTEGER NOT NULL DEFAULT 0,
-    created_at INTEGER NOT NULL,
-    last_login_at INTEGER
-  )`,
-
-  // ─── Gateway API keys ───────────────────────────────────────────────────────
-  `CREATE TABLE IF NOT EXISTS api_keys (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    key_hash TEXT NOT NULL UNIQUE,
-    key_prefix TEXT NOT NULL,
-    created_at INTEGER NOT NULL,
-    last_used_at INTEGER,
-    expires_at INTEGER,
-    revoked INTEGER NOT NULL DEFAULT 0,
-    request_count INTEGER NOT NULL DEFAULT 0,
-    allowed_providers TEXT
-  )`,
-  `CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys (key_hash)`,
-
-  // ─── Custom providers ───────────────────────────────────────────────────────
-  `CREATE TABLE IF NOT EXISTS custom_providers (
-    id TEXT PRIMARY KEY,
-    display_name TEXT NOT NULL,
-    base_url TEXT NOT NULL,
-    api_style TEXT NOT NULL DEFAULT 'openai',
-    enabled INTEGER NOT NULL DEFAULT 1,
-    extra_headers TEXT,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-  )`,
-
-  `CREATE TABLE IF NOT EXISTS custom_provider_keys (
-    id TEXT PRIMARY KEY,
-    provider_id TEXT NOT NULL,
-    label TEXT NOT NULL,
-    api_key TEXT NOT NULL,
-    health_score INTEGER NOT NULL DEFAULT 100,
-    last_used INTEGER NOT NULL DEFAULT 0,
-    cooldown_until INTEGER NOT NULL DEFAULT 0,
-    consecutive_failures INTEGER NOT NULL DEFAULT 0,
-    token_usage INTEGER NOT NULL DEFAULT 0,
-    created_at INTEGER NOT NULL,
-    FOREIGN KEY (provider_id) REFERENCES custom_providers (id) ON DELETE CASCADE
-  )`,
-  `CREATE INDEX IF NOT EXISTS idx_custom_keys_provider ON custom_provider_keys (provider_id)`,
-
-  `CREATE TABLE IF NOT EXISTS custom_provider_models (
-    provider_id TEXT NOT NULL,
-    model_id TEXT NOT NULL,
-    display_name TEXT,
-    upstream_model_id TEXT,
-    pool TEXT NOT NULL DEFAULT 'cli',
-    is_thinking INTEGER NOT NULL DEFAULT 0,
-    thinking_mode TEXT,
-    thinking_budget INTEGER,
-    max_output_tokens INTEGER NOT NULL DEFAULT 8192,
-    timeout_ms INTEGER NOT NULL DEFAULT 60000,
-    input_price_per_1m REAL,
-    output_price_per_1m REAL,
-    enabled INTEGER NOT NULL DEFAULT 1,
-    PRIMARY KEY (provider_id, model_id),
-    FOREIGN KEY (provider_id) REFERENCES custom_providers (id) ON DELETE CASCADE
-  )`,
-];
+export const t = (dialect === 'postgres'
+  ? pgSchema.schema
+  : sqliteSchema.schema) as unknown as typeof sqliteSchema.schema;
 
 /**
- * Open (once) and return the shared SQLite handle, applying the schema on first use.
+ * Bucket an epoch-millisecond column into an hour or day label. The only query
+ * fragment the two databases genuinely disagree on.
  */
-export function getDb(): Database {
-  if (database) {
-    return database;
-  }
+export const timeBucket = dialect === 'postgres' ? pgSchema.timeBucket : sqliteSchema.timeBucket;
 
-  // Resolved on first use rather than at import time: importing this module is
-  // a side effect of loading a protocol handler, which happens long before any
-  // caller (or test) has had a chance to point NOUGATE_DB_PATH somewhere else.
-  resolvedPath = resolveDbPath();
+type Db = ReturnType<typeof drizzleSqlite<typeof sqliteSchema.schema>>;
 
-  const dir = dirname(resolvedPath);
+let database: Db | null = null;
+let sqliteHandle: Database | null = null;
+let pgClient: ReturnType<typeof postgres> | null = null;
+let target = '(not opened)';
+
+function openSqlite(): Db {
+  const path = resolveSqlitePath();
+  const dir = dirname(path);
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
 
-  const db = new Database(resolvedPath, { create: true });
+  sqliteHandle = new Database(path, { create: true });
 
-  // WAL keeps the metrics writer from blocking dashboard reads, and NORMAL
-  // sync is the right trade-off for telemetry we can afford to lose a second of.
-  db.exec('PRAGMA journal_mode = WAL');
-  db.exec('PRAGMA synchronous = NORMAL');
-  db.exec('PRAGMA foreign_keys = ON');
-  db.exec('PRAGMA busy_timeout = 5000');
+  // WAL keeps the metrics writer from blocking dashboard reads, and NORMAL sync
+  // is the right trade-off for telemetry we can afford to lose a second of.
+  sqliteHandle.exec('PRAGMA journal_mode = WAL');
+  sqliteHandle.exec('PRAGMA synchronous = NORMAL');
+  sqliteHandle.exec('PRAGMA foreign_keys = ON');
+  sqliteHandle.exec('PRAGMA busy_timeout = 5000');
 
-  for (const statement of SCHEMA_STATEMENTS) {
-    db.exec(statement);
+  target = path;
+  return drizzleSqlite(sqliteHandle, { schema: sqliteSchema.schema });
+}
+
+function openPostgres(): Db {
+  const url = (process.env.DB_URL ?? '').trim();
+  pgClient = postgres(url, { max: 10, idle_timeout: 20, connect_timeout: 10 });
+
+  // Redact credentials before this reaches a log line.
+  target = url.replace(/\/\/[^@]*@/, '//***@');
+  return drizzlePg(pgClient, { schema: pgSchema.schema }) as unknown as Db;
+}
+
+/**
+ * The shared database handle, opened on first use.
+ */
+export function getDb(): Db {
+  if (!database) {
+    database = dialect === 'postgres' ? openPostgres() : openSqlite();
   }
-
-  database = db;
-  console.log(`[DB] SQLite ready at ${resolvedPath}`);
   return database;
 }
 
 /**
- * Path of the open database, or null before first use.
+ * The raw bun:sqlite handle, for the few places that need SQLite directly.
+ * Null when Postgres is the backend.
  */
-export function getDbPath(): string | null {
-  return resolvedPath;
-}
-
-/**
- * Initialize the database eagerly during server startup.
- */
-export function initDb(): void {
+export function getSqliteHandle(): Database | null {
   getDb();
+  return sqliteHandle;
+}
+
+export function getDbTarget(): string {
+  return target;
 }
 
 /**
- * Named bind parameters, e.g. `{ $id: 'abc' }`.
+ * Create any missing tables and indexes.
+ *
+ * Plain `IF NOT EXISTS` DDL run on every boot rather than a migration history:
+ * it is idempotent, needs no state table, and the schema is small enough that
+ * keeping the SQL readable is worth more than a migration log.
  */
-export type SqlParams = Record<string, string | number | bigint | boolean | null | Uint8Array>;
+export async function initDb(): Promise<void> {
+  const db = getDb();
+  const { ddl } =
+    dialect === 'postgres'
+      ? await import('@/core/db/ddl/pg')
+      : await import('@/core/db/ddl/sqlite');
 
-// bun:sqlite accepts a single object of named bindings at runtime, but the
-// bundled type definitions only describe positional bindings. These helpers
-// keep that discrepancy in one place instead of scattered across callers.
-
-/**
- * Execute a statement and return its result metadata.
- */
-export function dbRun(sql: string, params?: SqlParams): { changes: number; lastInsertRowid: number | bigint } {
-  const db = getDb() as any;
-  return params ? db.run(sql, params) : db.run(sql);
-}
-
-/**
- * Run a query and return every row.
- */
-export function dbAll<T = any>(sql: string, params?: SqlParams): T[] {
-  const statement = getDb().query(sql) as any;
-  return (params ? statement.all(params) : statement.all()) as T[];
-}
-
-/**
- * Run a query and return the first row, or null.
- */
-export function dbGet<T = any>(sql: string, params?: SqlParams): T | null {
-  const statement = getDb().query(sql) as any;
-  const row = params ? statement.get(params) : statement.get();
-  return (row ?? null) as T | null;
-}
-
-/**
- * Prepare a statement whose `run` accepts named bindings.
- */
-export function dbPrepare(sql: string): { run: (params: SqlParams) => void } {
-  const statement = getDb().prepare(sql) as any;
-  return {
-    run: (params: SqlParams) => {
-      statement.run(params);
-    },
-  };
-}
-
-/**
- * Run `work` inside a single transaction.
- */
-export function dbTransaction<T extends unknown[]>(work: (...args: T) => void): (...args: T) => void {
-  return getDb().transaction(work) as unknown as (...args: T) => void;
-}
-
-/**
- * Close the shared handle. Used by tests and graceful shutdown.
- */
-export function closeDb(): void {
-  if (database) {
-    database.close();
-    database = null;
-    resolvedPath = null;
+  for (const statement of ddl) {
+    if (dialect === 'postgres') {
+      await (db as unknown as { execute: (q: unknown) => Promise<unknown> }).execute(statement);
+    } else {
+      sqliteHandle!.exec(statement);
+    }
   }
+
+  console.log(`[DB] ${dialect} ready at ${target}`);
+}
+
+/**
+ * Close the connection. Used by tests and graceful shutdown.
+ */
+export async function closeDb(): Promise<void> {
+  if (sqliteHandle) {
+    sqliteHandle.close();
+    sqliteHandle = null;
+  }
+  if (pgClient) {
+    await pgClient.end({ timeout: 5 });
+    pgClient = null;
+  }
+  database = null;
+  target = '(not opened)';
 }
