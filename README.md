@@ -663,6 +663,7 @@ Other providers rank purely on health score and least-recently-used.
 |---|---|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Planes, request pipeline, contracts, the capability model, persistence, known gaps |
 | [docs/COMPARISON.md](docs/COMPARISON.md) | How Nougate differs from 9Router and OmniRoute, and when to prefer each |
+| [docs/ANTIGRAVITY_MANAGER_ADOPTION.md](docs/ANTIGRAVITY_MANAGER_ADOPTION.md) | Gap analysis against Antigravity-Manager, the original reference — what shipped, what is still missing, and what was deliberately declined |
 | `.claude/skills/nougate-contributing/` | Working guide: invariants, adding a provider, the data layer, frontend conventions, and the mistakes already made here |
 
 ---

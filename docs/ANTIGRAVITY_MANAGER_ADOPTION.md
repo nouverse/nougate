@@ -1,60 +1,130 @@
-# Antigravity Proxy — Revamp Plan
+# Nougate vs Antigravity-Manager — Gap Analysis
 
-Dokumen ini merangkum fitur-fitur inti dari [Antigravity-Manager](https://github.com/lbjlaq/Antigravity-Manager) (Rust/Axum, 30k★) yang relevan dan layak diadopsi ke proxy kita (Bun/TypeScript), beserta prioritas dan estimasi kompleksitas.
+Perbandingan dengan [Antigravity-Manager](https://github.com/lbjlaq/Antigravity-Manager)
+(Rust/Axum, desktop app Tauri), yang jadi acuan awal saat proxy ini masih single-provider.
+
+> [!IMPORTANT]
+> **Diperbarui Agustus 2026 terhadap kode yang berjalan sekarang.** Baris-baris di bawah
+> diverifikasi langsung ke `apps/backend/src/`, bukan disalin dari revisi sebelumnya.
+> Referensi `REF:` menunjuk ke `tmp/antigravity-manager/src-tauri/src/proxy/` (v4.3.0) dan
+> hanya relevan kalau source itu masih ada di mesin kamu.
 
 > [!NOTE]
-> Semua fitur di bawah dipilih berdasarkan **analisis langsung** terhadap source code `src-tauri/src/proxy/` dari Antigravity-Manager v4.3.0. Source code referensi tersedia di `tmp/antigravity-manager/`. Fitur yang hanya relevan untuk desktop app (Tauri GUI, IDE account switching, dll.) **tidak** dimasukkan.
-
-> [!TIP]
-> Prefix path `REF:` di bawah merujuk ke `tmp/antigravity-manager/src-tauri/src/proxy/` relatif dari root project kita.
-
----
-
-## 1. Gap Analysis: Kita vs Antigravity-Manager
-
-| Fitur | Proxy Kita | Antigravity-Manager | Implemented | Priority | Assessment | Section |
-|-------|:----------:|:-------------------:|:-----------:|:--------:|:----------:|:-------:|
-| OpenAI-compatible endpoint | ✅ | ✅ | ✅ | — | 🟰 Setara | — |
-| Anthropic native `/v1/messages` | ✅ | ✅ | ✅ | 🔴 High | 🟰 Setara | [§2.1](#21--native-anthropic-endpoint-v1messages) |
-| Multi-layer signature cache | ✅ (4-layer: tool, family, session, reasoning) | ✅ (4-layer: tool, family, session, reasoning) | ✅ | 🔴 High | 🟰 Setara | [§2.2](#22--multi-layer-signature-cache) |
-| Tiered account sorting (Ultra/Pro/Free) | ✅ (tier bonus + auto-detect from quota) | ✅ | ✅ | 🔴 High | 🟰 Setara | [§2.3](#23--tiered-account-sorting) |
-| Model-level rate limiting | 🟡 Basic (family-level) | ✅ (account + model level) | 🟡 Basic | 🔴 High | ⬇️ Worse | [§2.4](#24--model-level-rate-limiting) |
-| Rate limit tracker with exponential backoff | ✅ (with backoff) | ✅ (per-account failure counter + backoff) | ✅ | 🔴 High | 🟰 Setara | [§2.4](#24--model-level-rate-limiting) |
-| **JSON Schema cleaning for Gemini** | ✅ | ✅ ($ref flatten, anyOf, constraint→desc) | ✅ | 🔴 **High** | 🟰 Setara | [§2.5](#25--json-schema-cleaning-for-gemini) |
-| **Smart retry delay parsing + grace retry** | ✅ | ✅ (recursive JSON parse + 1.5s grace window) | ✅ | 🔴 **High** | 🟰 Setara | [§2.6](#26--smart-retry-delay-parsing--grace-retry) |
-| Model routing / wildcard mapping | ❌ (hardcoded) | ✅ (exact + wildcard + specificity scoring) | ❌ | 🟡 Medium | ⬇️ Worse | [§3.1](#31--dynamic-model-routing) |
-| Tool result compression | ✅ (RTK inline + Headroom svc) | ✅ (browser snapshot, HTML cleanup) | ✅ | 🟡 Medium | ⬆️ Better | [§3.2](#32--tool-result-compression) |
-| Context purification (thinking strip) | 🟡 Basic (strips previous thinking) | ✅ (soft/aggressive + token estimation) | 🟡 Basic | 🟡 Medium | ⬇️ Worse | [§3.3](#33--context-purification) |
-| Request monitoring / usage logging | ❌ | ✅ (SQLite + real-time stats) | ❌ | 🟡 Medium | ⬇️ Worse | [§3.4](#34--request-monitoring--usage-stats) |
-| Codex `/v1/responses` endpoint | ❌ | ✅ | ❌ | 🟡 Medium | ⬇️ Worse | [§3.5](#35--codex--responses-endpoint) |
-| **Session fingerprinting** | ✅ (SHA256 first msg) | ✅ (SHA256 of first user message) | ✅ | 🟡 **Medium** | 🟰 Setara | [§3.6](#36--session-fingerprinting) |
-| **Client adapter system** | ❌ | ✅ (per-IDE behavior via User-Agent) | ❌ | 🟡 **Medium** | ⬇️ Worse | [§3.7](#37--client-adapter-system) |
-| **Multi-level context compression** | 🟡 (L1: RTK, L2: Headroom) | ✅ (L1: tool trim, L2: thinking, L3: fork) | 🟡 Partial | 🟡 **Medium** | ⬇️ Worse | [§3.8](#38--multi-level-context-compression) |
-| **Global system prompt injection** | ✅ (configurable + caveman) | ✅ (auto-inject to all requests) | ✅ | 🟡 **Medium** | ⬆️ Better | [§3.9](#39--global-system-prompt-injection) |
-| **Estimation calibrator** | ❌ | ✅ (self-learning token estimation) | ❌ | 🟡 **Medium** | ⬇️ Worse | [§3.10](#310--estimation-calibrator-self-learning-token-estimation) |
-| **Thinking budget config** | ✅ (per-model budget/level/mode) | ✅ (Auto/Passthrough/Custom/Adaptive modes) | ✅ | 🟡 **Medium** | 🟰 Setara | [§3.11](#311--thinking-budget-config) |
-| **Model specs from JSON** | ✅ (model-specs.ts registry) | ✅ (per-model max_output_tokens, thinking_budget) | ✅ | 🟡 **Medium** | 🟰 Setara | [§3.12](#312--model-specs-from-json-config) |
-| Background task silent downgrade | ❌ | ✅ (reroute ke Flash) | ❌ | 🟡 Medium | ⬇️ Worse | [§3.1](#31--dynamic-model-routing) |
-| Gemini native endpoint | ❌ | ✅ | ❌ | 🟡 Medium | ⬇️ Worse | — |
-| `/v1/models` endpoint | ✅ | ✅ | ✅ | 🟢 Low | 🟰 Setara | [§4.1](#41--v1models-endpoint) |
-| `/v1/images/generations` (Imagen 3) | ❌ | ✅ | ❌ | 🟢 Low | ⬇️ Worse | [§4.2](#42--imagen-3-support) |
-| API Key auth middleware (multi-token) | ❌ (single header) | ✅ (per-user tokens + whitelist/blacklist) | ❌ | 🟢 Low | ⬇️ Worse | [§4.3](#43--api-key-auth-middleware-multi-token) |
-| IP filtering / security | ❌ | ✅ (whitelist/blacklist + access logs) | ❌ | 🟢 Low | ⬇️ Worse | [§4.4](#44--ip-whitelistblacklist) |
-| Account warmup | ❌ | ✅ (pre-flight token validation) | ❌ | 🟢 Low | ⬇️ Worse | [§4.5](#45--account-warmup) |
-| Proxy pool (outbound HTTP proxy rotation) | ❌ | ✅ | ❌ | 🟢 Low | ⬇️ Worse | [§4.6](#46--outbound-proxy-pool) |
-| **Tool artifact store** | ❌ | ✅ (sidecar store for large tool outputs) | ❌ | 🟢 **Low** | ⬇️ Worse | [§4.7](#47--tool-artifact-store) |
-| **Error classifier** | ❌ | ✅ (categorize stream errors with i18n) | ❌ | 🟢 **Low** | ⬇️ Worse | [§4.8](#48--error-classifier) |
-| **Debug payload logger** | ✅ (req/res JSON to disk, model filter) | ✅ (dump req/res JSON to disk) | ✅ | 🟢 **Low** | 🟰 Setara | [§4.9](#49--debug-payload-logger) |
-| **Quota scheduler** | ❌ | ✅ (auto-scan 100% quota, trigger warmup) | ❌ | 🟢 **Low** | ⬇️ Worse | [§4.10](#410--quota-scheduler) |
-| HTTP Session Store (Codex) | ❌ | ✅ (multi-turn via previous_response_id) | ❌ | 🟢 Low | ⬇️ Worse | [§4.11](#411--http-session-store-codex) |
-| OAuth browser flow | ✅ | ✅ (callback handler) | ✅ | 🟢 Low | 🟰 Setara | — |
-| Device fingerprint (impersonation) | ✅ (full headers + CLI variant) | ✅ | ✅ | — | ⬆️ Better | — |
+> **Perbandingannya sudah tidak apple-to-apple.** Manager adalah desktop app untuk
+> mengelola akun Antigravity/Google. Nougate sekarang gateway multi-provider yang
+> dioperasikan satu tim: Antigravity cuma salah satu plugin di antara Copilot dan custom
+> provider tanpa batas. Sebagian besar "kekalahan" yang tersisa ada di kedalaman
+> Antigravity-specific — persis area yang Manager jadikan seluruh produknya.
 
 ---
 
-## 2. Fitur yang Akan Diadopsi (Prioritas Tinggi)
+## Ringkasan: sekarang di mana posisi kita
+
+**Menang telak di lapisan gateway.** Multi-provider, dua protokol klien penuh dua arah,
+observability berbasis database dengan biaya per key, autentikasi dashboard dan gateway,
+dan model kapabilitas yang membuat provider baru tidak menyentuh core. Manager tidak punya
+satu pun dari ini — bukan karena kalah, tapi karena bukan itu produknya.
+
+**Masih kalah di kedalaman Antigravity.** Lima hal yang benar-benar berdampak:
+
+1. Cooldown masih terkunci per *model family*, bukan per model — limit satu model
+   menjatuhkan seluruh keluarganya, dan kuota terbuang.
+2. Pemilihan akun memakai skor kesehatan per-model (reaktif, dipelajari dari kegagalan);
+   Manager memakai sisa kuota per-model (proaktif, dari quota API) — sinyal yang lebih
+   baik untuk menghindari request yang pasti gagal.
+3. Kompresi konteks belum dipicu rasio pemakaian; dua lapis kita jalan tiap request.
+4. Estimasi token statis, tanpa kalibrasi terhadap nilai sebenarnya.
+5. Tidak ada adapter per-klien, jadi quirk satu IDE tidak bisa ditangani terpisah.
+
+Selain itu ada tiga endpoint yang belum ada — Codex `/v1/responses`, Gemini native, dan
+Imagen — yang belum tentu perlu; lihat [§7](#7-rekomendasi-berikutnya).
+
+**Yang sengaja tidak diadopsi** ada di [§6](#6-sengaja-tidak-diadopsi) — bukan backlog.
+
+---
+
+## 1. Gap Analysis
+
+Legenda: ⬆️ kita lebih baik · 🟰 setara · ⬇️ kita masih kalah · ➖ di luar scope kita
+
+### Lapisan gateway — area yang tidak dimiliki Manager
+
+| Fitur | Nougate | Antigravity-Manager | Assessment |
+|-------|:-------:|:-------------------:|:----------:|
+| Multi-provider dalam satu gateway | ✅ Antigravity + Copilot + custom tanpa batas | ❌ Antigravity/Google saja | ⬆️ **Better** |
+| Provider sebagai plugin (kontrak `IProvider`) | ✅ core tidak pernah tahu nama provider | ❌ single-purpose | ⬆️ **Better** |
+| Custom provider dari dashboard (tanpa kode) | ✅ id, base URL, API style, key, model | ❌ | ⬆️ **Better** |
+| Model kapabilitas (`getQuotas`, `accountFlow`) | ✅ implement satu method → fitur dashboard nyala | ❌ | ⬆️ **Better** |
+| Terjemahan protokol dua arah penuh | ✅ 4 kombinasi OpenAI×Anthropic | 🟡 semua menuju Google | ⬆️ **Better** |
+| Database pilihan (SQLite **atau** Postgres) | ✅ satu `DB_URL`, nol cabang di kode | 🟡 SQLite (desktop) | ⬆️ **Better** |
+| Biaya & harga (price book + unpriced badge) | ✅ per request, per model, per key | ❌ token saja | ⬆️ **Better** |
+| Atribusi per gateway API key (90 hari) | ✅ ikut ke rollup harian | ❌ | ⬆️ **Better** |
+| Auth dashboard (user, argon2id, sesi) | ✅ selalu aktif | 🟡 desktop app, tidak relevan | ⬆️ **Better** |
+| Attribusi kompresi per engine | ✅ diukur antar-pass | ❌ | ⬆️ **Better** |
+| API Playground | ✅ jalur nyata, bukan simulasi | ❌ | ⬆️ **Better** |
+
+### Inti proxy — area yang dulu jadi acuan
+
+| Fitur | Nougate | Antigravity-Manager | Assessment | Section |
+|-------|:-------:|:-------------------:|:----------:|:-------:|
+| OpenAI-compatible endpoint | ✅ | ✅ | 🟰 Setara | — |
+| Anthropic native `/v1/messages` | ✅ | ✅ | 🟰 Setara | [§2.1](#21--native-anthropic-endpoint-v1messages) |
+| Multi-layer signature cache | ✅ 4-layer | ✅ 4-layer | 🟰 Setara | [§2.2](#22--multi-layer-signature-cache) |
+| Tiered account sorting (Ultra/Pro/Free) | ✅ tier bonus + skor per-model | ✅ tier + **sisa kuota** per-model | 🟡 Beda sinyal | [§2.3](#23--tiered-account-sorting) |
+| Rate limit + exponential backoff | ✅ | ✅ | 🟰 Setara | [§2.4](#24--model-level-rate-limiting) |
+| **Rate limit granularity** | 🟡 `pool\|modelFamily` | ✅ `account:model` + reason enum | ⬇️ **Worse** | [§2.4](#24--model-level-rate-limiting) |
+| JSON Schema cleaning untuk Gemini | ✅ | ✅ | 🟰 Setara | [§2.5](#25--json-schema-cleaning-for-gemini) |
+| Smart retry delay parsing + grace | ✅ `providers/antigravity/utils/retry.ts` | ✅ | 🟰 Setara | [§2.6](#26--smart-retry-delay-parsing--grace-retry) |
+| Session fingerprinting | ✅ SHA256 pesan pertama | ✅ | 🟰 Setara | [§3.6](#36--session-fingerprinting) |
+| Model specs dari JSON | ✅ registry + override runtime | ✅ | 🟰 Setara | [§3.12](#312--model-specs-from-json-config) |
+| Thinking budget config | ✅ per-model budget/level/mode | ✅ 4 mode | 🟰 Setara | [§3.11](#311--thinking-budget-config) |
+| Global system prompt injection | ✅ + Caveman 5 level | ✅ | ⬆️ **Better** | [§3.9](#39--global-system-prompt-injection) |
+| Tool result compression | ✅ RTK inline + Headroom | ✅ snapshot/HTML-aware | ⬆️ **Better** | [§3.2](#32--tool-result-compression) |
+| Device fingerprint (impersonation) | ✅ header penuh + varian CLI | ✅ | 🟰 Setara | — |
+| Debug payload logger | ✅ + filter model | ✅ | 🟰 Setara | [§4.9](#49--debug-payload-logger) |
+| OAuth browser flow | ✅ (Antigravity saja, lihat catatan) | ✅ | 🟰 Setara | — |
+| **Request monitoring / usage stats** | ✅ DB + rollup + dashboard + CSV | ✅ buffer in-memory | ⬆️ **Better** | [§3.4](#34--request-monitoring--usage-stats) |
+| **API key auth (multi-token)** | ✅ wajib, hash SHA-256, per-key usage | ✅ token + whitelist | ⬆️ **Better** | [§4.3](#43--api-key-auth-middleware-multi-token) |
+| `/v1/models` endpoint | ✅ lintas semua provider | ✅ | ⬆️ **Better** | [§4.1](#41--v1models-endpoint) |
+
+### Yang masih kurang
+
+| Fitur | Nougate | Antigravity-Manager | Assessment | Section |
+|-------|:-------:|:-------------------:|:----------:|:-------:|
+| Model-level rate limiting | 🟡 family-level | ✅ account:model + reason | ⬇️ Worse | [§2.4](#24--model-level-rate-limiting) |
+| Dynamic model routing / wildcard | ❌ | ✅ exact + wildcard + specificity | ⬇️ Worse | [§3.1](#31--dynamic-model-routing) |
+| Background task silent downgrade | ❌ | ✅ reroute ke Flash | ⬇️ Worse | [§3.1](#31--dynamic-model-routing) |
+| Context purification bertingkat | 🟡 strip thinking turn lama | ✅ soft/aggressive + estimasi token | ⬇️ Worse | [§3.3](#33--context-purification) |
+| Multi-level context compression | 🟡 2 lapis, tanpa threshold otomatis | ✅ L1/L2/L3 by usage ratio | ⬇️ Worse | [§3.8](#38--multi-level-context-compression) |
+| Estimation calibrator | ❌ estimasi statis ~4 char/token | ✅ self-learning EMA | ⬇️ Worse | [§3.10](#310--estimation-calibrator-self-learning-token-estimation) |
+| Client adapter system | ❌ user-agent hanya di-log | ✅ perilaku per-IDE | ⬇️ Worse | [§3.7](#37--client-adapter-system) |
+| Codex `/v1/responses` | ❌ | ✅ | ⬇️ Worse | [§3.5](#35--codex--responses-endpoint) |
+| Gemini native endpoint | ❌ | ✅ | ⬇️ Worse | — |
+| Imagen 3 `/v1/images/generations` | ❌ | ✅ | ⬇️ Worse | [§4.2](#42--imagen-3-support) |
+| Error classifier | ❌ | ✅ + i18n | ⬇️ Worse | [§4.8](#48--error-classifier) |
+| Account warmup | ❌ | ✅ pre-flight validation | ⬇️ Worse | [§4.5](#45--account-warmup) |
+| Quota scheduler | ❌ | ✅ scan + auto-warmup | ⬇️ Worse | [§4.10](#410--quota-scheduler) |
+| Tool artifact store | ❌ | ✅ sidecar store | ⬇️ Worse | [§4.7](#47--tool-artifact-store) |
+| HTTP session store (Codex) | ❌ | ✅ | ⬇️ Worse | [§4.11](#411--http-session-store-codex) |
+| IP whitelist/blacklist | ❌ | ✅ | ➖ Lihat §6 | [§4.4](#44--ip-whitelistblacklist) |
+| Outbound proxy pool | ❌ | ✅ | ➖ Lihat §6 | [§4.6](#46--outbound-proxy-pool) |
+
+> **Catatan OAuth.** Alur redirect kita masih hardcoded ke Antigravity
+> (`/oauth/start` + `/oauth-callback` di `router/admin.ts`). Provider kedua yang butuh
+> redirect OAuth harus menggeneralisasi dua route itu dulu — detailnya di
+> [ARCHITECTURE.md §10](ARCHITECTURE.md#10-known-gap-browser-redirect-oauth-is-not-yet-agnostic).
+> Device flow dan API key sudah provider-agnostic.
+
+---
+
+## 2. Prioritas tinggi — semua sudah terpasang kecuali satu
+
+Bagian ini dulu berisi rencana. Sekarang hampir seluruhnya sudah ada di kode; teks
+aslinya dipertahankan sebagai catatan asal-usul, dengan status di setiap sub-bagian.
 
 ### 2.1 🔴 Native Anthropic Endpoint (`/v1/messages`)
+
+> **Status: ✅ selesai.** `protocols/anthropic/` menangani `/anthropic/v1/messages` dan `/anthropic/v1/models`, streaming maupun tidak. Mapper-nya di `core/mappers/` dan dipakai semua provider, bukan cuma Antigravity.
 
 **Mengapa penting:** Claude Code CLI dan banyak tool AI lain menggunakan format Anthropic langsung, bukan OpenAI format. Tanpa ini, user harus selalu menggunakan wrapper/shim.
 
@@ -110,6 +180,8 @@ src/
 ---
 
 ### 2.2 🔴 Multi-Layer Signature Cache
+
+> **Status: ✅ selesai.** Keempat layer ada, termasuk rewind detection. Cache disimpan di `data/signatures.json`.
 
 **Mengapa penting:** Cache signature kita saat ini hanya 2-layer (thought text → signature, call ID → signature). Antigravity-Manager menggunakan **4-layer** yang lebih robust:
 
@@ -184,6 +256,18 @@ L12   pub fn store_thought_signature(sig, session_id, message_count)
 
 ### 2.3 🔴 Tiered Account Sorting
 
+> **Status: 🟡 sebagian, khusus Antigravity.** Tier ultra/pro/free memberi bonus +30/+15/0
+> pada skor rotasi, dan skor kesehatan sudah per-model (`modelScores["model|pool"]`, dengan
+> fallback ke rata-rata family) — jadi dimensi per-model **ada**.
+>
+> Bedanya pada sinyalnya: kita memakai skor kesehatan yang *dipelajari dari kegagalan*,
+> Manager memakai *sisa kuota* per model dari quota API. Punya Manager lebih baik karena
+> tahu akun akan gagal sebelum request dikirim; punya kita baru tahu setelah gagal sekali.
+> Data kuotanya sudah kita poll — tinggal dimasukkan ke fungsi skor.
+>
+> Provider lain memakai health score + least-recently-used, yang memang sesuai karena tidak
+> punya konsep tier.
+
 **Mengapa penting:** Saat ini kita rotasi berdasarkan health score saja. Antigravity-Manager mengurutkan akun dengan **4 level priority**:
 
 ```
@@ -241,6 +325,8 @@ L855  pub async fn resolve_dynamic_model_for_account() — Per-account model res
 ---
 
 ### 2.4 🔴 Model-Level Rate Limiting
+
+> **Status: 🟡 sebagian — ini gap nyata yang tersisa.** Cooldown kita berkunci pada `pool|modelFamily` (`markCooldown`), bukan `account:model`. Artinya limit pada satu model menjatuhkan seluruh keluarganya. `RateLimitReason` juga belum ada; hanya `RATE_LIMIT_EXCEEDED` yang dikenali di `providers/antigravity/upstream/errors.ts`. **Ini rekomendasi utama untuk dikerjakan berikutnya.**
 
 **Mengapa penting:** Saat ini rate limit kita hanya per-account. Tapi Google bisa rate-limit per MODEL per account (misal: akun A kena limit untuk `gemini-3-pro` tapi masih bisa untuk `gemini-3-flash`).
 
@@ -316,6 +402,8 @@ L167  pub fn should_rotate_account(status_code, strategy) -> bool
 
 ### 2.5 🔴 JSON Schema Cleaning for Gemini
 
+> **Status: ✅ selesai.** Ada di mapper Antigravity.
+
 **Mengapa penting:** Gemini API TIDAK mendukung banyak fitur JSON Schema standar yang tool/MCP declarations gunakan (`$ref`, `$defs`, `additionalProperties`, `anyOf`, `format`, `default`, dll.). Tanpa cleaning, tool calling akan sering gagal dengan error "Invalid schema" yang membingungkan.
 
 **Referensi kode:**
@@ -373,6 +461,8 @@ L45   pub fn append_hint_to_schema(schema, hint)
 
 ### 2.6 🔴 Smart Retry Delay Parsing + Grace Retry
 
+> **Status: ✅ selesai.** `providers/antigravity/utils/retry.ts` — `parseRetryDelay()` dengan parsing rekursif dan Google duration object.
+
 **Mengapa penting:** Saat ini kita hanya parse header `Retry-After` yang sederhana. Antigravity-Manager melakukan **deep recursive parsing** dari error body untuk extract delay yang tepat, dan menambahkan "grace window" 1.5s.
 
 **Referensi kode:**
@@ -414,9 +504,14 @@ L161  pub fn should_grace_retry(duration_ms) -> bool
 
 ---
 
-## 3. Fitur yang Akan Diadopsi (Prioritas Medium)
+## 3. Prioritas medium — campuran
+
+Sebagian sudah selesai dan melampaui referensinya (§3.2, §3.4, §3.9), sebagian masih
+kosong (§3.1, §3.7, §3.10). Status ada di tiap sub-bagian.
 
 ### 3.1 🟡 Dynamic Model Routing
+
+> **Status: ❌ belum ada.** Tidak ada `model-routes.json`, tidak ada wildcard matching, tidak ada background-task downgrade. Model diselesaikan lewat prefix `provider:model` yang eksplisit — yang lebih tegas untuk gateway multi-provider, tapi tetap bukan pengganti alias routing.
 
 **Saat ini:** Model mapping di-hardcode di `transform.ts` (`antigravity-` prefix stripping saja).
 
@@ -470,6 +565,8 @@ L501  pub fn contains_non_networking_tool(tools) -> bool
 
 ### 3.2 🟡 Tool Result Compression
 
+> **Status: ✅ selesai dan lebih jauh.** RTK inline plus Headroom opsional, dan sejak Agustus 2026 penghematannya **diatribusikan per engine** — Manager hanya melaporkan satu total.
+
 **Mengapa penting:** Client IDE sering mengirim tool results yang sangat besar (file content, browser snapshots 100KB+). Ini bisa menyebabkan "Prompt is too long" error.
 
 **Referensi kode:**
@@ -510,6 +607,8 @@ L80     — Generic truncation fallback
 ---
 
 ### 3.3 🟡 Context Purification
+
+> **Status: 🟡 sebagian.** Thinking dari turn sebelumnya di-strip, tapi belum ada mode soft/aggressive dan belum ada auto-switch berbasis estimasi token.
 
 **Mengapa penting:** Saat conversation history panjang, thinking blocks dari turn-turn sebelumnya memakan banyak token tanpa value.
 
@@ -566,6 +665,8 @@ L418  pub fn trim_openai_tool_messages(messages, keep_last_n_rounds) -> bool
 
 ### 3.4 🟡 Request Monitoring & Usage Stats
 
+> **Status: ✅ selesai dan jauh melampaui.** Bukan circular buffer in-memory seperti rencana awal, melainkan SQLite/Postgres via Drizzle: per-request log, rollup harian 90 hari, biaya per model/provider/client/API key, ekspor CSV, dan dashboard React. Catatan "lightweight, tanpa SQLite" di bawah sudah tidak berlaku — keputusan itu dibalik dengan sengaja.
+
 **Mengapa penting:** Saat ini kita tidak punya visibilitas berapa request sukses/gagal, latency, model mana yang paling sering dipakai.
 
 **Referensi kode:**
@@ -617,16 +718,21 @@ L558  .route("/stats/accounts", get(admin_get_token_stats_by_account))
 L559  .route("/stats/models", get(admin_get_token_stats_by_model))
 ```
 
-**Implementasi (lightweight, tanpa SQLite):**
-- In-memory circular buffer (max 1000 entries)
-- `GET /api/stats/summary` → total requests, success rate, avg latency
-- `GET /api/stats/models` → breakdown per model
-- `GET /api/stats/accounts` → breakdown per account
-- Persist ke file setiap 5 menit (opsional)
+**Rencana awal (dibatalkan):** circular buffer in-memory, persist ke file tiap 5 menit,
+tanpa SQLite.
+
+**Yang benar-benar dibangun:** `core/metrics/` di atas Drizzle — `token_usage_logs` per
+request, `token_usage_daily_rollups` harian, penulisan ter-buffer agar tidak pernah
+memblokir respons, harga dari price book, dan endpoint
+`/api/metrics/{token-usage,recent,export,maintenance}`. Keputusan "no SQLite" dibalik
+karena pertanyaan yang ingin dijawab — biaya per key selama 90 hari — memang butuh
+agregasi, bukan buffer.
 
 ---
 
 ### 3.5 🟡 Codex / Responses Endpoint
+
+> **Status: ❌ belum ada.** Tidak ada `/v1/responses`.
 
 **Mengapa penting:** OpenAI Codex CLI menggunakan `POST /v1/responses` yang format-nya berbeda dari `/v1/chat/completions`.
 
@@ -673,6 +779,8 @@ mappers/openai/collector.rs:                — Response token counting & aggreg
 
 ### 3.6 🟡 Session Fingerprinting
 
+> **Status: ✅ selesai.** `buildSessionId()` di handler OpenAI.
+
 **Mengapa penting:** Saat ini kita generate session ID dari `x-client-id` header yang dikirim client. Antigravity-Manager generate **stable session fingerprint** dari SHA256 hash of the first user message, sehingga session tetap konsisten meskipun client tidak mengirim session ID.
 
 **Referensi kode:**
@@ -703,6 +811,8 @@ L132  pub fn extract_gemini_session_id(request: &Value, model_name) -> String
 ---
 
 ### 3.7 🟡 Client Adapter System
+
+> **Status: ❌ belum ada.** `user-agent` hanya masuk log (`router/middleware.ts:84`), tidak mengubah perilaku apa pun.
 
 **Mengapa penting:** Tiap IDE/CLI client punya quirks berbeda. Zed, Claude Code, opencode, Cherry Studio, dll. punya behavior yang berbeda soal signature handling, retry behavior, dan required headers.
 
@@ -748,6 +858,8 @@ L18   pub struct OpencodeAdapter;
 
 ### 3.8 🟡 Multi-Level Context Compression
 
+> **Status: 🟡 sebagian.** Dua lapis (RTK, Headroom) jalan berurutan tiap request, bukan tiga tingkat yang dipicu rasio pemakaian konteks.
+
 **Mengapa penting:** Antigravity-Manager tidak hanya punya soft/aggressive purification, tapi juga **3 threshold levels** yang triggered berdasarkan context usage ratio.
 
 **Referensi kode:**
@@ -783,6 +895,8 @@ L288      pub context_compression_threshold_l3: f32,     // Default: 0.70 (70%)
 
 ### 3.9 🟡 Global System Prompt Injection
 
+> **Status: ✅ selesai dan lebih jauh.** Bisa di-override per provider, plus Caveman dengan 5 tingkat keringkasan.
+
 **Mengapa penting:** Kadang kita ingin inject system instruction ke SEMUA request (misal: safety rules, response format, language preference) tanpa client perlu set-nya.
 
 **Referensi kode:**
@@ -807,6 +921,8 @@ L126  pub struct GlobalSystemPromptConfig {
 ---
 
 ### 3.10 🟡 Estimation Calibrator (Self-Learning Token Estimation)
+
+> **Status: ❌ belum ada.** `core/metrics/tokenizer.ts` memakai estimasi statis ~4 karakter/token. Nilai sebenarnya dari `usageMetadata` sudah kita rekam, jadi bahan kalibrasinya ada — tinggal loop umpan baliknya.
 
 **Mengapa penting:** Token estimation kita static (character-based). Antigravity-Manager punya **self-learning calibrator** yang membandingkan estimated vs actual tokens dari Google API response, lalu auto-adjust factor-nya.
 
@@ -842,6 +958,8 @@ L89   pub fn apply(&self, raw_estimate: u32) -> u32
 ---
 
 ### 3.11 🟡 Thinking Budget Config
+
+> **Status: ✅ selesai.** Per-model `thinkingMode` (budget/level) dan `thinkingBudget` di model spec.
 
 **Mengapa penting:** Saat ini kita hardcode thinking budget. Antigravity-Manager punya 4 mode yang configurable.
 
@@ -901,15 +1019,22 @@ L80   pub fn is_thinking_model(model_id) -> bool
 
 ---
 
-## 4. Fitur Prioritas Rendah (Nice-to-Have)
+## 4. Prioritas rendah
+
+Tiga sudah selesai (§4.1, §4.3, §4.9), dua sengaja ditolak (§4.4, §4.6), sisanya belum
+dikerjakan dan sebagian besar memang tidak direkomendasikan — lihat [§7](#7-rekomendasi-berikutnya).
 
 ### 4.1 🟢 `/v1/models` Endpoint
+
+> **Status: ✅ selesai dan lebih luas.** Melisting seluruh provider terdaftar, sudah ber-prefix, dalam format OpenAI maupun Anthropic.
 
 Endpoint list model yang tersedia. Simple static response.
 
 **REF:** `handlers/openai.rs` L2079 `handle_list_models()`
 
 ### 4.2 🟢 Imagen 3 Support
+
+> **Status: ❌ belum ada.** Nougate adalah coding gateway; generasi gambar belum pernah diminta.
 
 `/v1/images/generations` — transform OpenAI image request ke Gemini image model.
 
@@ -921,6 +1046,8 @@ Endpoint list model yang tersedia. Simple static response.
 
 ### 4.3 🟢 API Key Auth Middleware (Multi-Token)
 
+> **Status: ✅ selesai dan lebih ketat.** Gateway key `sk-nou-…`, disimpan sebagai hash SHA-256, **wajib** tanpa opsi mematikan, dengan usage per key yang bertahan sampai rollup 90 hari. Tanpa key sama sekali, gateway menolak semuanya.
+
 Support multiple API keys dengan per-key usage tracking.
 
 **REF:**
@@ -930,11 +1057,15 @@ Support multiple API keys dengan per-key usage tracking.
 
 ### 4.4 🟢 IP Whitelist/Blacklist
 
+> **Status: ❌ sengaja tidak diadopsi.** Lihat [§6](#6-sengaja-tidak-diadopsi).
+
 Security layer untuk membatasi akses berdasarkan IP.
 
 **REF:** `middleware/ip_filter.rs` (7.6KB)
 
 ### 4.5 🟢 Account Warmup
+
+> **Status: ❌ belum ada.** Token divalidasi pada penggunaan pertama, bukan saat startup.
 
 Pre-flight validation: kirim request minimal ke Google saat startup untuk verify token masih valid.
 
@@ -944,11 +1075,15 @@ Pre-flight validation: kirim request minimal ke Google saat startup untuk verify
 
 ### 4.6 🟢 Outbound Proxy Pool
 
+> **Status: ❌ sengaja tidak diadopsi.** Lihat [§6](#6-sengaja-tidak-diadopsi).
+
 Rotasi HTTP proxy untuk outbound requests ke Google API (anti-fingerprinting).
 
 **REF:** `proxy_pool.rs` (22KB, 620 lines) — HTTP proxy rotation manager
 
 ### 4.7 🟢 Tool Artifact Store
+
+> **Status: ❌ belum ada.** RTK memangkas tool result di tempat; tidak ada sidecar store.
 
 Sidecar store untuk large tool outputs. Daripada replay tool output besar (100KB+) di chat history, simpan di store dan berikan model hanya summary + artifact ID. Model bisa request full content via `read_tool_artifact`.
 
@@ -960,6 +1095,8 @@ Sidecar store untuk large tool outputs. Daripada replay tool output besar (100KB
 
 ### 4.8 🟢 Error Classifier
 
+> **Status: ❌ belum ada.** Error upstream diteruskan apa adanya dalam bentuk sesuai protokol klien.
+
 Kategorisasi stream errors menjadi user-friendly types (timeout, connection, decode, stream, unknown) dengan i18n keys.
 
 **REF:**
@@ -967,6 +1104,8 @@ Kategorisasi stream errors menjadi user-friendly types (timeout, connection, dec
 - Returns: `"timeout_error"`, `"connection_error"`, `"decode_error"`, `"stream_error"`, `"unknown_error"`
 
 ### 4.9 🟢 Debug Payload Logger
+
+> **Status: ✅ selesai.** Plus filter per model.
 
 Dump full request/response JSON ke disk untuk debugging. Configurable output directory dan toggle.
 
@@ -976,6 +1115,8 @@ Dump full request/response JSON ke disk untuk debugging. Configurable output dir
 
 ### 4.10 🟢 Quota Scheduler
 
+> **Status: ❌ belum ada.** Kuota Antigravity di-poll berkala, tapi tidak ada scan yang memicu warmup.
+
 Background task yang scan semua akun setiap 10 menit, detect model yang sudah 100% quota, dan trigger warmup untuk pre-refresh tokens.
 
 **REF:**
@@ -984,6 +1125,8 @@ Background task yang scan semua akun setiap 10 menit, detect model yang sudah 10
 - `modules/quota.rs` L654 `pub async fn warm_up_all_accounts()`
 
 ### 4.11 🟢 HTTP Session Store (Codex)
+
+> **Status: ❌ belum ada.** Bergantung pada `/v1/responses` yang juga belum ada.
 
 In-memory session store untuk `/v1/responses` POST mode. Enables multi-turn via `previous_response_id` chain tanpa WebSocket.
 
@@ -995,100 +1138,72 @@ In-memory session store untuk `/v1/responses` POST mode. Enables multi-turn via 
 
 ---
 
-## 5. Arsitektur Target
+## 5. Arsitektur
 
-```mermaid
-graph TD
-    Client[Client / IDE / Claude Code] -->|Request| Gateway[Bun.serve Gateway]
-    
-    Gateway --> AuthMW[Auth Middleware]
-    AuthMW --> ProtocolDetect{Protocol Detection}
-    
-    ProtocolDetect -->|/v1/chat/completions| OpenAIHandler[OpenAI Handler]
-    ProtocolDetect -->|/v1/messages| AnthropicHandler[Anthropic Handler]
-    ProtocolDetect -->|/v1/responses| CodexHandler[Codex Handler]
-    ProtocolDetect -->|/v1beta/models| GeminiHandler[Gemini Handler]
-    
-    OpenAIHandler --> ModelRouter[Model Router]
-    AnthropicHandler --> ModelRouter
-    CodexHandler --> ModelRouter
-    GeminiHandler --> ModelRouter
-    
-    ModelRouter --> ContextManager[Context Manager]
-    ContextManager -->|Purify + Compress| RequestMapper[Request Mapper to Google]
-    
-    RequestMapper --> AccountSelector[Account Selector]
-    AccountSelector -->|Tiered Sort + Health + Quota| AccountPool[(Account Pool)]
-    
-    AccountSelector --> SignatureCache[4-Layer Signature Cache]
-    SignatureCache --> GoogleAPI[Google Gemini API]
-    
-    GoogleAPI --> RateLimitTracker[Rate Limit Tracker]
-    RateLimitTracker -->|429/403| AccountSelector
-    
-    GoogleAPI --> ResponseMapper[Response Mapper]
-    ResponseMapper --> Monitor[Request Monitor]
-    ResponseMapper --> Client
-    
-    Monitor --> StatsAPI[GET /api/stats/*]
-```
+Diagram target yang dulu ada di sini sudah terlampaui — bentuk sekarang, termasuk
+lapisan multi-provider yang tidak ada dalam rencana awal, didokumentasikan di
+[ARCHITECTURE.md](ARCHITECTURE.md).
 
 ---
 
-## 7. Roadmap Implementasi
+## 6. Sengaja tidak diadopsi
 
-### Phase 1: Core Robustness (1-2 minggu)
-Perkuat fondasi yang sudah ada tanpa mengubah API surface.
+Bukan backlog. Ini keputusan, dengan alasannya.
 
-- [x] **JSON Schema Cleaning** — Strip `$ref`, `anyOf`, `additionalProperties`, constraint→description
-- [x] **4-Layer Signature Cache** — Upgrade `cache.ts` dengan session tracking + rewind detection
-- [x] **Smart Retry Delay Parsing** — Deep parse 429 errors + grace retry ≤2s
-- [ ] **Tiered Account Sorting** — Upgrade `manager.ts` dengan multi-dimension sorting
-- [ ] **Model-Level Rate Limiting** — Upgrade rate limit dari account-level ke account:model level
-- [x] **Rate Limit Exponential Backoff** — Per-account failure counter + grace window
-- [ ] **Tool Result Compression** — Tambah compression layer di `transform.ts`
-- [ ] **Context Purification Enhancement** — Token estimation + auto aggressive mode
-- [x] **Session Fingerprinting** — SHA256 first user message → stable session ID
-
-### Phase 2: Multi-Protocol (2-3 minggu)
-Tambah endpoint baru untuk mendukung lebih banyak client.
-
-- [x] **Refactor ke handler-based architecture** — Pisah `server.ts` ke `handlers/*`
-- [x] **Anthropic `/v1/messages`** — Full Claude Code CLI support
-- [ ] **Codex `/v1/responses`** — OpenAI Codex CLI support
-- [x] **`GET /v1/models`** — Model listing endpoint
-- [ ] **Dynamic Model Router** — Configurable routing via JSON + wildcard
-- [x] **Model Specs from JSON** — Per-model max_output_tokens, thinking_budget
-
-### Phase 3: Intelligence (1-2 minggu)
-Fitur-fitur cerdas yang meningkatkan kualitas proxying.
-
-- [ ] **Multi-Level Context Compression** — L1 (40%), L2 (55%), L3 (70%) thresholds
-- [ ] **Estimation Calibrator** — Self-learning token estimation dari actual usage
-- [ ] **Client Adapter System** — Per-IDE behavior (Zed, Claude Code, Continue)
-- [ ] **Thinking Budget Config** — Auto/Passthrough/Custom/Adaptive modes
-- [ ] **Global System Prompt Injection** — Auto-inject system instruction to all requests
-
-### Phase 4: Observability (1 minggu)
-- [ ] **Request Monitor** — In-memory request logging
-- [ ] **Stats API** — `/api/stats/summary`, `/api/stats/models`, `/api/stats/accounts`
-- [ ] **Error Classifier** — Categorize errors into user-friendly types
-- [ ] **Debug Payload Logger** — Optional JSON dump to disk
-- [ ] **Structured Logging** — Consistent log format dengan request ID tracking
-
-### Phase 5: Security & Polish (1 minggu)
-- [ ] **Multi-Token Auth** — Support multiple API keys
-- [ ] **IP Filtering** — Whitelist/blacklist
-- [ ] **Account Warmup** — Pre-flight validation on startup
-- [ ] **Quota Scheduler** — Background scan for 100% quota, auto-warmup
-- [ ] **Imagen 3 Support** — `/v1/images/generations`
+| Fitur | Alasan |
+|---|---|
+| **IP whitelist/blacklist** | Nougate berjalan di belakang reverse proxy. Filter IP adalah pekerjaan lapisan itu, dan menaruhnya di aplikasi berarti dua tempat yang bisa tidak sinkron. Gateway API key sudah menjawab "siapa yang boleh memakai". |
+| **Outbound proxy pool** | Rotasi IP keluar untuk menghindari fingerprinting upstream. Tidak sejalan dengan cara kita dipakai, dan menambah komponen jaringan yang harus dijaga. |
+| **Tauri / desktop app** | Nougate adalah layanan yang dipakai bersama, bukan aplikasi satu mesin. |
+| **IDE account switching** | Fitur desktop Manager; tidak berlaku untuk gateway. |
+| **In-memory-only storage** | Prinsip lama "no SQLite, no external deps" **sudah dibatalkan**. Metrics, user, API key, dan custom provider butuh query dan agregasi — file JSON tidak bisa. Yang tersisa di JSON hanya akun dan config provider, supaya tetap bisa dibaca dan diedit tangan. |
 
 ---
 
-## 8. Prinsip Desain
+## 7. Rekomendasi berikutnya
 
-1. **Tetap Lightweight** — Jangan adopt arsitektur desktop app Manager (Tauri, SQLite) ke server proxy kita. Gunakan in-memory + file persistence.
-2. **Backward Compatible** — Setiap phase harus tetap backward compatible. `/v1/chat/completions` tidak boleh break.
-3. **Incremental** — Setiap item dalam roadmap bisa di-deploy independen.
-4. **Test-Driven** — Setiap fitur baru harus punya unit test sebelum merge.
-5. **Single Binary** — Tetap bisa di-deploy sebagai single Docker container tanpa external dependencies (no SQLite, no Redis).
+Diurutkan berdasarkan dampak nyata, bukan urutan aslinya.
+
+**1. Rate limit per model, bukan per family** ([§2.4](#24--model-level-rate-limiting)) —
+satu-satunya gap prioritas tinggi yang tersisa, dan yang paling terasa: limit pada
+`gemini-3-pro` saat ini ikut mematikan seluruh keluarganya, jadi kuota terbuang. Ubah
+kunci cooldown dari `pool|modelFamily` ke `pool|model`, dan bawa `RateLimitReason` supaya
+quota-exhausted bisa dibedakan dari rate-limited.
+
+**2. Estimation calibrator** ([§3.10](#310--estimation-calibrator-self-learning-token-estimation)) —
+murah dan langsung memperbaiki hal lain. Kita sudah mencatat estimasi *dan* nilai
+sebenarnya di baris metrics yang sama; tinggal menutup loopnya dengan EMA. Angka
+kompresi, biaya, dan keputusan level kompresi semuanya ikut membaik.
+
+**3. Multi-level context compression** ([§3.8](#38--multi-level-context-compression)) —
+butuh estimasi token yang akurat lebih dulu, jadi kerjakan setelah nomor 2.
+
+**4. Client adapter system** ([§3.7](#37--client-adapter-system)) — mulai dari satu
+kebutuhan nyata (misalnya strategi buffer signature untuk satu klien yang bermasalah),
+jangan bangun registry-nya dulu.
+
+**5. Codex `/v1/responses`** ([§3.5](#35--codex--responses-endpoint)) — kerjakan hanya
+kalau memang ada yang mau memakai Codex CLI lewat gateway ini.
+
+Yang **tidak** saya rekomendasikan dikejar: Imagen, Gemini native endpoint, artifact
+store, quota scheduler, account warmup. Semuanya masuk akal untuk produk Manager, tapi
+tidak menjawab kebutuhan Nougate hari ini.
+
+---
+
+## 8. Prinsip desain
+
+1. **Jangan pernah bercabang berdasarkan nama provider.** Perbedaan perilaku dinyatakan
+   sebagai *capability* di kontrak `IProvider`, dan pemanggil memeriksa keberadaan
+   method-nya. Ini yang membuat provider baru tidak menyentuh core.
+2. **Tanpa jalur legacy dan tanpa rantai fallback.** Breaking change diterima; shim
+   kompatibilitas yang diam-diam tidak.
+3. **Semua state di bawah `data/`,** diselesaikan lewat `core/paths.ts`.
+4. **Jangan mengarang angka.** Model tanpa harga dilaporkan *unpriced*, bukan diberi tarif
+   yang masuk akal. Akun yang belum terverifikasi tidak menyumbang nol ke rata-rata kuota.
+5. **Backward compatible di jalur data, tidak di config.** Klien tidak boleh rusak diam-diam;
+   setelan yang usang dihapus, tidak dipertahankan selamanya.
+6. **Setiap fitur punya test, dan test-nya dibuktikan menangkap bug** dengan cara merusak
+   perbaikannya lebih dulu.
+
+Panduan lengkap untuk mengerjakan kode ini ada di `.claude/skills/nougate-contributing/`.
