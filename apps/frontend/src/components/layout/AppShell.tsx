@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useRouterState } from '@tanstack/react-router';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
-import { useProviders, useConfig } from '@/hooks/useQueries';
+import { useProviders, useConfig, useCustomProviders } from '@/hooks/useQueries';
 import { useTheme } from '@/hooks/useTheme';
 import { useSSE } from '@/hooks/useSSE';
 import { api } from '@/lib/api';
@@ -18,6 +18,7 @@ export function AppShell({ children }: Props) {
 
   const queryClient = useQueryClient();
   const { data: providers } = useProviders();
+  const { data: customProviders } = useCustomProviders();
   const { data: config } = useConfig();
   const { data: auth } = useAuth();
   const { theme, toggleTheme } = useTheme();
@@ -70,13 +71,35 @@ export function AppShell({ children }: Props) {
     { label: 'System Logs', to: '/logs' as any, icon: <Terminal className="w-4 h-4 text-primary" /> },
   ];
 
+  const breadcrumbLabels: Record<string, string> = {
+    providers: 'Providers',
+    playground: 'API Playground',
+    tokens: 'Token Metrics',
+    'api-keys': 'API Keys',
+    'custom-providers': 'Custom Providers',
+    users: 'Users',
+    settings: 'Account Settings',
+    config: 'Global Config',
+    logs: 'System Logs',
+  };
+
+  const providerLabels = new Map<string, string>();
+
+  providers?.forEach((provider) => {
+    providerLabels.set(provider.id, provider.displayName);
+  });
+
+  customProviders?.forEach((provider) => {
+    providerLabels.set(provider.id, provider.displayName);
+  });
+
   const getBreadcrumbs = () => {
     const parts = pathname.split('/').filter(Boolean);
     if (parts.length === 0) return ['Overview'];
     
     return parts.map((part) => {
-      if (part === 'providers') return 'Providers';
-      if (part === 'antigravity') return 'Google Antigravity';
+      if (breadcrumbLabels[part]) return breadcrumbLabels[part];
+      if (providerLabels.has(part)) return providerLabels.get(part)!;
       return part.charAt(0).toUpperCase() + part.slice(1);
     });
   };
