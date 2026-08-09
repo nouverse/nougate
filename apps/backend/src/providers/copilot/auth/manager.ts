@@ -1,5 +1,6 @@
 import { getProxyConfig as getGlobalProxyConfig } from '@/config/manager';
 import { adminEventBus } from '@/core/events';
+import type { UpstreamErrorKind } from '@/core/upstream-errors';
 import { ensureSessionToken, TokenExchangeError } from './token-exchange';
 import { loadConfig, saveConfig, type SelectionStrategy } from './storage';
 import { type CopilotAccount } from './types';
@@ -8,6 +9,8 @@ let accounts: CopilotAccount[] = [];
 let currentStrategy: SelectionStrategy = 'hybrid';
 const clientStickyMap = new Map<string, string>();
 const cooldownMap = new Map<string, number>();
+/** Why each cooldown was applied, for the dashboard and the logs. */
+const cooldownReasons = new Map<string, UpstreamErrorKind>();
 
 // How long an account stays out of rotation after being marked 'invalid' before
 // it is re-probed (half-open). Keeps a genuinely-dead token from hot-looping
@@ -19,6 +22,24 @@ const MODEL_FAMILIES = {
   'Claude': (n: string) => n.includes('claude') || n.includes('sonnet'),
   'Gemini': (n: string) => n.includes('gemini'),
 };
+
+/**
+ * The scope a cooldown applies to — see the Antigravity manager for the full
+ * reasoning. Kept identical here on purpose: both providers cool down per
+ * *model*, with `ACCOUNT_WIDE` for "this whole account is out".
+ */
+export const ACCOUNT_WIDE = '*';
+
+export function cooldownScope(model?: string): string {
+  return model ? model.trim().toLowerCase() : ACCOUNT_WIDE;
+}
+
+/** The later of this account's model-scoped and account-wide locks. */
+function cooldownExpiry(id: string, pool: string, model?: string): number {
+  const scoped = cooldownMap.get(`${id}|${pool}|${cooldownScope(model)}`) ?? 0;
+  const accountWide = cooldownMap.get(`${id}|${pool}|${ACCOUNT_WIDE}`) ?? 0;
+  return Math.max(scoped, accountWide);
+}
 
 export function getFamilyName(modelName: string): string {
   const n = modelName.toLowerCase();
@@ -82,10 +103,16 @@ export function getCooldowns(): Record<string, number> {
   return Object.fromEntries(cooldownMap);
 }
 
-export function markCooldown(id: string, pool: "cli" | "sandbox", modelFamily: string, duration?: string) {
+export function markCooldown(
+  id: string,
+  pool: "cli" | "sandbox",
+  scope: string,
+  duration?: string,
+  reason: UpstreamErrorKind = 'rate_limited',
+) {
   const config = getManagerConfig();
   const account = accounts.find(a => a.id === id);
-  const key = `${id}|${pool}|${modelFamily}`;
+  const key = `${id}|${pool}|${scope}`;
   let baseDuration = config.rotation.cooldown.defaultDurationMs;
 
   if (duration) {
@@ -98,9 +125,10 @@ export function markCooldown(id: string, pool: "cli" | "sandbox", modelFamily: s
   const expiry = Date.now() + Math.min(baseDuration * backoffMultiplier, config.rotation.cooldown.maxDurationMs);
 
   cooldownMap.set(key, expiry);
+  cooldownReasons.set(key, reason);
   if (account) {
     if (!account.cooldowns) account.cooldowns = {};
-    account.cooldowns[`${pool}|${modelFamily}`] = expiry;
+    account.cooldowns[`${pool}|${scope}`] = expiry;
     account.consecutiveFailures = (account.consecutiveFailures || 0) + 1;
     account.status = 'cooldown';
     saveAccounts(accounts);
@@ -108,13 +136,14 @@ export function markCooldown(id: string, pool: "cli" | "sandbox", modelFamily: s
   adminEventBus.emit("cooldown", { cooldowns: Object.fromEntries(cooldownMap) });
 }
 
-export function clearCooldown(id: string, pool: string, modelFamily: string) {
-  const key = `${id}|${pool}|${modelFamily}`;
+export function clearCooldown(id: string, pool: string, scope: string) {
+  const key = `${id}|${pool}|${scope}`;
   if (cooldownMap.has(key)) {
     cooldownMap.delete(key);
+    cooldownReasons.delete(key);
     const account = accounts.find(a => a.id === id);
     if (account && account.cooldowns) {
-      delete account.cooldowns[`${pool}|${modelFamily}`];
+      delete account.cooldowns[`${pool}|${scope}`];
       account.consecutiveFailures = 0;
       account.status = 'active';
       saveAccounts(accounts);
@@ -154,24 +183,23 @@ export async function getBestAccount(
     }
     return true;
   });
-  const family = model ? getFamilyName(model) : "Other";
-
   if (pool) {
     let candidates = usable.filter(a => {
       if (model && a.capabilities?.[model] === false) return false;
-      const expiry = cooldownMap.get(`${a.id}|${pool}|${family}`);
-      return !expiry || expiry <= now;
+      // Read with the same scope the executor writes. These used to disagree —
+      // written as the model id, read as the family — so a 429 cooldown was
+      // never seen and the account was picked again immediately.
+      return cooldownExpiry(a.id, pool, model) <= now;
     });
 
     if (candidates.length === 0 && !skipRescue) {
       candidates = usable.filter(a => !(model && a.capabilities?.[model] === false))
         .filter(a => {
-          const expiry = cooldownMap.get(`${a.id}|${pool}|${family}`);
-          return !expiry || expiry <= now + 300000; // 5 min rescue window
+          return cooldownExpiry(a.id, pool, model) <= now + 300000; // 5 min rescue window
         })
         .sort((a, b) => {
-          const expA = cooldownMap.get(`${a.id}|${pool}|${family}`) || 0;
-          const expB = cooldownMap.get(`${b.id}|${pool}|${family}`) || 0;
+          const expA = cooldownExpiry(a.id, pool, model);
+          const expB = cooldownExpiry(b.id, pool, model);
           return expA - expB;
         });
     }
@@ -180,7 +208,7 @@ export async function getBestAccount(
 
     if (clientId && excludeIds.length === 0) {
       const stickyId = clientStickyMap.get(clientId);
-      const sticky = candidates.find(a => a.id === stickyId && !cooldownMap.has(`${a.id}|${pool}|${family}`));
+      const sticky = candidates.find(a => a.id === stickyId && cooldownExpiry(a.id, pool, model) <= now);
       if (sticky) return await ensureAccountReady(sticky);
     }
 
@@ -263,7 +291,7 @@ export async function updateAccountUsage(
   if (!account) return;
 
   if (success && clientId) clientStickyMap.set(clientId, id);
-  if (success && pool && model) clearCooldown(id, pool, getFamilyName(model));
+  if (success && pool && model) clearCooldown(id, pool, cooldownScope(model));
 
   account.lastUsed = Date.now();
   const delta = success ? 2 : (status === 401 || status === 403 ? -50 : -10);

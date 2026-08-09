@@ -12,6 +12,7 @@ import { initApiKeys } from "@/auth/api-keys";
 import { initUsers } from "@/auth/users";
 import { initCustomProviders } from "@/providers/custom/manager";
 import { startMetricsMaintenance } from "@/core/metrics/maintenance";
+import { initCalibration } from "@/core/metrics/calibrator";
 import { projectPath } from "@/core/paths";
 
 await loadProxyConfig();
@@ -19,6 +20,7 @@ setupLogCapture();
 await initDb();
 await initUsers();
 await initApiKeys();
+await initCalibration();
 
 const antigravityProvider = new AntigravityProvider();
 await antigravityProvider.init();

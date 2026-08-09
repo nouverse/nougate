@@ -1,6 +1,7 @@
 import { type IModelSpec } from '@/core/interfaces';
 import { type CopilotAccount } from '../auth/types';
-import { getBestAccount, updateAccountUsage, markCooldown } from '../auth/manager';
+import { getBestAccount, updateAccountUsage, markCooldown, cooldownScope } from '../auth/manager';
+import { classifyUpstreamError } from '@/core/upstream-errors';
 import { getCopilotHeaders } from './headers';
 import { getProxyConfig } from '@/config/manager';
 import { getCopilotConfig } from '../config/provider-config';
@@ -74,8 +75,12 @@ export class CopilotExecutor {
         }
 
         if (response.status === 429) {
-          console.warn(`[Copilot Upstream] Account ${account.id} rate limited (429). Triggering cooldown.`);
-          markCooldown(account.id, options.modelSpec.pool, modelId, '60s');
+          // Read the body so a spent allowance can be told apart from a speed
+          // limit — the two deserve very different cooldowns.
+          const body = await response.text().catch(() => '');
+          const { kind, message } = classifyUpstreamError({ status: 429, body });
+          console.warn(`[Copilot Upstream] Account ${account.id}: ${message} (${kind})`);
+          markCooldown(account.id, options.modelSpec.pool, cooldownScope(modelId), '60s', kind);
           await updateAccountUsage(account.id, false, modelId, options.modelSpec.pool, options.clientId, 429);
           continue;
         }

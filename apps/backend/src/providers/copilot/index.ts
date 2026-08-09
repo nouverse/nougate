@@ -7,6 +7,7 @@ import type {
   ProviderExecuteParams,
 } from '@/core/interfaces';
 import {
+  ACCOUNT_WIDE,
   getAccounts,
   getBestAccount as getBestCopilotAccount,
   initManager,
@@ -213,7 +214,8 @@ export class CopilotProvider implements IProvider {
   }
 
   async markAccountCooldown(accountId: string, pool: string, duration?: string): Promise<void> {
-    markCooldown(accountId, pool as any, 'Other', duration);
+    // Manual cooldown benches the whole account, not one model.
+    markCooldown(accountId, pool as any, ACCOUNT_WIDE, duration, 'rate_limited');
   }
 
   getCooldowns(): Record<string, number> {

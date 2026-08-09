@@ -10,6 +10,7 @@ import {
   getEarliestReset,
   getFamilyName,
   getBestAccount,
+  cooldownScope,
   markCooldown,
   updateAccountUsage,
 } from "@/providers/antigravity/auth/manager";
@@ -438,7 +439,7 @@ export class AntigravityExecutor {
           aggressive = false;
           await updateAccountUsage(account.email, false, modelId, pool, options.clientId, status);
           if (status === 429) {
-            markCooldown(account.email, pool, getFamilyName(modelId));
+            markCooldown(account.email, pool, cooldownScope(modelId), undefined, 'quota_exhausted');
           }
           // For non-retryable 400 errors (bad request that won't change across accounts), break immediately.
           if (status === 400) {
@@ -471,7 +472,7 @@ export class AntigravityExecutor {
 
         if (success.retry) {
           if (success.cooldownDuration) {
-            markCooldown(account.email, pool, getFamilyName(modelId), success.cooldownDuration);
+            markCooldown(account.email, pool, cooldownScope(modelId), success.cooldownDuration, 'quota_exhausted');
           }
           aggressive = false;
           continue;

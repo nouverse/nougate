@@ -25,16 +25,15 @@ observability berbasis database dengan biaya per key, autentikasi dashboard dan 
 dan model kapabilitas yang membuat provider baru tidak menyentuh core. Manager tidak punya
 satu pun dari ini — bukan karena kalah, tapi karena bukan itu produknya.
 
-**Masih kalah di kedalaman Antigravity.** Lima hal yang benar-benar berdampak:
+**Sisa gap tinggal tiga**, setelah rate limiting per-model, kalibrator estimasi, dan
+error classifier selesai (Agustus 2026):
 
-1. Cooldown masih terkunci per *model family*, bukan per model — limit satu model
-   menjatuhkan seluruh keluarganya, dan kuota terbuang.
-2. Pemilihan akun memakai skor kesehatan per-model (reaktif, dipelajari dari kegagalan);
-   Manager memakai sisa kuota per-model (proaktif, dari quota API) — sinyal yang lebih
-   baik untuk menghindari request yang pasti gagal.
-3. Kompresi konteks belum dipicu rasio pemakaian; dua lapis kita jalan tiap request.
-4. Estimasi token statis, tanpa kalibrasi terhadap nilai sebenarnya.
-5. Tidak ada adapter per-klien, jadi quirk satu IDE tidak bisa ditangani terpisah.
+1. **Pemilihan akun belum sadar sisa kuota.** Kita memakai skor kesehatan per-model
+   (reaktif, dipelajari dari kegagalan); Manager memakai sisa kuota per-model (proaktif,
+   dari quota API) — sinyal lebih baik untuk melewati akun yang pasti gagal. Ini gap
+   berdampak terbesar yang tersisa.
+2. **Kompresi konteks belum dipicu rasio pemakaian.** Dua lapis kita jalan tiap request.
+3. **Tidak ada adapter per-klien**, jadi quirk satu IDE tidak bisa ditangani terpisah.
 
 Selain itu ada tiga endpoint yang belum ada — Codex `/v1/responses`, Gemini native, dan
 Imagen — yang belum tentu perlu; lihat [§7](#7-rekomendasi-berikutnya).
@@ -72,7 +71,7 @@ Legenda: ⬆️ kita lebih baik · 🟰 setara · ⬇️ kita masih kalah · ➖
 | Multi-layer signature cache | ✅ 4-layer | ✅ 4-layer | 🟰 Setara | [§2.2](#22--multi-layer-signature-cache) |
 | Tiered account sorting (Ultra/Pro/Free) | ✅ tier bonus + skor per-model | ✅ tier + **sisa kuota** per-model | 🟡 Beda sinyal | [§2.3](#23--tiered-account-sorting) |
 | Rate limit + exponential backoff | ✅ | ✅ | 🟰 Setara | [§2.4](#24--model-level-rate-limiting) |
-| **Rate limit granularity** | 🟡 `pool\|modelFamily` | ✅ `account:model` + reason enum | ⬇️ **Worse** | [§2.4](#24--model-level-rate-limiting) |
+| **Rate limit granularity** | ✅ `pool\|model` + scope account-wide + `UpstreamErrorKind` | ✅ `account:model` + reason enum | 🟰 Setara | [§2.4](#24--model-level-rate-limiting) |
 | JSON Schema cleaning untuk Gemini | ✅ | ✅ | 🟰 Setara | [§2.5](#25--json-schema-cleaning-for-gemini) |
 | Smart retry delay parsing + grace | ✅ `providers/antigravity/utils/retry.ts` | ✅ | 🟰 Setara | [§2.6](#26--smart-retry-delay-parsing--grace-retry) |
 | Session fingerprinting | ✅ SHA256 pesan pertama | ✅ | 🟰 Setara | [§3.6](#36--session-fingerprinting) |
@@ -83,6 +82,8 @@ Legenda: ⬆️ kita lebih baik · 🟰 setara · ⬇️ kita masih kalah · ➖
 | Device fingerprint (impersonation) | ✅ header penuh + varian CLI | ✅ | 🟰 Setara | — |
 | Debug payload logger | ✅ + filter model | ✅ | 🟰 Setara | [§4.9](#49--debug-payload-logger) |
 | OAuth browser flow | ✅ (Antigravity saja, lihat catatan) | ✅ | 🟰 Setara | — |
+| **Estimation calibrator** | ✅ smoothed, clamped, persisted | ✅ EMA | 🟰 Setara | [§3.10](#310--estimation-calibrator-self-learning-token-estimation) |
+| **Error classifier** | ✅ `core/upstream-errors.ts`, memandu retry/rotate/scope | ✅ + i18n | 🟰 Setara | [§4.8](#48--error-classifier) |
 | **Request monitoring / usage stats** | ✅ DB + rollup + dashboard + CSV | ✅ buffer in-memory | ⬆️ **Better** | [§3.4](#34--request-monitoring--usage-stats) |
 | **API key auth (multi-token)** | ✅ wajib, hash SHA-256, per-key usage | ✅ token + whitelist | ⬆️ **Better** | [§4.3](#43--api-key-auth-middleware-multi-token) |
 | `/v1/models` endpoint | ✅ lintas semua provider | ✅ | ⬆️ **Better** | [§4.1](#41--v1models-endpoint) |
@@ -91,17 +92,14 @@ Legenda: ⬆️ kita lebih baik · 🟰 setara · ⬇️ kita masih kalah · ➖
 
 | Fitur | Nougate | Antigravity-Manager | Assessment | Section |
 |-------|:-------:|:-------------------:|:----------:|:-------:|
-| Model-level rate limiting | 🟡 family-level | ✅ account:model + reason | ⬇️ Worse | [§2.4](#24--model-level-rate-limiting) |
 | Dynamic model routing / wildcard | ❌ | ✅ exact + wildcard + specificity | ⬇️ Worse | [§3.1](#31--dynamic-model-routing) |
 | Background task silent downgrade | ❌ | ✅ reroute ke Flash | ⬇️ Worse | [§3.1](#31--dynamic-model-routing) |
 | Context purification bertingkat | 🟡 strip thinking turn lama | ✅ soft/aggressive + estimasi token | ⬇️ Worse | [§3.3](#33--context-purification) |
 | Multi-level context compression | 🟡 2 lapis, tanpa threshold otomatis | ✅ L1/L2/L3 by usage ratio | ⬇️ Worse | [§3.8](#38--multi-level-context-compression) |
-| Estimation calibrator | ❌ estimasi statis ~4 char/token | ✅ self-learning EMA | ⬇️ Worse | [§3.10](#310--estimation-calibrator-self-learning-token-estimation) |
 | Client adapter system | ❌ user-agent hanya di-log | ✅ perilaku per-IDE | ⬇️ Worse | [§3.7](#37--client-adapter-system) |
 | Codex `/v1/responses` | ❌ | ✅ | ⬇️ Worse | [§3.5](#35--codex--responses-endpoint) |
 | Gemini native endpoint | ❌ | ✅ | ⬇️ Worse | — |
 | Imagen 3 `/v1/images/generations` | ❌ | ✅ | ⬇️ Worse | [§4.2](#42--imagen-3-support) |
-| Error classifier | ❌ | ✅ + i18n | ⬇️ Worse | [§4.8](#48--error-classifier) |
 | Account warmup | ❌ | ✅ pre-flight validation | ⬇️ Worse | [§4.5](#45--account-warmup) |
 | Quota scheduler | ❌ | ✅ scan + auto-warmup | ⬇️ Worse | [§4.10](#410--quota-scheduler) |
 | Tool artifact store | ❌ | ✅ sidecar store | ⬇️ Worse | [§4.7](#47--tool-artifact-store) |
@@ -326,7 +324,21 @@ L855  pub async fn resolve_dynamic_model_for_account() — Per-account model res
 
 ### 2.4 🔴 Model-Level Rate Limiting
 
-> **Status: 🟡 sebagian — ini gap nyata yang tersisa.** Cooldown kita berkunci pada `pool|modelFamily` (`markCooldown`), bukan `account:model`. Artinya limit pada satu model menjatuhkan seluruh keluarganya. `RateLimitReason` juga belum ada; hanya `RATE_LIMIT_EXCEEDED` yang dikenali di `providers/antigravity/upstream/errors.ts`. **Ini rekomendasi utama untuk dikerjakan berikutnya.**
+> **Status: ✅ selesai (Agustus 2026), sekaligus memperbaiki dua bug.**
+>
+> Cooldown sekarang berkunci pada `pool|model`, dengan satu scope `*` untuk
+> "bench seluruh akun"; setiap pengecekan menghormati keduanya. Alasannya direkam
+> sebagai `UpstreamErrorKind` dari `core/upstream-errors.ts`.
+>
+> Dua bug yang ikut ketahuan dan diperbaiki:
+> - **Copilot**: cooldown ditulis dengan model id tapi dibaca dengan nama family, jadi
+>   lock-nya tidak pernah terlihat dan akun langsung dipilih lagi setelah 429.
+> - **Antigravity**: `markAccountCooldown` mengirim 3 argumen ke fungsi 4 parameter,
+>   sehingga `"3600s"` mendarat di slot scope — tombol Cooldown di dashboard menulis kunci
+>   yang tidak pernah dibaca dan memakai durasi default.
+>
+> Family lama bernama `Claude/GPT`, jadi satu limit pada Claude Opus ikut membekukan model
+> GPT di akun yang sama.
 
 **Mengapa penting:** Saat ini rate limit kita hanya per-account. Tapi Google bisa rate-limit per MODEL per account (misal: akun A kena limit untuk `gemini-3-pro` tapi masih bisa untuk `gemini-3-flash`).
 
@@ -922,7 +934,11 @@ L126  pub struct GlobalSystemPromptConfig {
 
 ### 3.10 🟡 Estimation Calibrator (Self-Learning Token Estimation)
 
-> **Status: ❌ belum ada.** `core/metrics/tokenizer.ts` memakai estimasi statis ~4 karakter/token. Nilai sebenarnya dari `usageMetadata` sudah kita rekam, jadi bahan kalibrasinya ada — tinggal loop umpan baliknya.
+> **Status: ✅ selesai (Agustus 2026).** `core/metrics/calibrator.ts`. Saat upstream
+> melaporkan usage sungguhan, selisihnya terhadap estimasi kita direkam; faktornya
+> dihaluskan, dijepit di [0.5, 3], dan baru dipakai setelah 20 sampel — estimasi awal
+> yang percaya diri lebih buruk daripada tidak mengoreksi sama sekali. Persisted di
+> `data/calibration.json` supaya bertahan lintas restart.
 
 **Mengapa penting:** Token estimation kita static (character-based). Antigravity-Manager punya **self-learning calibrator** yang membandingkan estimated vs actual tokens dari Google API response, lalu auto-adjust factor-nya.
 
@@ -1095,7 +1111,11 @@ Sidecar store untuk large tool outputs. Daripada replay tool output besar (100KB
 
 ### 4.8 🟢 Error Classifier
 
-> **Status: ❌ belum ada.** Error upstream diteruskan apa adanya dalam bentuk sesuai protokol klien.
+> **Status: ✅ selesai (Agustus 2026).** `core/upstream-errors.ts` —
+> `classifyUpstreamError()` provider-agnostic yang menjawab empat hal: layak diulang,
+> layak ganti akun, apakah kegagalannya milik model atau seluruh akun, dan satu kalimat
+> untuk operator. Kegagalan yang tidak dikenali jadi `unknown` dengan `retryable: false`,
+> supaya mode gagal baru muncul sebagai error, bukan diulang selamanya.
 
 Kategorisasi stream errors menjadi user-friendly types (timeout, connection, decode, stream, unknown) dengan i18n keys.
 
@@ -1164,25 +1184,23 @@ Bukan backlog. Ini keputusan, dengan alasannya.
 
 Diurutkan berdasarkan dampak nyata, bukan urutan aslinya.
 
-**1. Rate limit per model, bukan per family** ([§2.4](#24--model-level-rate-limiting)) —
-satu-satunya gap prioritas tinggi yang tersisa, dan yang paling terasa: limit pada
-`gemini-3-pro` saat ini ikut mematikan seluruh keluarganya, jadi kuota terbuang. Ubah
-kunci cooldown dari `pool|modelFamily` ke `pool|model`, dan bawa `RateLimitReason` supaya
-quota-exhausted bisa dibedakan dari rate-limited.
+~~**1. Rate limit per model**~~ · ~~**2. Estimation calibrator**~~ · ~~**Error
+classifier**~~ — selesai Agustus 2026.
 
-**2. Estimation calibrator** ([§3.10](#310--estimation-calibrator-self-learning-token-estimation)) —
-murah dan langsung memperbaiki hal lain. Kita sudah mencatat estimasi *dan* nilai
-sebenarnya di baris metrics yang sama; tinggal menutup loopnya dengan EMA. Angka
-kompresi, biaya, dan keputusan level kompresi semuanya ikut membaik.
+**1. Pemilihan akun sadar sisa kuota** ([§2.3](#23--tiered-account-sorting)) — gap
+berdampak terbesar yang tersisa. Data kuotanya sudah kita poll; tinggal dimasukkan ke
+fungsi skor rotasi. Perlu hati-hati: ini menyentuh jalur panas pemilihan akun, jadi harus
+jatuh persis ke perilaku sekarang saat data kuota kosong atau basi.
 
-**3. Multi-level context compression** ([§3.8](#38--multi-level-context-compression)) —
-butuh estimasi token yang akurat lebih dulu, jadi kerjakan setelah nomor 2.
+**2. Multi-level context compression** ([§3.8](#38--multi-level-context-compression)) —
+sekarang layak dikerjakan, karena kalibrator sudah memberi estimasi token yang bisa
+dipercaya untuk memilih level.
 
-**4. Client adapter system** ([§3.7](#37--client-adapter-system)) — mulai dari satu
+**3. Client adapter system** ([§3.7](#37--client-adapter-system)) — mulai dari satu
 kebutuhan nyata (misalnya strategi buffer signature untuk satu klien yang bermasalah),
 jangan bangun registry-nya dulu.
 
-**5. Codex `/v1/responses`** ([§3.5](#35--codex--responses-endpoint)) — kerjakan hanya
+**4. Codex `/v1/responses`** ([§3.5](#35--codex--responses-endpoint)) — kerjakan hanya
 kalau memang ada yang mau memakai Codex CLI lewat gateway ini.
 
 Yang **tidak** saya rekomendasikan dikejar: Imagen, Gemini native endpoint, artifact

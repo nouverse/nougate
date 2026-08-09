@@ -19,6 +19,7 @@ import {
   resetAccount,
   updateAccountProject,
   markCooldown,
+  ACCOUNT_WIDE,
   addAccount,
   getCooldowns,
 } from '@/providers/antigravity/auth/manager';
@@ -595,7 +596,16 @@ export class AntigravityProvider implements IProvider {
   }
 
   async markAccountCooldown(accountId: string, pool: string, duration?: string): Promise<void> {
-    markCooldown(accountId, (pool || "cli") as "cli" | "sandbox", duration || "3600s");
+    // A manual cooldown is account-wide: the operator is benching the account,
+    // not one model. This used to pass the duration into the scope slot, which
+    // wrote a key nothing ever read and quietly used the default duration.
+    markCooldown(
+      accountId,
+      (pool || "cli") as "cli" | "sandbox",
+      ACCOUNT_WIDE,
+      duration || "3600s",
+      'rate_limited',
+    );
   }
 
   getCooldowns(): Record<string, number> {

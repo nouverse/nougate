@@ -1,6 +1,7 @@
 import type { IModelSpec } from '@/core/interfaces';
 import { getProxyConfig } from '@/config/manager';
 import { costOf, resolvePricing } from '@/core/metrics/pricing';
+import { calibrate, recordActualTokens } from '@/core/metrics/calibrator';
 import { estimateTokensFromChars } from '@/core/metrics/tokenizer';
 import { tokenMetricsLogger } from '@/core/metrics/logger';
 
@@ -170,8 +171,18 @@ function absorbFinalBody(totals: UsageTotals, body: any): void {
  */
 function commit(totals: UsageTotals, meta: TrackingMeta, statusCode: number, streamed: boolean): void {
   const estimated = !totals.reportedByUpstream;
-  const inputTokens = totals.inputTokens || meta.estimatedInputTokens;
-  const outputTokens = totals.outputTokens || estimateTokensFromChars(totals.outputChars);
+
+  // When the upstream reported real input usage, the gap against our estimate
+  // for the same payload is a free measurement — feed it back so future
+  // estimates drift toward what this deployment actually sends.
+  if (totals.reportedByUpstream && totals.inputTokens > 0 && meta.estimatedInputTokens > 0) {
+    recordActualTokens(meta.estimatedInputTokens, totals.inputTokens);
+  }
+
+  const inputTokens =
+    totals.inputTokens || calibrate(meta.estimatedInputTokens);
+  const outputTokens =
+    totals.outputTokens || calibrate(estimateTokensFromChars(totals.outputChars));
 
   const pricing = resolvePricing(meta.modelSpec);
   const billableInput = Math.max(0, inputTokens - totals.cachedInputTokens);
