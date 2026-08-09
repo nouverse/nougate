@@ -32,6 +32,23 @@ function sha256(value: string): string {
   return new Bun.CryptoHasher('sha256').update(value).digest('hex');
 }
 
+/**
+ * Mint a secret and everything derived from it. Shared by creation and rotation
+ * so a rotated key is indistinguishable from a freshly created one.
+ */
+function mintSecret(): { key: string; keyHash: string; keyPrefix: string } {
+  const secret = Buffer.from(crypto.getRandomValues(new Uint8Array(SECRET_BYTES)))
+    .toString('base64url');
+  const key = `${KEY_PREFIX}${secret}`;
+
+  return {
+    key,
+    keyHash: sha256(key),
+    // Enough of the key to recognize it in a list, never enough to use it.
+    keyPrefix: `${key.slice(0, KEY_PREFIX.length + 6)}...${key.slice(-4)}`,
+  };
+}
+
 function rowToRecord(row: any): ApiKeyRecord {
   return {
     id: row.id,
@@ -93,9 +110,7 @@ export async function createApiKey(options: {
   allowedProviders?: string[];
 }): Promise<CreatedApiKey> {
   const name = options.name?.trim() || 'Unnamed key';
-  const secret = Buffer.from(crypto.getRandomValues(new Uint8Array(SECRET_BYTES)))
-    .toString('base64url');
-  const key = `${KEY_PREFIX}${secret}`;
+  const { key, keyHash, keyPrefix } = mintSecret();
   const id = crypto.randomUUID();
   const createdAt = Date.now();
   const expiresAt =
@@ -107,9 +122,8 @@ export async function createApiKey(options: {
   await getDb().insert(t.apiKeys).values({
     id,
     name,
-    keyHash: sha256(key),
-    // Enough of the key to recognize it in a list, never enough to use it.
-    keyPrefix: `${key.slice(0, KEY_PREFIX.length + 6)}...${key.slice(-4)}`,
+    keyHash,
+    keyPrefix,
     createdAt,
     expiresAt,
     allowedProviders: allowedProviders.length ? JSON.stringify(allowedProviders) : null,
@@ -121,7 +135,7 @@ export async function createApiKey(options: {
     id,
     name,
     key,
-    keyPrefix: `${key.slice(0, KEY_PREFIX.length + 6)}...${key.slice(-4)}`,
+    keyPrefix,
     createdAt,
     lastUsedAt: null,
     expiresAt,
@@ -151,6 +165,71 @@ export async function revokeApiKey(id: string): Promise<boolean> {
   await getDb().update(t.apiKeys).set({ revoked: 1 }).where(eq(t.apiKeys.id, id));
   await refreshCache();
   return true;
+}
+
+export type ApiKeyRotation =
+  | { ok: true; key: CreatedApiKey }
+  | { ok: false; reason: 'not-found' | 'revoked' };
+
+/**
+ * Replace a key's secret in place.
+ *
+ * The row id never changes, which is the entire point: usage rows reference the
+ * id, so rotating keeps one continuous history instead of splitting a client's
+ * spend across an old and a new key. `requestCount` and `lastUsedAt` carry over
+ * for the same reason — this is the same key with a new secret, not a new key.
+ *
+ * The old secret stops working the moment the cache is refreshed. There is no
+ * grace period: two live secrets for one key would mean a leaked key stays usable
+ * after the rotation meant to retire it.
+ */
+export async function rotateApiKey(id: string): Promise<ApiKeyRotation> {
+  // Usage counters buffer in memory, so the row would otherwise report a stale
+  // request count in the record this returns.
+  await flushApiKeyUsage();
+
+  const [existing] = await getDb().select().from(t.apiKeys).where(eq(t.apiKeys.id, id));
+  if (!existing) {
+    return { ok: false, reason: 'not-found' };
+  }
+  if (existing.revoked === 1) {
+    // Rotating would quietly hand back a secret that verification still rejects.
+    return { ok: false, reason: 'revoked' };
+  }
+
+  const { key, keyHash, keyPrefix } = mintSecret();
+  await getDb().update(t.apiKeys).set({ keyHash, keyPrefix }).where(eq(t.apiKeys.id, id));
+  await refreshCache();
+
+  return { ok: true, key: { ...rowToRecord({ ...existing, keyPrefix }), key } };
+}
+
+/**
+ * Change when a key expires, or clear the expiry entirely with `null`.
+ *
+ * Absolute rather than "in N days" like creation: this backs an edit control, and
+ * a relative offset there would silently mean something different depending on
+ * when it was submitted. A timestamp in the past is accepted — that is how you
+ * expire a key immediately without revoking it.
+ *
+ * Revocation still wins in `verifyApiKey`, so this cannot bring a revoked key
+ * back to life.
+ */
+export async function updateApiKeyExpiry(
+  id: string,
+  expiresAt: number | null,
+): Promise<ApiKeyRecord | null> {
+  await flushApiKeyUsage();
+
+  const [existing] = await getDb().select().from(t.apiKeys).where(eq(t.apiKeys.id, id));
+  if (!existing) {
+    return null;
+  }
+
+  await getDb().update(t.apiKeys).set({ expiresAt }).where(eq(t.apiKeys.id, id));
+  await refreshCache();
+
+  return rowToRecord({ ...existing, expiresAt });
 }
 
 /**

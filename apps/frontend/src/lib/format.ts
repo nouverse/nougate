@@ -53,6 +53,33 @@ export function formatTimestamp(ms: number): string {
 
 const pad = (value: number): string => String(value).padStart(2, '0');
 
+/** Date only, for values whose time of day carries no information. */
+export function formatDate(ms: number): string {
+  return new Date(ms).toLocaleDateString();
+}
+
+/** `YYYY-MM-DD` in local time — the value shape `<input type="date">` expects. */
+export function toDateInputValue(ms: number | null): string {
+  if (!ms) {
+    return '';
+  }
+  const date = new Date(ms);
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/**
+ * What a `<input type="date">` value means as an expiry instant: the end of that
+ * day, local time. Picking a date and having the key die at 00:00 that morning
+ * would retire it a day earlier than the date says.
+ */
+export function endOfDayMs(value: string): number | null {
+  const [year, month, day] = value.split('-').map(Number);
+  if (!year || !month || !day) {
+    return null;
+  }
+  return new Date(year, month - 1, day, 23, 59, 59, 999).getTime();
+}
+
 /**
  * Hourly bucket keys are UTC — the backend buckets with `at time zone 'UTC'` —
  * so parse the instant rather than reading the digits, which are seven hours off

@@ -4,6 +4,8 @@ import {
   flushApiKeyUsage,
   listApiKeys,
   revokeApiKey,
+  rotateApiKey,
+  updateApiKeyExpiry,
 } from '@/auth/api-keys';
 
 function json(body: unknown, status = 200): Response {
@@ -51,6 +53,34 @@ export async function handleApiKeysRoute(req: Request, url: URL): Promise<Respon
     if (revokeMatch && req.method === 'POST') {
       const ok = await revokeApiKey(decodeURIComponent(revokeMatch[1]));
       return ok ? json({ ok: true }) : json({ error: 'Key not found' }, 404);
+    }
+
+    const rotateMatch = url.pathname.match(/^\/api\/api-keys\/([^/]+)\/rotate$/);
+    if (rotateMatch && req.method === 'POST') {
+      const result = await rotateApiKey(decodeURIComponent(rotateMatch[1]));
+      if (!result.ok) {
+        return result.reason === 'not-found'
+          ? json({ error: 'Key not found' }, 404)
+          : json({ error: 'A revoked key cannot be rotated. Create a new key instead.' }, 409);
+      }
+
+      // Same contract as creation: the plaintext appears here and never again.
+      return json(result.key);
+    }
+
+    const expiryMatch = url.pathname.match(/^\/api\/api-keys\/([^/]+)\/expiry$/);
+    if (expiryMatch && req.method === 'PATCH') {
+      const body = (await req.json().catch(() => ({}))) as any;
+      const expiresAt = body?.expiresAt ?? null;
+      if (expiresAt !== null && (typeof expiresAt !== 'number' || !Number.isFinite(expiresAt))) {
+        return json(
+          { error: 'expiresAt must be a millisecond timestamp, or null for no expiry.' },
+          400,
+        );
+      }
+
+      const updated = await updateApiKeyExpiry(decodeURIComponent(expiryMatch[1]), expiresAt);
+      return updated ? json(updated) : json({ error: 'Key not found' }, 404);
     }
 
     const deleteMatch = url.pathname.match(/^\/api\/api-keys\/([^/]+)$/);

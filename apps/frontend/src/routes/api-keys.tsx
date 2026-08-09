@@ -4,9 +4,24 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useApiKeys, useConfig } from '@/hooks/useQueries';
 import { api } from '@/lib/api';
 import { CreatedApiKey } from '@/lib/types';
-import { formatCount, formatTimestamp } from '@/lib/format';
+import {
+  endOfDayMs,
+  formatCount,
+  formatDate,
+  formatTimestamp,
+  toDateInputValue,
+} from '@/lib/format';
 import { ConfirmModal } from '@/components/shared/ConfirmModal';
-import { KeyRound, Copy, Check, Trash2, ShieldCheck, Plus } from 'lucide-react';
+import {
+  KeyRound,
+  Copy,
+  Check,
+  Trash2,
+  ShieldCheck,
+  Plus,
+  RefreshCw,
+  Pencil,
+} from 'lucide-react';
 
 export const Route = createFileRoute('/api-keys')({
   component: ApiKeysPage,
@@ -23,6 +38,9 @@ function ApiKeysPage() {
   const [copied, setCopied] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [pendingRotate, setPendingRotate] = useState<string | null>(null);
+  const [editingExpiry, setEditingExpiry] = useState<string | null>(null);
+  const [expiryDraft, setExpiryDraft] = useState('');
 
   const notify = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ message, type });
@@ -45,6 +63,29 @@ function ApiKeysPage() {
       refresh();
     },
     onError: (err: any) => notify(err.message || 'Failed to create key', 'error'),
+  });
+
+  const rotateMutation = useMutation({
+    mutationFn: (id: string) => api.post<CreatedApiKey>(`/api/api-keys/${id}/rotate`),
+    onSuccess: (rotated) => {
+      // Same panel as creation: this is the only time the new secret is readable.
+      setFreshKey(rotated);
+      setCopied(false);
+      refresh();
+      notify(`New secret issued for ${rotated.name}`);
+    },
+    onError: (err: any) => notify(err.message || 'Failed to regenerate key', 'error'),
+  });
+
+  const expiryMutation = useMutation({
+    mutationFn: (input: { id: string; expiresAt: number | null }) =>
+      api.patch(`/api/api-keys/${input.id}/expiry`, { expiresAt: input.expiresAt }),
+    onSuccess: (_result, input) => {
+      setEditingExpiry(null);
+      refresh();
+      notify(input.expiresAt ? 'Expiry updated' : 'Key no longer expires');
+    },
+    onError: (err: any) => notify(err.message || 'Failed to update expiry', 'error'),
   });
 
   const revokeMutation = useMutation({
@@ -119,7 +160,8 @@ function ApiKeysPage() {
               COPY YOUR KEY NOW
             </h3>
             <p className="text-xs text-base-content/60">
-              This is the only time the full key is shown. Only its hash is stored.
+              The secret for <span className="font-semibold">{freshKey.name}</span>. This is the only
+              time it is shown — only its hash is stored.
             </p>
             <div className="flex items-center gap-2">
               <code className="flex-1 bg-base-100 border border-base-300 rounded-lg px-3 py-2 font-mono text-xs break-all">
@@ -227,6 +269,7 @@ function ApiKeysPage() {
                   <th>Key</th>
                   <th className="text-right">Requests</th>
                   <th>Last used</th>
+                  <th>Expires</th>
                   <th>Status</th>
                   <th />
                 </tr>
@@ -240,6 +283,56 @@ function ApiKeysPage() {
                     <td className="text-[11px] text-base-content/60">
                       {key.lastUsedAt ? formatTimestamp(key.lastUsedAt) : 'never'}
                     </td>
+                    <td className="text-[11px] text-base-content/60">
+                      {editingExpiry === key.id ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="date"
+                            className="input input-bordered input-xs bg-base-100 font-mono"
+                            title="Leave empty for a key that never expires"
+                            value={expiryDraft}
+                            onChange={(event) => setExpiryDraft(event.target.value)}
+                          />
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-xs text-primary"
+                            disabled={expiryMutation.isPending}
+                            onClick={() =>
+                              expiryMutation.mutate({
+                                id: key.id,
+                                expiresAt: expiryDraft ? endOfDayMs(expiryDraft) : null,
+                              })
+                            }
+                          >
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-xs"
+                            onClick={() => setEditingExpiry(null)}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : key.revoked ? (
+                        // Revocation outranks the expiry, so editing it here would
+                        // imply the key can be brought back. It cannot.
+                        <span className="px-2">{key.expiresAt ? formatDate(key.expiresAt) : 'never'}</span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-xs font-normal gap-1.5"
+                          title="Change when this key expires — empty means never"
+                          onClick={() => {
+                            setEditingExpiry(key.id);
+                            setExpiryDraft(toDateInputValue(key.expiresAt));
+                          }}
+                        >
+                          {key.expiresAt ? formatDate(key.expiresAt) : 'never'}
+                          <Pencil className="w-3 h-3 opacity-50" />
+                        </button>
+                      )}
+                    </td>
                     <td>
                       {key.revoked ? (
                         <span className="badge badge-xs badge-error font-bold">revoked</span>
@@ -251,13 +344,23 @@ function ApiKeysPage() {
                     </td>
                     <td className="text-right whitespace-nowrap">
                       {!key.revoked && (
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-xs text-warning"
-                          onClick={() => revokeMutation.mutate(key.id)}
-                        >
-                          Revoke
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-xs"
+                            onClick={() => setPendingRotate(key.id)}
+                            title="Issue a new secret, keeping this key's history"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-xs text-warning"
+                            onClick={() => revokeMutation.mutate(key.id)}
+                          >
+                            Revoke
+                          </button>
+                        </>
                       )}
                       <button
                         type="button"
@@ -272,7 +375,7 @@ function ApiKeysPage() {
                 ))}
                 {data.keys.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="text-center text-base-content/40 py-8 text-xs">
+                    <td colSpan={7} className="text-center text-base-content/40 py-8 text-xs">
                       No keys yet — create one above.
                     </td>
                   </tr>
@@ -282,6 +385,20 @@ function ApiKeysPage() {
           </div>
         </div>
       </div>
+
+      <ConfirmModal
+        isOpen={pendingRotate !== null}
+        title="Regenerate API key"
+        message="A new secret is issued and the current one stops working immediately — any client still holding it starts getting 401s. Name, usage history, request count and expiry are left untouched."
+        confirmText="Regenerate"
+        onConfirm={() => {
+          if (pendingRotate) {
+            rotateMutation.mutate(pendingRotate);
+          }
+          setPendingRotate(null);
+        }}
+        onCancel={() => setPendingRotate(null)}
+      />
 
       <ConfirmModal
         isOpen={pendingDelete !== null}
