@@ -212,10 +212,28 @@ export interface Account {
   quota?: any[];
 }
 
+/**
+ * One upstream usage limit, already normalised by the provider that owns it —
+ * the dashboard never knows how it was computed.
+ */
+export interface ProviderQuota {
+  id: string;
+  label: string;
+  remainingFraction: number;
+  used?: string;
+  limit?: string;
+  resetIn?: string;
+  modelIds?: string[];
+}
+
 export interface ProviderDetail extends Provider {
   config: Record<string, any>;
   models: ModelSpec[];
   accounts: Account[];
+  /** What this provider can do, declared by the backend, not inferred by id. */
+  capabilities: { quota: boolean };
+  /** Empty when the provider supports quotas but has not loaded any yet. */
+  quotas: ProviderQuota[];
 }
 
 export interface ProxyConfig {

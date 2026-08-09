@@ -463,12 +463,29 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
       const modelIds = p.getModelRegistry().listModelIds();
       const models = modelIds.map((mid) => p.getModelRegistry().getSpec(mid));
       const config = p.getConfig ? p.getConfig() : {};
+
+      // Capabilities are read off the contract, never off the provider id, so
+      // any provider that implements getQuotas gains the tab for free.
+      const supportsQuota = typeof p.getQuotas === "function";
+      let quotas: any[] = [];
+      if (supportsQuota) {
+        try {
+          quotas = await p.getQuotas!();
+        } catch (error) {
+          // A provider that cannot reach its upstream still has the capability;
+          // the tab shows its empty state rather than vanishing.
+          console.warn(`[Admin] ${p.id} failed to report quotas:`, error);
+        }
+      }
+
       return createJsonResponse({
         id: p.id,
         displayName: p.displayName,
         config,
         models,
         accounts,
+        capabilities: { quota: supportsQuota },
+        quotas,
       });
     }
   }

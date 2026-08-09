@@ -66,6 +66,30 @@ export interface IModelSpec {
 }
 
 /**
+ * One upstream usage limit, in the only shape the dashboard understands.
+ *
+ * Every provider counts quota differently — a rolling window here, a monthly
+ * seat allowance there, credits somewhere else — so the normalisation is the
+ * provider's job. Whatever it fetches and however it merges that across its
+ * accounts, it reports the result as this.
+ */
+export interface IProviderQuota {
+  /** Stable key within the provider; also the React list key. */
+  id: string;
+  /** What this limit covers, e.g. "Claude Opus 4.6 (Thinking)". */
+  label: string;
+  /** Remaining headroom, 0–1. The card's bar and percentage come from this. */
+  remainingFraction: number;
+  /** Free-form, already formatted by the provider — units are its own. */
+  used?: string;
+  limit?: string;
+  /** When the window rolls over, pre-formatted, e.g. "4h 59m". */
+  resetIn?: string;
+  /** Models this limit applies to, when the provider can attribute it. */
+  modelIds?: string[];
+}
+
+/**
  * Registry contract for provider-scoped model lookup.
  */
 export interface IModelRegistry {
@@ -96,6 +120,15 @@ export interface IProvider {
   getModelRegistry(): IModelRegistry;
   getSupportedModels(): string[];
   execute(params: ProviderExecuteParams): Promise<Response>;
+
+  /**
+   * Report upstream usage limits. Optional: a provider with no notion of quota
+   * simply does not implement it, and the dashboard hides its Quota tab.
+   *
+   * Implementing this is the *only* thing a provider needs to do to gain the
+   * tab — nothing in the router or the UI is keyed to a provider id.
+   */
+  getQuotas?(): Promise<IProviderQuota[]>;
 
   // Optional administrative methods
   getStrategy?(): string;

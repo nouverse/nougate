@@ -3,6 +3,7 @@ import type {
   IAccount,
   IModelRegistry,
   IProvider,
+  IProviderQuota,
   ProviderExecuteParams,
 } from '@/core/interfaces';
 import {
@@ -285,6 +286,45 @@ async function finalizeAnthropicResponse(params: {
 }
 
 /**
+ * Collapse per-account quota into one figure per limit, which is what the
+ * dashboard asks for.
+ *
+ * Entries are matched on `limitName` and averaged: three accounts at 100%, 50%
+ * and 0% leave the pool 50% full, which is what rotation will actually find.
+ * The descriptive fields come from the *worst* account, so the usage and reset
+ * text describe the one nearest to running out rather than an arbitrary one.
+ */
+export function mergeAccountQuotas(accounts: AntigravityAccount[]): IProviderQuota[] {
+  type Entry = NonNullable<AntigravityAccount['quota']>[number];
+  const merged = new Map<string, { sum: number; count: number; worst: Entry }>();
+
+  for (const account of accounts) {
+    for (const entry of account.quota ?? []) {
+      const existing = merged.get(entry.limitName);
+      if (!existing) {
+        merged.set(entry.limitName, { sum: entry.remainingFraction, count: 1, worst: entry });
+        continue;
+      }
+      existing.sum += entry.remainingFraction;
+      existing.count += 1;
+      if (entry.remainingFraction < existing.worst.remainingFraction) {
+        existing.worst = entry;
+      }
+    }
+  }
+
+  return Array.from(merged.entries()).map(([limitName, entry]) => ({
+    id: limitName,
+    label: entry.worst.groupName,
+    remainingFraction: entry.sum / entry.count,
+    used: entry.worst.usage,
+    limit: entry.worst.limit,
+    resetIn: entry.worst.resetIn,
+    modelIds: entry.worst.modelIds,
+  }));
+}
+
+/**
  * Concrete provider implementation for Antigravity accounts and model registry.
  */
 export class AntigravityProvider implements IProvider {
@@ -477,6 +517,10 @@ export class AntigravityProvider implements IProvider {
       consecutiveFailures: account.consecutiveFailures,
       modelScores: account.modelScores,
     };
+  }
+
+  async getQuotas(): Promise<IProviderQuota[]> {
+    return mergeAccountQuotas(getAccounts());
   }
 
   getStrategy(): string {

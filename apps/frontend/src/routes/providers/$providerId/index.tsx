@@ -3,7 +3,7 @@ import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useProviderDetail } from '@/hooks/useQueries';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import { QuotaGrid } from '@/components/providers/antigravity/QuotaGrid';
+import { QuotaGrid } from '@/components/providers/shared/QuotaGrid';
 import { ModelRegistryTable } from '@/components/providers/shared/ModelRegistryTable';
 import { AntigravityAccountsTab } from '@/components/providers/antigravity/AntigravityAccountsTab';
 import { CopilotAccountsTab } from '@/components/providers/copilot/CopilotAccountsTab';
@@ -71,43 +71,10 @@ function ProviderPage() {
     });
   };
 
-  const allQuotasMap = new Map<string, { sumRemainingFraction: number; count: number; minRemainingFraction: number; worstQuota: any }>();
-  detail.accounts.forEach((acc) => {
-    if (acc.quota && Array.isArray(acc.quota)) {
-      acc.quota.forEach((q: any) => {
-        const existing = allQuotasMap.get(q.limitName);
-        if (!existing) {
-          allQuotasMap.set(q.limitName, {
-            sumRemainingFraction: q.remainingFraction,
-            count: 1,
-            minRemainingFraction: q.remainingFraction,
-            worstQuota: { ...q },
-          });
-        } else {
-          existing.sumRemainingFraction += q.remainingFraction;
-          existing.count += 1;
-          if (q.remainingFraction < existing.minRemainingFraction) {
-            existing.minRemainingFraction = q.remainingFraction;
-            existing.worstQuota = { ...q };
-          }
-        }
-      });
-    }
-  });
-
-  const mergedQuotas = Array.from(allQuotasMap.values()).map((entry) => {
-    const avg = entry.sumRemainingFraction / entry.count;
-    return {
-      ...entry.worstQuota,
-      remainingFraction: avg,
-      quotaLeft: `${Math.round(avg * 100)}%`,
-    };
-  });
-
-  // Quotas are a provider capability, not a universal one — only Antigravity
-  // reports them today. The tab appears when there is something in it, so the
-  // other providers do not open onto an empty panel.
-  const hasQuota = mergedQuotas.length > 0;
+  // Declared by the backend from the provider contract — never inferred from
+  // the provider id or from whether data happens to be loaded. A provider that
+  // implements getQuotas() gets this tab; one that does not, never sees it.
+  const hasQuota = detail.capabilities?.quota ?? false;
   const activeTab: Tab = tab === 'quota' && !hasQuota ? 'overview' : tab;
 
   const tabs: Array<{ id: Tab; label: string; icon: ReactNode }> = [
@@ -174,7 +141,7 @@ function ProviderPage() {
           />
         )}
 
-        {activeTab === 'quota' && <QuotaGrid quotas={mergedQuotas} />}
+        {activeTab === 'quota' && <QuotaGrid quotas={detail.quotas ?? []} />}
 
         {activeTab === 'accounts' && (
           providerId === 'copilot' ? (
