@@ -1,7 +1,7 @@
 import { existsSync } from 'fs';
 import { mkdir } from 'fs/promises';
 import { dirname, join } from 'path';
-import { resolveStateFile } from '@/core/paths';
+import { dataPath } from '@/core/paths';
 import { writeJsonAtomic } from '@/core/state-file';
 
 export interface AntigravityQuotaConfig {
@@ -102,9 +102,7 @@ const DEFAULT_ANTIGRAVITY_CONFIG: AntigravityConfig = {
   },
 };
 
-const DEFAULT_CONFIG_PATH = resolveStateFile('providers', 'antigravity', 'config.json');
-
-const LEGACY_PROXY_CONFIG_PATH = resolveStateFile('config.json');
+const DEFAULT_CONFIG_PATH = dataPath('providers', 'antigravity', 'config.json');
 
 const CONFIG_PATH = process.env.ANTIGRAVITY_CONFIG_FILE || DEFAULT_CONFIG_PATH;
 
@@ -173,49 +171,26 @@ function extractLegacyProviderConfig(source: any): Partial<AntigravityConfig> {
 }
 
 /**
- * Load provider config from the new location with legacy fallback support.
+ * Load provider config from the data directory.
  */
 export async function loadAntigravityConfig(): Promise<AntigravityConfig> {
-  const candidatePaths = [CONFIG_PATH, LEGACY_PROXY_CONFIG_PATH].filter(
-    (path, index, list) => list.indexOf(path) === index,
-  );
-
-  for (const path of candidatePaths) {
-    try {
-      const file = Bun.file(path);
-      if (!(await file.exists())) {
-        continue;
-      }
-
-      const loadedConfig = JSON.parse(await file.text());
-      const sourceConfig =
-        path === LEGACY_PROXY_CONFIG_PATH
-          ? extractLegacyProviderConfig(loadedConfig)
-          : loadedConfig;
-
+  try {
+    const file = Bun.file(CONFIG_PATH);
+    if (await file.exists()) {
       antigravityConfig = mergeKnownKeys(
         DEFAULT_ANTIGRAVITY_CONFIG,
-        sourceConfig,
+        JSON.parse(await file.text()),
       ) as AntigravityConfig;
-
-      if (path === LEGACY_PROXY_CONFIG_PATH && CONFIG_PATH !== LEGACY_PROXY_CONFIG_PATH) {
-        await saveAntigravityConfig(antigravityConfig);
-      }
-
       return antigravityConfig;
-    } catch (error) {
-      console.error('[AntigravityConfig] Failed to load config:', error);
     }
+  } catch (error) {
+    console.error(`[AntigravityConfig] Failed to read ${CONFIG_PATH}:`, error);
   }
 
-  antigravityConfig = DEFAULT_ANTIGRAVITY_CONFIG;
-  await saveAntigravityConfig(antigravityConfig);
+  antigravityConfig = { ...DEFAULT_ANTIGRAVITY_CONFIG };
   return antigravityConfig;
 }
 
-/**
- * Persist the provider-local config to disk.
- */
 export async function saveAntigravityConfig(newConfig: AntigravityConfig): Promise<void> {
   const normalizedConfig = mergeKnownKeys(
     DEFAULT_ANTIGRAVITY_CONFIG,

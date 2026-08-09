@@ -1,7 +1,7 @@
 import { existsSync } from 'fs';
 import { mkdir } from 'fs/promises';
 import { dirname, join } from 'path';
-import { resolveStateFile } from '@/core/paths';
+import { dataPath } from '@/core/paths';
 import { writeJsonAtomic } from '@/core/state-file';
 
 export interface CopilotFeaturesConfig {
@@ -22,7 +22,7 @@ const DEFAULT_COPILOT_CONFIG: CopilotConfig = {
   },
 };
 
-const DEFAULT_CONFIG_PATH = resolveStateFile('providers', 'copilot', 'config.json');
+const DEFAULT_CONFIG_PATH = dataPath('providers', 'copilot', 'config.json');
 
 const CONFIG_PATH = process.env.COPILOT_CONFIG_FILE || DEFAULT_CONFIG_PATH;
 

@@ -117,28 +117,36 @@ docker compose up -d --build
 
 ## Where State Lives
 
-All runtime state is anchored to the **project root**, never to the current working
-directory — so `bun run dev` (which runs from `apps/backend`), `bun run start`, and Docker
-(which runs from `/app`) all read and write the same files.
+**Every piece of runtime state lives in one directory** — `/app/data` in Docker, `./data`
+locally — and there is exactly one path per file. No fallbacks, no per-launch-method
+resolution, no seed copies inside the image. `bun run dev` (which runs from `apps/backend`),
+`bun run start`, and Docker all read and write the same files.
 
-| What | Docker | Local |
-|------|--------|-------|
-| Dashboard users, metrics, gateway API keys, custom providers | `/app/data/nougate.db` | `./data/nougate.db` |
-| Provider accounts | `/app/data/providers/<id>/accounts.json` | `./data/providers/<id>/accounts.json` |
-| Provider config | `/app/data/providers/<id>/config.json` | `./data/providers/<id>/config.json` |
-| Global config | `/app/data/config.json` | `./config.json` |
-| Session signing secret | `/app/data/.session-secret` | `./data/.session-secret` |
+```
+data/
+├── config.json                       # global gateway config
+├── nougate.db                        # users, metrics, API keys, custom providers
+├── signatures.json                   # thinking-signature cache (disposable)
+├── .session-secret                   # cookie signing key (generated on first run)
+└── providers/
+    ├── antigravity/{accounts,config}.json
+    └── copilot/{accounts,config}.json
+```
 
-Only the SQLite database is new — provider accounts and configs stay plain JSON so they
-remain easy to inspect, diff, and hand-edit.
+Provider accounts and configs stay plain JSON so they remain easy to inspect, diff, and
+hand-edit. They are written atomically (temp file + rename) and coalesced, so the OAuth
+tokens they hold cannot be lost to a crash mid-write.
 
-Override with `NOUGATE_DB_PATH`, `CONFIG_FILE`, `ACCOUNTS_FILE`, `COPILOT_ACCOUNTS_FILE`,
-`ANTIGRAVITY_CONFIG_FILE`, `COPILOT_CONFIG_FILE`, or `SESSION_SECRET_FILE`.
+`config.example.json` is the template for `data/config.json`; it is documentation, never
+read at runtime. Individual paths can be overridden with `NOUGATE_DB_PATH`, `CONFIG_FILE`,
+`ACCOUNTS_FILE`, `COPILOT_ACCOUNTS_FILE`, `ANTIGRAVITY_CONFIG_FILE`, `COPILOT_CONFIG_FILE`,
+or `SESSION_SECRET_FILE`.
 
-> **Upgrading from an earlier build?** Paths used to be derived from the working directory,
-> so starting the server two different ways produced two separate sets of state. On boot the
-> gateway now logs the file it actually loaded and warns about any stray copy it is ignoring
-> — check the startup output and delete the leftovers (typically under `apps/backend/`).
+> **Upgrading from a build before this change?** State used to resolve differently depending
+> on how the process started, so you may have stray copies under `apps/backend/` or a
+> repo-root `config.json`. Nothing reads them any more — move what you want into `data/` and
+> delete the rest. A `nougate.db` from before the API-key metrics change must be deleted and
+> recreated.
 
 ---
 

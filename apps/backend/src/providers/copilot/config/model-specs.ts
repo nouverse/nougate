@@ -2,7 +2,7 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 import type { IModelRegistry, IModelSpec } from '@/core/interfaces';
 import { getProxyConfig } from '@/config/manager';
-import { dataPath, projectPath } from '@/core/paths';
+import { dataPath } from '@/core/paths';
 
 const MODEL_REGISTRY: Record<string, IModelSpec> = {
   'gpt-4o': {
@@ -94,11 +94,7 @@ function normalizeModelId(modelId: string): string {
 }
 
 export async function loadModelSpecOverrides(): Promise<void> {
-  // The data directory wins; the repo-tracked providers/ copy acts as a seed.
-  const paths = [
-    dataPath('providers', 'copilot', 'model-specs.json'),
-    projectPath('providers', 'copilot', 'model-specs.json'),
-  ];
+  const paths = [dataPath('providers', 'copilot', 'model-specs.json')];
 
   for (const path of paths) {
     try {

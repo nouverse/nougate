@@ -92,33 +92,3 @@ export function dataPath(...segments: string[]): string {
 export function projectPath(...segments: string[]): string {
   return join(getProjectRoot(), ...segments);
 }
-
-/**
- * Resolve a runtime state file, keeping Docker and local runs on the same file.
- *
- * The data directory is authoritative. Earlier builds resolved these paths
- * against `process.cwd()`, which produced a different file depending on whether
- * the process was started from the repo root or from `apps/backend`; if such a
- * file is the only one that exists it is adopted (and reported) rather than
- * being silently orphaned.
- */
-export function resolveStateFile(...segments: string[]): string {
-  const primary = dataPath(...segments);
-  if (existsSync(primary)) {
-    return primary;
-  }
-
-  const legacy = [join(getProjectRoot(), ...segments), join(process.cwd(), ...segments)].find(
-    (candidate) => candidate !== primary && existsSync(candidate),
-  );
-
-  if (legacy) {
-    console.warn(
-      `[Paths] Using state file from a legacy location: ${legacy}\n` +
-        `[Paths] Move it to ${primary} so every launch method reads the same file.`,
-    );
-    return legacy;
-  }
-
-  return primary;
-}

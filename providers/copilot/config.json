@@ -1,7 +1,0 @@
-{
-  "features": {
-    "jitterEnabled": true,
-    "jitterMinMs": 1000,
-    "jitterMaxMs": 3000
-  }
-}

@@ -29,12 +29,10 @@ COPY apps/backend/tsconfig.json ./
 # Built Frontend
 COPY --from=frontend-builder /app/apps/frontend/dist ./frontend/dist
 
-# Runtime config files
-COPY config.json ./config.json
-COPY providers/ ./providers/
-
-# Data directory for runtime persistence (accounts, config)
-RUN mkdir -p /app/data/providers/antigravity && chown -R bun:bun /app/data
+# All runtime state — config, provider accounts, SQLite — lives in this one
+# directory, which is expected to be a mounted volume. Nothing config-like is
+# baked into the image, so there is only ever one file to look at.
+RUN mkdir -p /app/data/providers && chown -R bun:bun /app/data
 
 EXPOSE 3000
 

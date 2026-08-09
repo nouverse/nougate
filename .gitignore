@@ -8,13 +8,8 @@ data/
 .npmrc
 tmp/
 
-# Runtime config & state (use config.example.json as template)
-config.json
-auth.json
-.session-secret
-apps/backend/antigravity-accounts.json
-apps/backend/providers/antigravity/accounts.json
-apps/backend/providers/antigravity/config.json
+# All runtime state lives in data/ (already ignored above).
+# Use config.example.json as the template for data/config.json.
 
 # Frontend build output
 apps/frontend/dist/

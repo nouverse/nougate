@@ -1,12 +1,10 @@
 import { type AntigravityAccount, type SelectionStrategy } from '@/providers/antigravity/auth/types';
-import { resolveStateFile } from '@/core/paths';
+import { dataPath } from '@/core/paths';
 import { createStateFileWriter } from '@/core/state-file';
 
 // Accounts live in the data directory (the Docker volume, or ./data locally)
 // so every launch method reads and writes the same file.
-const DEFAULT_PATH = resolveStateFile('providers', 'antigravity', 'accounts.json');
-
-const LEGACY_PATH = resolveStateFile('antigravity-accounts.json');
+const DEFAULT_PATH = dataPath('providers', 'antigravity', 'accounts.json');
 
 const ACCOUNTS_FILE = process.env.ACCOUNTS_FILE || DEFAULT_PATH;
 
@@ -17,22 +15,9 @@ interface StorageFormat {
 
 export async function loadConfig(): Promise<StorageFormat> {
   try {
-    const candidatePaths = [ACCOUNTS_FILE, LEGACY_PATH].filter(
-      (path, index, list) => list.indexOf(path) === index,
-    );
-
-    for (const path of candidatePaths) {
-      const file = Bun.file(path);
-      if (!(await file.exists())) {
-        continue;
-      }
-
-      const data = await file.json();
-      if (Array.isArray(data)) {
-        // Migration from old format
-        return { accounts: data, strategy: "hybrid" };
-      }
-      return data;
+    const file = Bun.file(ACCOUNTS_FILE);
+    if (await file.exists()) {
+      return await file.json();
     }
   } catch (e) {
     console.error("Failed to load accounts:", e);

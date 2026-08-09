@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite';
-import { copyFileSync, existsSync, mkdirSync } from 'fs';
-import { dirname, join } from 'path';
-import { dataPath, getProjectRoot } from '@/core/paths';
+import { existsSync, mkdirSync } from 'fs';
+import { dirname } from 'path';
+import { dataPath } from '@/core/paths';
 
 /**
  * Resolve the on-disk location of the SQLite database.
@@ -11,54 +11,6 @@ import { dataPath, getProjectRoot } from '@/core/paths';
  */
 function resolveDbPath(): string {
   return process.env.NOUGATE_DB_PATH || dataPath('nougate.db');
-}
-
-/**
- * Locations an earlier build could have written the database to, back when the
- * path was derived from the working directory.
- */
-function legacyDbPaths(): string[] {
-  return [
-    join(getProjectRoot(), 'apps', 'backend', 'data', 'nougate.db'),
-    join(process.cwd(), 'data', 'nougate.db'),
-  ];
-}
-
-/**
- * Adopt a database left behind at a working-directory-dependent path, so state
- * saved before this fix is not stranded.
- *
- * Only ever runs when the canonical file does not exist yet, so it can never
- * overwrite live data.
- */
-function adoptLegacyDatabase(target: string): void {
-  if (existsSync(target)) {
-    return;
-  }
-
-  const legacy = legacyDbPaths().find(
-    (candidate) => candidate !== target && existsSync(candidate),
-  );
-
-  if (!legacy) {
-    return;
-  }
-
-  try {
-    // The WAL may hold committed pages that are not in the main file yet;
-    // opening and closing the source checkpoints it before we copy.
-    const source = new Database(legacy, { readonly: false });
-    source.exec('PRAGMA wal_checkpoint(TRUNCATE)');
-    source.close();
-
-    copyFileSync(legacy, target);
-    console.log(
-      `[DB] Migrated database from a legacy location: ${legacy} → ${target}\n` +
-        '[DB] The old file was left in place; delete it once you have confirmed your data is intact.',
-    );
-  } catch (error) {
-    console.warn(`[DB] Could not migrate the legacy database at ${legacy}:`, error);
-  }
 }
 
 let database: Database | null = null;
@@ -195,80 +147,6 @@ const SCHEMA_STATEMENTS = [
 ];
 
 /**
- * Whether a table exists yet. A fresh database has none, and migrations must
- * skip it rather than trying to rebuild something that was never there.
- */
-function tableExists(db: Database, table: string): boolean {
-  const row = db
-    .query(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`)
-    .get(table);
-  return row !== null && row !== undefined;
-}
-
-/**
- * Whether a table already has a column.
- */
-function hasColumn(db: Database, table: string, column: string): boolean {
-  const columns = db.query(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
-  return columns.some((entry) => entry.name === column);
-}
-
-/**
- * Bring an existing database up to the current shape.
- *
- * `CREATE TABLE IF NOT EXISTS` cannot alter a table that already exists, so any
- * change to an existing table needs an explicit, idempotent step here.
- */
-function runMigrations(db: Database): void {
-  // Adding api_key_id to the rollup changes its primary key, which SQLite can
-  // only do by rebuilding the table. Rollups hold the only copy of usage older
-  // than the detail-log retention window, so the rows are copied rather than
-  // recreated. Existing rows predate per-key tracking and get ''.
-  if (
-    tableExists(db, 'token_usage_daily_rollups') &&
-    !hasColumn(db, 'token_usage_daily_rollups', 'api_key_id')
-  ) {
-    console.log('[DB] Migrating token_usage_daily_rollups to track the gateway API key...');
-
-    db.transaction(() => {
-      db.exec(`CREATE TABLE token_usage_daily_rollups_migrated (
-        date TEXT NOT NULL,
-        provider TEXT NOT NULL,
-        model TEXT NOT NULL,
-        full_model_name TEXT NOT NULL,
-        client_id TEXT NOT NULL,
-        api_key_id TEXT NOT NULL DEFAULT '',
-        total_requests INTEGER NOT NULL DEFAULT 0,
-        total_input_tokens INTEGER NOT NULL DEFAULT 0,
-        total_output_tokens INTEGER NOT NULL DEFAULT 0,
-        total_tokens_saved INTEGER NOT NULL DEFAULT 0,
-        total_input_cost REAL NOT NULL DEFAULT 0,
-        total_output_cost REAL NOT NULL DEFAULT 0,
-        total_cost_saved REAL NOT NULL DEFAULT 0,
-        PRIMARY KEY (date, full_model_name, client_id, api_key_id)
-      )`);
-
-      db.exec(`INSERT INTO token_usage_daily_rollups_migrated (
-        date, provider, model, full_model_name, client_id, api_key_id,
-        total_requests, total_input_tokens, total_output_tokens, total_tokens_saved,
-        total_input_cost, total_output_cost, total_cost_saved
-      )
-      SELECT date, provider, model, full_model_name, client_id, '',
-             total_requests, total_input_tokens, total_output_tokens, total_tokens_saved,
-             total_input_cost, total_output_cost, total_cost_saved
-      FROM token_usage_daily_rollups`);
-
-      db.exec('DROP TABLE token_usage_daily_rollups');
-      db.exec(
-        'ALTER TABLE token_usage_daily_rollups_migrated RENAME TO token_usage_daily_rollups',
-      );
-    })();
-
-    console.log('[DB] Rollup migration complete.');
-  }
-}
-
-/**
  * Open (once) and return the shared SQLite handle, applying the schema on first use.
  */
 export function getDb(): Database {
@@ -286,8 +164,6 @@ export function getDb(): Database {
     mkdirSync(dir, { recursive: true });
   }
 
-  adoptLegacyDatabase(resolvedPath);
-
   const db = new Database(resolvedPath, { create: true });
 
   // WAL keeps the metrics writer from blocking dashboard reads, and NORMAL
@@ -296,8 +172,6 @@ export function getDb(): Database {
   db.exec('PRAGMA synchronous = NORMAL');
   db.exec('PRAGMA foreign_keys = ON');
   db.exec('PRAGMA busy_timeout = 5000');
-
-  runMigrations(db);
 
   for (const statement of SCHEMA_STATEMENTS) {
     db.exec(statement);
