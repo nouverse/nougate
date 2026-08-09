@@ -188,8 +188,9 @@ export function AppShell({ children }: Props) {
         </div>
       </div>
 
-      <div className="p-4 border-t border-base-300 text-[10px] text-base-content/40 text-center font-mono">
-        v0.7.0 • Local Environment
+      <div className="p-4 border-t border-base-300 text-[10px] text-base-content/40 text-center font-mono leading-relaxed">
+        <div>v0.7.0</div>
+        <div>Powered By Nouverse Technologies</div>
       </div>
     </div>
   );
