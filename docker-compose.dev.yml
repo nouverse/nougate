@@ -58,6 +58,21 @@ services:
       - NODE_ENV=development
       - BASE_URL=${BASE_URL:-http://localhost:3000}
       - PORT=${PORT:-3000}
+      # The rest are listed rather than left to env_file so this file is the
+      # full inventory of what the container reads. `${VAR:-}` leaves a variable
+      # as an empty string when .env does not set it, which each of these treats
+      # as unset.
+      # ── Dashboard sessions ──
+      - SESSION_SECRET=${SESSION_SECRET:-}
+      - SESSION_TTL_HOURS=${SESSION_TTL_HOURS:-}
+      # Database (DB_URL, NOUGATE_DB_PATH) and the pricing fallbacks are
+      # deliberately not listed, so nothing here overrides them. They still reach
+      # the container through env_file above when .env sets them.
+      # ── Pod limits ──
+      # Blank = not enforced. BOTTOM_JITTER is a floor on every provider's
+      # request delay; MAX_ACCOUNT_MULTIPLEXING caps accounts per provider.
+      - BOTTOM_JITTER=${BOTTOM_JITTER:-}
+      - MAX_ACCOUNT_MULTIPLEXING=${MAX_ACCOUNT_MULTIPLEXING:-}
     volumes:
       # ── Backend ──
       - ./apps/backend/src:/app/apps/backend/src

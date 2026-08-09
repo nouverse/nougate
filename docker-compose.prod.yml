@@ -24,6 +24,22 @@ services:
       # Change the value here when deploying to a different domain.
       - BASE_URL=https://nougate.nouverse.tech
       - PORT=${PORT:-3000}
+      # The rest are listed rather than left to env_file so this file is the
+      # full inventory of what the container reads. `${VAR:-}` leaves a variable
+      # as an empty string when .env does not set it, which each of these treats
+      # as unset.
+      # ── Dashboard sessions ──
+      - SESSION_SECRET=${SESSION_SECRET:-}
+      - SESSION_TTL_HOURS=${SESSION_TTL_HOURS:-}
+      # Database (DB_URL, NOUGATE_DB_PATH) and the pricing fallbacks are
+      # deliberately not listed: they still reach the container through env_file
+      # above, and hardcoding a connection string into a committed file is how
+      # credentials end up in git.
+      # ── Pod limits ──
+      # Blank = not enforced. BOTTOM_JITTER is a floor on every provider's
+      # request delay; MAX_ACCOUNT_MULTIPLEXING caps accounts per provider.
+      - BOTTOM_JITTER=${BOTTOM_JITTER:-}
+      - MAX_ACCOUNT_MULTIPLEXING=${MAX_ACCOUNT_MULTIPLEXING:-}
     volumes:
       # Persistent data directory storing config.json and provider account databases
       - ./nougate-data:/app/data:z

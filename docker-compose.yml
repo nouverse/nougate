@@ -6,9 +6,24 @@ services:
     build: .
     ports:
       - "3000:3000"
+    # No env_file here: every variable the app reads is listed below and
+    # substituted from .env by Compose. `${VAR:-}` leaves it as an empty string
+    # when .env does not set it, which each of these treats as unset.
     environment:
       - BASE_URL=http://127.0.0.1:3000
       - HEADROOM_URL=http://headroom:8787
+      - PORT=${PORT:-3000}
+      # ── Dashboard sessions ──
+      - SESSION_SECRET=${SESSION_SECRET:-}
+      - SESSION_TTL_HOURS=${SESSION_TTL_HOURS:-}
+      # Database and pricing-fallback variables are deliberately absent: this
+      # file has no env_file, so the container always uses the SQLite file in
+      # ./data and the built-in price book.
+      # ── Pod limits ──
+      # Blank = not enforced. BOTTOM_JITTER is a floor on every provider's
+      # request delay; MAX_ACCOUNT_MULTIPLEXING caps accounts per provider.
+      - BOTTOM_JITTER=${BOTTOM_JITTER:-}
+      - MAX_ACCOUNT_MULTIPLEXING=${MAX_ACCOUNT_MULTIPLEXING:-}
     volumes:
       - ./data:/app/data:z
     depends_on:
