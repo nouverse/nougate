@@ -200,25 +200,37 @@ describe("Forced password change", () => {
     expect(guard("/api/auth/me", cookie)).toBeNull();
   });
 
-  test("clears once the password is replaced, and requires the current one", async () => {
+  test("does not ask for the current password, which was just used to sign in", async () => {
     const admin = users.getUserByUsername(users.DEFAULT_USERNAME)!;
     const cookie = sessionCookie(admin);
 
-    const wrong = await authRoute("/api/auth/profile", cookie, "POST", {
-      currentPassword: "not-the-password",
-      newPassword: "a-brand-new-password",
-    });
-    expect(wrong?.status).toBe(401);
-
+    // No currentPassword in the body at all.
     const ok = await authRoute("/api/auth/profile", cookie, "POST", {
-      currentPassword: users.DEFAULT_PASSWORD,
       newPassword: "a-brand-new-password",
     });
+
     expect(ok?.status).toBe(200);
     expect((await ok!.json()).user.mustChangePassword).toBe(false);
-
     expect(users.getUserByUsername(users.DEFAULT_USERNAME)!.mustChangePassword).toBe(false);
     expect(guard("/api/status", cookie)).toBeNull();
+  });
+
+  test("the waiver ends the moment the flag clears", async () => {
+    // Same account, same session — but it is now an ordinary one, so a further
+    // change has to prove the current password again.
+    const admin = users.getUserByUsername(users.DEFAULT_USERNAME)!;
+    const cookie = sessionCookie(admin);
+
+    const withoutPassword = await authRoute("/api/auth/profile", cookie, "POST", {
+      newPassword: "another-new-password",
+    });
+    expect(withoutPassword?.status).toBe(401);
+
+    const withPassword = await authRoute("/api/auth/profile", cookie, "POST", {
+      currentPassword: "a-brand-new-password",
+      newPassword: "another-new-password",
+    });
+    expect(withPassword?.status).toBe(200);
   });
 });
 

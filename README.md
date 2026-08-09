@@ -275,7 +275,10 @@ Two pages, deliberately separate:
 - Change your password.
 
 Both require your current password, so an unattended browser tab is not enough
-to take the account over.
+to take the account over. The one exception is the first-run setup screen: that
+session was minted seconds earlier by proving the very credential being
+replaced, and the account can reach nothing else until it completes, so it only
+asks for the new password.
 
 **Users** — everyone else's accounts:
 

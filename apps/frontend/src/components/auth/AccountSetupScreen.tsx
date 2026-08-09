@@ -16,7 +16,6 @@ import { AuthShell } from '@/components/auth/LoginScreen';
 export function AccountSetupScreen({ username }: { username: string }) {
   const queryClient = useQueryClient();
   const [newUsername, setNewUsername] = useState(username);
-  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -35,8 +34,8 @@ export function AccountSetupScreen({ username }: { username: string }) {
 
     try {
       await updateProfile({
-        currentPassword,
-        // Only send a rename when it actually differs.
+        // No current password: the session was just minted by proving it, and
+        // the server exempts this one case for exactly that reason.
         newUsername: newUsername.trim() !== username ? newUsername.trim() : undefined,
         newPassword,
       });
@@ -82,29 +81,13 @@ export function AccountSetupScreen({ username }: { username: string }) {
         <div className="form-control w-full">
           <label className="label py-1">
             <span className="label-text font-semibold text-xs text-base-content/75">
-              Current password
-            </span>
-          </label>
-          <input
-            type="password"
-            required
-            autoFocus
-            autoComplete="current-password"
-            className="input input-bordered input-sm w-full bg-base-100 text-xs"
-            value={currentPassword}
-            onChange={(event) => setCurrentPassword(event.target.value)}
-          />
-        </div>
-
-        <div className="form-control w-full">
-          <label className="label py-1">
-            <span className="label-text font-semibold text-xs text-base-content/75">
               New password
             </span>
           </label>
           <input
             type="password"
             required
+            autoFocus
             minLength={8}
             autoComplete="new-password"
             className="input input-bordered input-sm w-full bg-base-100 text-xs"

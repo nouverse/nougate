@@ -71,7 +71,11 @@ export async function login(username: string, password: string): Promise<void> {
 }
 
 export interface ProfileUpdate {
-  currentPassword: string;
+  /**
+   * Required except during first-run setup, where the account is still on the
+   * credential it was issued and the server waives it.
+   */
+  currentPassword?: string;
   /** Omit or leave empty to keep the current username. */
   newUsername?: string;
   /** Omit or leave empty to keep the current password. */

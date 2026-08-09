@@ -95,11 +95,19 @@ async function handleUpdateProfile(req: Request): Promise<Response> {
     return jsonResponse({ error: "Nothing to change." }, 400);
   }
 
-  // Re-authenticate even for a forced change: the session cookie alone must not
-  // be enough to take over an account left signed in on a shared machine.
-  const verified = await verifyCredentials(user.username, currentPassword);
-  if (!verified) {
-    return jsonResponse({ error: "Current password is incorrect." }, 401);
+  // Normally the current password is required, so a session left open on a
+  // shared machine cannot be used to take the account over.
+  //
+  // The first-run setup is the one exception: the account is still on the
+  // credential it was issued, that credential was proven seconds ago to mint
+  // this very session, and nothing else in the dashboard is reachable until
+  // this completes. Asking for it again would be friction with nothing behind
+  // it. The moment the flag clears, the rule above applies.
+  if (!user.mustChangePassword) {
+    const verified = await verifyCredentials(user.username, currentPassword);
+    if (!verified) {
+      return jsonResponse({ error: "Current password is incorrect." }, 401);
+    }
   }
 
   let updated = user;
