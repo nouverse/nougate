@@ -65,9 +65,16 @@ export function setStrategy(strategy: SelectionStrategy) {
   saveAccounts(accounts);
 }
 
-export async function saveAccounts(newAccounts: CopilotAccount[]) {
+/**
+ * Persist accounts. Routine saves are coalesced by the storage layer; pass
+ * `immediate` when credentials changed, so a restart can never lose them.
+ */
+export async function saveAccounts(
+  newAccounts: CopilotAccount[],
+  options: { immediate?: boolean } = {},
+) {
   accounts = newAccounts;
-  await saveConfig({ accounts, strategy: currentStrategy });
+  await saveConfig({ accounts, strategy: currentStrategy }, options);
   adminEventBus.emit("update", { accounts, strategy: currentStrategy });
 }
 
@@ -319,12 +326,12 @@ export async function addAccount(account: CopilotAccount) {
   } else {
     accounts.push(account);
   }
-  await saveAccounts(accounts);
+  await saveAccounts(accounts, { immediate: true });
 }
 
 export async function removeAccount(id: string) {
   accounts = accounts.filter(a => a.id !== id);
-  await saveAccounts(accounts);
+  await saveAccounts(accounts, { immediate: true });
 }
 
 export function getEarliestReset(_pool: "cli" | "sandbox"): string | null {

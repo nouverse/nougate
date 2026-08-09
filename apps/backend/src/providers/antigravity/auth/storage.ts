@@ -1,9 +1,6 @@
-import { existsSync } from 'fs';
-import { mkdir } from 'fs/promises';
-import { dirname, join } from 'path';
-
 import { type AntigravityAccount, type SelectionStrategy } from '@/providers/antigravity/auth/types';
 import { resolveStateFile } from '@/core/paths';
+import { createStateFileWriter } from '@/core/state-file';
 
 // Accounts live in the data directory (the Docker volume, or ./data locally)
 // so every launch method reads and writes the same file.
@@ -48,11 +45,31 @@ export async function loadAccounts(): Promise<AntigravityAccount[]> {
   return (await loadConfig()).accounts;
 }
 
-export async function saveConfig(config: StorageFormat): Promise<void> {
-  try {
-    await mkdir(dirname(ACCOUNTS_FILE), { recursive: true });
-    await Bun.write(ACCOUNTS_FILE, JSON.stringify(config, null, 2));
-  } catch (e) {
-    console.error("Failed to save accounts:", e);
+const writer = createStateFileWriter<StorageFormat>(ACCOUNTS_FILE, {
+  label: 'antigravity accounts',
+});
+
+/**
+ * Persist accounts.
+ *
+ * Routine saves are coalesced: scoring updates on every request, but ~74% of
+ * this file is a quota snapshot that rarely changes, so writing it per request
+ * is almost entirely wasted I/O. Pass `immediate` whenever credentials change
+ * (sign-in, token refresh, removal) so those are durable straight away.
+ */
+export async function saveConfig(
+  config: StorageFormat,
+  options: { immediate?: boolean } = {},
+): Promise<void> {
+  writer.schedule(config);
+  if (options.immediate) {
+    writer.flush();
   }
+}
+
+/**
+ * Write any pending account state to disk right now.
+ */
+export function flushConfig(): void {
+  writer.flush();
 }

@@ -2,6 +2,7 @@ import { existsSync } from 'fs';
 import { mkdir } from 'fs/promises';
 import { dirname, join } from 'path';
 import { resolveStateFile } from '@/core/paths';
+import { writeJsonAtomic } from '@/core/state-file';
 
 export interface CopilotFeaturesConfig {
   jitterEnabled: boolean;
@@ -95,7 +96,7 @@ export async function saveCopilotConfig(newConfig: CopilotConfig): Promise<void>
   ) as CopilotConfig;
 
   await ensureConfigDirectory(CONFIG_PATH);
-  await Bun.write(CONFIG_PATH, JSON.stringify(normalizedConfig, null, 2));
+  writeJsonAtomic(CONFIG_PATH, normalizedConfig);
   copilotConfig = normalizedConfig;
 }
 

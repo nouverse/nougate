@@ -2,6 +2,7 @@ import { existsSync } from 'fs';
 import { mkdir } from 'fs/promises';
 import { dirname, join } from 'path';
 import { resolveStateFile } from '@/core/paths';
+import { writeJsonAtomic } from '@/core/state-file';
 
 export interface AntigravityQuotaConfig {
   refreshIntervalMs: number;
@@ -222,7 +223,7 @@ export async function saveAntigravityConfig(newConfig: AntigravityConfig): Promi
   ) as AntigravityConfig;
 
   await ensureConfigDirectory(CONFIG_PATH);
-  await Bun.write(CONFIG_PATH, JSON.stringify(normalizedConfig, null, 2));
+  writeJsonAtomic(CONFIG_PATH, normalizedConfig);
   antigravityConfig = normalizedConfig;
 }
 

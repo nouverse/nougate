@@ -145,9 +145,16 @@ export function setStrategy(strategy: SelectionStrategy) {
   saveAccounts(accounts);
 }
 
-export async function saveAccounts(newAccounts: AntigravityAccount[]) {
+/**
+ * Persist accounts. Routine saves are coalesced by the storage layer; pass
+ * `immediate` when credentials changed, so a restart can never lose them.
+ */
+export async function saveAccounts(
+  newAccounts: AntigravityAccount[],
+  options: { immediate?: boolean } = {},
+) {
   accounts = newAccounts;
-  await saveConfig({ accounts, strategy: currentStrategy });
+  await saveConfig({ accounts, strategy: currentStrategy }, options);
   adminEventBus.emit("update", { accounts, strategy: currentStrategy });
 }
 
@@ -341,7 +348,7 @@ async function ensureAccountReady(account: AntigravityAccount): Promise<Antigrav
       account.accessToken = tokens.access_token;
       account.expiresAt = now + (tokens.expires_in * 1000);
       if (!account.projectId) account.projectId = await getProjectId(account.accessToken) || "rising-fact-p41fc";
-      await saveAccounts(accounts);
+      await saveAccounts(accounts, { immediate: true });
     } catch (e) {
       account.healthScore = Math.max(0, account.healthScore - 20);
       await saveAccounts(accounts);
@@ -461,12 +468,12 @@ export async function addAccount(account: AntigravityAccount) {
   const existing = accounts.find(a => a.email === account.email);
   if (existing) Object.assign(existing, account);
   else accounts.push(account);
-  await saveAccounts(accounts);
+  await saveAccounts(accounts, { immediate: true });
 }
 
 export async function removeAccount(email: string) {
   accounts = accounts.filter(a => a.email !== email);
-  await saveAccounts(accounts);
+  await saveAccounts(accounts, { immediate: true });
 }
 
 export function emitAccountFlash(email: string, status: "success" | "error" = "success") {

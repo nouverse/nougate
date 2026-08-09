@@ -1,6 +1,7 @@
 import { join } from "path";
 import { existsSync, mkdirSync } from "fs";
 import { getDataDir } from '@/core/paths';
+import { createStateFileWriter } from '@/core/state-file';
 
 const MIN_SIGNATURE_LENGTH = 50;
 
@@ -56,24 +57,26 @@ const CACHE_DIR = getDataDir();
 const CACHE_FILE = join(CACHE_DIR, "signatures.json");
 
 // Helper to save cache to disk asynchronously
+/** Snapshot every layer of the cache in the on-disk shape. */
+function buildCacheSnapshot() {
+  return {
+    signatures: Array.from(signatureCache.entries()),
+    callSignatures: Array.from(signatureByCallIdCache.entries()),
+    sessionSignatures: Array.from(sessionSignatureCache.entries()),
+    signatureFamilies: Array.from(signatureFamilyCache.entries()),
+    sessionReasonings: Array.from(sessionReasoningCache.entries()),
+  };
+}
+
+const cacheWriter = createStateFileWriter<ReturnType<typeof buildCacheSnapshot>>(CACHE_FILE, {
+  label: 'signature cache',
+  // This is a disposable cache written from several points on the streaming
+  // path, so it can afford to coalesce harder than account state.
+  debounceMs: 2000,
+});
+
 function saveCacheToDisk() {
-  try {
-    if (!existsSync(CACHE_DIR)) {
-      mkdirSync(CACHE_DIR, { recursive: true });
-    }
-    const data = {
-      signatures: Array.from(signatureCache.entries()),
-      callSignatures: Array.from(signatureByCallIdCache.entries()),
-      sessionSignatures: Array.from(sessionSignatureCache.entries()),
-      signatureFamilies: Array.from(signatureFamilyCache.entries()),
-      sessionReasonings: Array.from(sessionReasoningCache.entries()),
-    };
-    Bun.write(CACHE_FILE, JSON.stringify(data)).catch(err => {
-      console.error("[Cache] Failed to write signatures to disk async:", err);
-    });
-  } catch (e) {
-    console.error("[Cache] Failed to save signatures to disk:", e);
-  }
+  cacheWriter.schedule(buildCacheSnapshot());
 }
 
 // Load cache from disk synchronously/immediately at startup

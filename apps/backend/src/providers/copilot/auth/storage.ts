@@ -1,9 +1,6 @@
-import { existsSync } from 'fs';
-import { mkdir } from 'fs/promises';
-import { dirname, join } from 'path';
-
 import { type CopilotAccount } from '@/providers/copilot/auth/types';
 import { resolveStateFile } from '@/core/paths';
+import { createStateFileWriter } from '@/core/state-file';
 
 // Accounts live in the data directory (the Docker volume, or ./data locally)
 // so every launch method reads and writes the same file.
@@ -34,11 +31,27 @@ export async function loadConfig(): Promise<StorageFormat> {
   return { accounts: [], strategy: 'hybrid' };
 }
 
-export async function saveConfig(config: StorageFormat): Promise<void> {
-  try {
-    await mkdir(dirname(ACCOUNTS_FILE), { recursive: true });
-    await Bun.write(ACCOUNTS_FILE, JSON.stringify(config, null, 2));
-  } catch (e) {
-    console.error("Failed to save Copilot accounts:", e);
+const writer = createStateFileWriter<StorageFormat>(ACCOUNTS_FILE, {
+  label: 'copilot accounts',
+});
+
+/**
+ * Persist accounts. Routine scoring saves are coalesced; pass `immediate` when
+ * credentials change so those are durable straight away.
+ */
+export async function saveConfig(
+  config: StorageFormat,
+  options: { immediate?: boolean } = {},
+): Promise<void> {
+  writer.schedule(config);
+  if (options.immediate) {
+    writer.flush();
   }
+}
+
+/**
+ * Write any pending account state to disk right now.
+ */
+export function flushConfig(): void {
+  writer.flush();
 }

@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events';
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { getProjectRoot } from '@/core/paths';
+import { writeJsonAtomic } from '@/core/state-file';
 
 /**
  * Resolve config.json without consulting `process.cwd()`.
@@ -151,7 +152,7 @@ export async function loadProxyConfig(): Promise<ProxyConfig> {
 
 export async function saveProxyConfig(newConfig: ProxyConfig): Promise<void> {
   try {
-    await Bun.write(CONFIG_PATH, JSON.stringify(newConfig, null, 2));
+    writeJsonAtomic(CONFIG_PATH, newConfig);
     config = newConfig;
     configEventBus.emit('update', config);
     console.log('[Config] Configuration saved successfully');
