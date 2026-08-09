@@ -1,23 +1,11 @@
 import { and, lt, sql } from 'drizzle-orm';
 import { dialect, getDb, t, timeBucket } from '@/core/db';
-import { getProxyConfig } from '@/config/manager';
 import { tokenMetricsLogger } from '@/core/metrics/logger';
+import { retentionDays } from '@/core/metrics/retention';
 
 const MAINTENANCE_INTERVAL_MS = 60 * 60 * 1000; // hourly
 
 let timer: ReturnType<typeof setInterval> | null = null;
-
-function retentionDays(): { detail: number; rollup: number } {
-  try {
-    const metrics = getProxyConfig().metrics;
-    return {
-      detail: metrics?.detailRetentionDays ?? 14,
-      rollup: metrics?.rollupRetentionDays ?? 90,
-    };
-  } catch {
-    return { detail: 14, rollup: 90 };
-  }
-}
 
 /**
  * Fold detail rows into the daily rollup table.

@@ -283,13 +283,22 @@ key, token counts, duration, status, and the tokens compression saved.
   database cannot stall an in-flight stream.
 - **Real usage where the upstream reports it**, estimated from payload size
   otherwise, and flagged as estimated when so.
+- **Compression is attributed per engine.** `prepareRequestPayload` re-measures the
+  payload between passes rather than once at each end, so RTK's and Headroom's
+  contributions are stored separately as a JSON breakdown on the detail row. The
+  parts always sum to the headline total, so the dashboard never shows savings that
+  nothing claims. Rollups keep only the combined figure, and the API reports
+  `available: false` for those windows instead of an empty split.
 - **Cost is resolved, never guessed:** the model's own rate → the built-in price book
   matched on model family → an optional blanket rate (off by default) → otherwise
   **unpriced at $0**, badged in the dashboard. An invented rate is
   indistinguishable from a real one on a chart.
-- **Retention:** hourly rollup into daily aggregates; detail rows pruned at 14 days,
-  rollups at 90. Long windows are served from the rollup table, which also carries
-  the API key so key filtering works across the full 90 days.
+- **Retention:** hourly rollup into daily aggregates, then pruning — in that order, so
+  the aggregate exists before its source is dropped. Detail rows are pruned at
+  `detailRetentionDays` (14), rollups at `rollupRetentionDays` (90). The read side picks
+  its table from the *same* `detailRetentionDays` (`core/metrics/retention.ts`), so the
+  two cannot drift into keeping rows nothing reads. Rollups carry the API key, so key
+  filtering works across the full 90 days.
 
 ---
 

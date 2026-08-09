@@ -48,6 +48,8 @@ export const tokenUsageLogs = pgTable(
     tokensBeforeCompression: integer('tokens_before_compression'),
     tokensAfterCompression: integer('tokens_after_compression'),
     tokensSaved: integer('tokens_saved').notNull().default(0),
+    /** JSON: which engine saved what, e.g. {"rtk":180,"headroom":40}. */
+    compressionBreakdown: text('compression_breakdown'),
     estimated: integer('estimated').notNull().default(0),
     inputCost: doublePrecision('input_cost').notNull().default(0),
     outputCost: doublePrecision('output_cost').notNull().default(0),

@@ -1,6 +1,7 @@
-import { and, asc, desc, eq, gte, isNull, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, isNotNull, isNull, sql, type SQL } from 'drizzle-orm';
 import { getDb, t, timeBucket } from '@/core/db';
 import { tokenMetricsLogger } from '@/core/metrics/logger';
+import { retentionDays } from '@/core/metrics/retention';
 
 export type Lookback = '24h' | '7d' | '14d' | '30d' | '60d' | '90d';
 
@@ -12,12 +13,6 @@ const LOOKBACK_DAYS: Record<Lookback, number> = {
   '60d': 60,
   '90d': 90,
 };
-
-/**
- * Windows longer than the detail-log retention must be served from rollups,
- * otherwise the chart silently loses its tail.
- */
-const ROLLUP_THRESHOLD_DAYS = 14;
 
 /** Filter value for requests made while gateway key auth was off. */
 export const NO_API_KEY = 'none';
@@ -61,6 +56,26 @@ export interface ApiKeyStat {
   totalCost: number;
 }
 
+/** What one compression engine saved over the selected window. */
+export interface CompressionEngineStat {
+  engine: string;
+  /** Requests this engine ran on. */
+  requests: number;
+  tokensSaved: number;
+  /** Share of all compression savings in the window, 0–100. */
+  sharePercent: number;
+}
+
+export interface CompressionBreakdown {
+  engines: CompressionEngineStat[];
+  tokensSaved: number;
+  /**
+   * False when the window is served from the daily rollups, which do not carry
+   * per-engine detail. The dashboard says so instead of showing an empty chart.
+   */
+  available: boolean;
+}
+
 export interface GroupStat {
   requests: number;
   totalTokens: number;
@@ -93,8 +108,16 @@ function windowStartDate(lookback: Lookback): string {
   return new Date(windowStartMs(lookback)).toISOString().slice(0, 10);
 }
 
+/**
+ * Windows longer than the detail log still holds must come from the rollups,
+ * otherwise the chart silently loses its tail.
+ *
+ * The threshold *is* the configured detail retention rather than a constant
+ * beside it: with the two able to drift, raising `detailRetentionDays` kept
+ * extra rows that nothing would ever read.
+ */
 function usesRollup(lookback: Lookback): boolean {
-  return LOOKBACK_DAYS[lookback] > ROLLUP_THRESHOLD_DAYS;
+  return LOOKBACK_DAYS[lookback] > retentionDays().detail;
 }
 
 /** Numeric columns arrive as strings from some drivers; normalise once. */
@@ -339,6 +362,63 @@ export async function getClientStats(
 }
 
 /**
+ * What each compression engine saved over the window.
+ *
+ * Only the detail log carries per-engine attribution — the daily rollups store
+ * one total, because the set of engines is not fixed and widening the rollup key
+ * per engine would multiply its row count. Longer windows therefore report
+ * `available: false` rather than a silently partial breakdown.
+ */
+export async function getCompressionBreakdown(
+  filters: UsageFilters,
+): Promise<CompressionBreakdown> {
+  if (usesRollup(filters.lookback)) {
+    return { engines: [], tokensSaved: 0, available: false };
+  }
+
+  const logs = t.tokenUsageLogs;
+  const rows = await getDb()
+    .select({ breakdown: logs.compressionBreakdown })
+    .from(logs)
+    .where(and(scopeLogs(filters), isNotNull(logs.compressionBreakdown)));
+
+  const totals = new Map<string, { requests: number; tokensSaved: number }>();
+
+  for (const row of rows) {
+    let parsed: Record<string, number>;
+    try {
+      parsed = JSON.parse(String(row.breakdown)) as Record<string, number>;
+    } catch {
+      // A malformed row is skipped, not counted as zero savings for everything.
+      continue;
+    }
+
+    for (const [engine, saved] of Object.entries(parsed)) {
+      const entry = totals.get(engine) ?? { requests: 0, tokensSaved: 0 };
+      entry.requests += 1;
+      entry.tokensSaved += num(saved);
+      totals.set(engine, entry);
+    }
+  }
+
+  const tokensSaved = Array.from(totals.values()).reduce(
+    (sum, entry) => sum + entry.tokensSaved,
+    0,
+  );
+
+  const engines = Array.from(totals.entries())
+    .map(([engine, entry]) => ({
+      engine,
+      requests: entry.requests,
+      tokensSaved: entry.tokensSaved,
+      sharePercent: tokensSaved > 0 ? (entry.tokensSaved / tokensSaved) * 100 : 0,
+    }))
+    .sort((a, b) => b.tokensSaved - a.tokensSaved);
+
+  return { engines, tokensSaved, available: true };
+}
+
+/**
  * Spend grouped by the gateway API key that authorised each request.
  */
 export async function getApiKeyStats(filters: UsageFilters): Promise<ApiKeyStat[]> {
@@ -505,6 +585,7 @@ const CSV_COLUMNS = [
   'output_tokens',
   'cached_input_tokens',
   'tokens_saved',
+  'compression_breakdown',
   'estimated',
   'input_cost',
   'output_cost',
@@ -534,6 +615,7 @@ export async function exportLogsCsv(filters: UsageFilters): Promise<string> {
       output_tokens: logs.outputTokens,
       cached_input_tokens: logs.cachedInputTokens,
       tokens_saved: logs.tokensSaved,
+      compression_breakdown: logs.compressionBreakdown,
       estimated: logs.estimated,
       input_cost: logs.inputCost,
       output_cost: logs.outputCost,

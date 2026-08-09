@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useTokenUsage, useRecentUsage } from '@/hooks/useQueries';
 import { Lookback } from '@/lib/types';
 import { StatTile } from '@/components/metrics/StatTile';
+import { CompressionBreakdown } from '@/components/metrics/CompressionBreakdown';
 import { TrendChart } from '@/components/metrics/TrendChart';
 import { BarList } from '@/components/metrics/BarList';
 import {
@@ -50,6 +51,11 @@ function TokensPage() {
   }
 
   const { summary, usageData, modelStats, providerStats, clientStats, apiKeyStats, clients } = data;
+  // The rate the saved tokens were actually valued at. Derived from the two
+  // recorded totals rather than blending input and output prices, which would
+  // overstate it — output is usually the dearer side.
+  const savedTokenPricePer1M =
+    summary.tokensSaved > 0 ? (summary.costSaved / summary.tokensSaved) * 1_000_000 : 0;
   const exportUrl =
     `/api/metrics/export?lookback=${lookback}&clientId=${encodeURIComponent(clientId)}` +
     `&provider=${encodeURIComponent(provider)}&apiKeyId=${encodeURIComponent(apiKeyId)}`;
@@ -161,6 +167,11 @@ function TokensPage() {
           icon={<Activity className="w-4 h-4" />}
         />
       </div>
+
+      <CompressionBreakdown
+        breakdown={data.compression}
+        inputPricePer1M={savedTokenPricePer1M}
+      />
 
       <div className="card bg-base-200 border border-base-300 shadow-sm">
         <div className="card-body p-5 space-y-4">

@@ -1,6 +1,7 @@
 import {
   exportLogsCsv,
   getApiKeyStats,
+  getCompressionBreakdown,
   getClientStats,
   getKnownClients,
   getModelStats,
@@ -55,6 +56,7 @@ export async function handleMetricsRoute(req: Request, url: URL): Promise<Respon
         modelStats: await getModelStats(filters),
         providerStats: await getProviderStats(filters),
         clientStats: await getClientStats(filters),
+        compression: await getCompressionBreakdown(filters),
         // Computed without the key filter, so the dropdown keeps listing every
         // key even while one of them is selected.
         apiKeyStats: await getApiKeyStats({ ...filters, apiKeyId: 'all' }),

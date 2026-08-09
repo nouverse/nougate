@@ -1,4 +1,5 @@
 import { Database } from 'bun:sqlite';
+import { sql } from 'drizzle-orm';
 import { existsSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
 import { drizzle as drizzleSqlite } from 'drizzle-orm/bun-sqlite';
@@ -151,7 +152,53 @@ export async function initDb(): Promise<void> {
     }
   }
 
+  await addMissingColumns();
+
   console.log(`[DB] ${dialect} ready at ${target}`);
+}
+
+/**
+ * Columns added to an existing table after it was first created.
+ *
+ * `CREATE TABLE IF NOT EXISTS` is a no-op once the table exists, so a new column
+ * never reaches a database that is already in use. The alternative was telling
+ * people to delete `nougate.db`, which throws away their usage history for the
+ * sake of one nullable column.
+ *
+ * Strictly additive and nullable: this is not a migration framework, and must
+ * not become one. Anything that rewrites or drops data needs a real migration
+ * story, not an entry here.
+ */
+const ADDED_COLUMNS: Array<{ table: string; column: string; type: string }> = [
+  { table: 'token_usage_logs', column: 'compression_breakdown', type: 'TEXT' },
+];
+
+async function addMissingColumns(): Promise<void> {
+  for (const { table, column, type } of ADDED_COLUMNS) {
+    try {
+      if (dialect === 'postgres') {
+        await (getDb() as unknown as { execute: (q: unknown) => Promise<unknown> }).execute(
+          sql.raw(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${column} ${type}`),
+        );
+        continue;
+      }
+
+      // SQLite has no ADD COLUMN IF NOT EXISTS, so ask before adding.
+      const existing = sqliteHandle!.query(`PRAGMA table_info(${table})`).all() as Array<{
+        name: string;
+      }>;
+      if (existing.some((info) => info.name === column)) {
+        continue;
+      }
+
+      sqliteHandle!.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+      console.log(`[DB] Added ${table}.${column}`);
+    } catch (error) {
+      // A failure here leaves the column missing, which surfaces loudly on the
+      // first query rather than corrupting anything.
+      console.error(`[DB] Could not add ${table}.${column}:`, error);
+    }
+  }
 }
 
 /**

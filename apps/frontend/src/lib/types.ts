@@ -56,6 +56,21 @@ export interface ApiKeyStat {
   totalCost: number;
 }
 
+/** What one compression engine saved over the selected window. */
+export interface CompressionEngineStat {
+  engine: string;
+  requests: number;
+  tokensSaved: number;
+  sharePercent: number;
+}
+
+export interface CompressionBreakdown {
+  engines: CompressionEngineStat[];
+  tokensSaved: number;
+  /** False for windows served from the rollups, which keep only a combined total. */
+  available: boolean;
+}
+
 export interface TokenUsageResponse {
   lookback: Lookback;
   summary: UsageSummary;
@@ -65,6 +80,7 @@ export interface TokenUsageResponse {
   clientStats: Array<{ clientId: string; requests: number; totalTokens: number; totalCost: number }>;
   /** Always covers every key, even while one is selected. */
   apiKeyStats: ApiKeyStat[];
+  compression: CompressionBreakdown;
   clients: string[];
 }
 

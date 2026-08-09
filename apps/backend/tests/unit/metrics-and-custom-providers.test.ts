@@ -11,7 +11,8 @@ process.env.NOUGATE_DB_PATH = join(tempDir, 'test.db');
 const { initDb, closeDb } = await import('@/core/db');
 const { loadProxyConfig, updateProxyConfig, getProxyConfig } = await import('@/config/manager');
 const { tokenMetricsLogger } = await import('@/core/metrics/logger');
-const { getUsageSummary, getModelStats, getApiKeyStats, exportLogsCsv } = await import('@/core/metrics/queries');
+const { getUsageSummary, getModelStats, getApiKeyStats, getCompressionBreakdown, exportLogsCsv } =
+  await import('@/core/metrics/queries');
 const { runRollup, runPruning } = await import('@/core/metrics/maintenance');
 const { resolvePricing, costOf } = await import('@/core/metrics/pricing');
 const { instrumentResponse } = await import('@/core/metrics/tracker');
@@ -94,6 +95,8 @@ describe('token metrics pipeline', () => {
     const csv = await exportLogsCsv({ lookback: '24h' });
     const [header, ...rows] = csv.split('\n');
     expect(header.startsWith('timestamp,client_id,api_key_id,provider')).toBe(true);
+    // Per-engine attribution travels with the export, not just the dashboard.
+    expect(header).toContain('compression_breakdown');
     expect(rows.length).toBe(3);
   });
 
@@ -188,6 +191,93 @@ describe('api key attribution', () => {
   });
 });
 
+describe('compression attribution', () => {
+  test('splits savings between the engines that ran', async () => {
+    logSample({
+      clientId: 'compress-client',
+      tokensSaved: 250,
+      compressionBreakdown: [
+        { engine: 'rtk', tokensSaved: 200 },
+        { engine: 'headroom', tokensSaved: 50 },
+      ],
+    });
+    logSample({
+      clientId: 'compress-client',
+      tokensSaved: 100,
+      compressionBreakdown: [{ engine: 'rtk', tokensSaved: 100 }],
+    });
+    await tokenMetricsLogger.flush();
+
+    const breakdown = await getCompressionBreakdown({
+      lookback: '24h',
+      clientId: 'compress-client',
+    });
+
+    expect(breakdown.available).toBe(true);
+    const byEngine = Object.fromEntries(breakdown.engines.map((e) => [e.engine, e]));
+
+    expect(byEngine.rtk.tokensSaved).toBe(300);
+    expect(byEngine.rtk.requests).toBe(2);
+    expect(byEngine.headroom.tokensSaved).toBe(50);
+    // Headroom only ran on one of the two requests.
+    expect(byEngine.headroom.requests).toBe(1);
+
+    // Shares are of the window's total savings, and add up.
+    expect(byEngine.rtk.sharePercent).toBeCloseTo((300 / 350) * 100, 4);
+    const totalShare = breakdown.engines.reduce((sum, e) => sum + e.sharePercent, 0);
+    expect(totalShare).toBeCloseTo(100, 4);
+  });
+
+  test('the engines are ranked by what they actually saved', async () => {
+    const breakdown = await getCompressionBreakdown({
+      lookback: '24h',
+      clientId: 'compress-client',
+    });
+    expect(breakdown.engines[0].engine).toBe('rtk');
+  });
+
+  test('the detail window follows the configured retention, not a constant', async () => {
+    // These were two independent 14s: the pruner's, and the read side's table
+    // choice. Raising retention kept rows that nothing would ever read, and the
+    // per-engine panel still reported "unavailable" for data sitting right there.
+    const original = getProxyConfig().metrics!;
+
+    try {
+      await updateProxyConfig({ metrics: { ...original, detailRetentionDays: 60 } });
+      // 30d now fits inside the detail log, so attribution is available.
+      expect((await getCompressionBreakdown({ lookback: '30d' })).available).toBe(true);
+      // 90d still exceeds it.
+      expect((await getCompressionBreakdown({ lookback: '90d' })).available).toBe(false);
+
+      await updateProxyConfig({ metrics: { ...original, detailRetentionDays: 1 } });
+      expect((await getCompressionBreakdown({ lookback: '7d' })).available).toBe(false);
+      expect((await getCompressionBreakdown({ lookback: '24h' })).available).toBe(true);
+    } finally {
+      await updateProxyConfig({ metrics: original });
+    }
+  });
+
+  test('says so when the window has no per-engine detail', async () => {
+    // Rollups keep one total; claiming an empty breakdown would read as
+    // "compression saved nothing", which is a different and wrong statement.
+    const breakdown = await getCompressionBreakdown({ lookback: '30d' });
+    expect(breakdown.available).toBe(false);
+    expect(breakdown.engines).toEqual([]);
+  });
+
+  test('a request with compression off contributes no engines', async () => {
+    logSample({ clientId: 'nocompress-client', tokensSaved: 0 });
+    await tokenMetricsLogger.flush();
+
+    const breakdown = await getCompressionBreakdown({
+      lookback: '24h',
+      clientId: 'nocompress-client',
+    });
+    expect(breakdown.engines).toEqual([]);
+    expect(breakdown.tokensSaved).toBe(0);
+  });
+});
+
 describe('pricing', () => {
   test('prefers explicit spec pricing', async () => {
     const pricing = resolvePricing({
@@ -272,7 +362,12 @@ describe('response instrumentation', () => {
       outputPricePer1M: 2,
     },
     estimatedInputTokens: 10,
-    compression: { tokensBefore: 120, tokensAfter: 100, tokensSaved: 20 },
+    compression: {
+      tokensBefore: 120,
+      tokensAfter: 100,
+      tokensSaved: 20,
+      byEngine: [{ engine: 'rtk', tokensSaved: 20 }],
+    },
     startedAt: Date.now(),
   };
 

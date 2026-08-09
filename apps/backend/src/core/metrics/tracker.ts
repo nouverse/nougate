@@ -8,6 +8,12 @@ export interface CompressionStats {
   tokensBefore: number;
   tokensAfter: number;
   tokensSaved: number;
+  /**
+   * What each engine that ran contributed, in pipeline order. An engine that
+   * ran and saved nothing appears at 0; an engine that is switched off does not
+   * appear at all.
+   */
+  byEngine: Array<{ engine: string; tokensSaved: number }>;
 }
 
 export interface TrackingMeta {
@@ -198,6 +204,7 @@ function commit(totals: UsageTotals, meta: TrackingMeta, statusCode: number, str
     tokensBeforeCompression: meta.compression?.tokensBefore ?? null,
     tokensAfterCompression: meta.compression?.tokensAfter ?? null,
     tokensSaved,
+    compressionBreakdown: meta.compression?.byEngine ?? null,
     estimated,
     inputCost,
     outputCost,

@@ -73,7 +73,7 @@ helper. `initDb()` runs `IF NOT EXISTS` DDL from `ddl/sqlite.ts` or `ddl/pg.ts`.
 ### Four rules
 
 **1. Change one schema, change the other.** `schema/sqlite.ts` and `schema/pg.ts` are
-the same seven tables written twice, because Drizzle types tables per dialect.
+the same tables written twice, because Drizzle types tables per dialect.
 `tests/unit/schema-parity.test.ts` compares table names, column names, nullability,
 defaults and JS `dataType`, and fails the build on drift. It has been verified by
 sabotage — it does catch it.
@@ -106,8 +106,20 @@ sql`to_char(to_timestamp(${column} / 1000.0) at time zone 'UTC', ${format})`
 3. Export it from both `schema` objects.
 4. Run `bun test tests/unit/schema-parity.test.ts`.
 
-There are no migrations. Schema changes that are not additive require deleting
-`data/nougate.db`, and that must be called out in the README.
+### Adding a column to a table that already exists
+
+`CREATE TABLE IF NOT EXISTS` is a no-op once the table exists, so a new column never
+reaches a live database from the DDL alone — the first query fails with
+`no such column`.
+
+Add it to `ADDED_COLUMNS` in `core/db/index.ts` as well as both schemas and both DDL
+files. `initDb()` then adds it idempotently (`ADD COLUMN IF NOT EXISTS` on Postgres, a
+`PRAGMA table_info` check on SQLite).
+
+That list is **strictly additive and nullable**, and must not become a migration
+framework. Anything that rewrites, renames or drops data needs a real migration story;
+until then such a change requires deleting `data/nougate.db` and must be called out in
+the README.
 
 ---
 
@@ -131,9 +143,32 @@ flushed on a timer. A slow or locked database cannot stall an in-flight LLM stre
 **`provider` is always `provider.id`.** Both handlers record it that way, and the
 dashboard's provider filter compares against it.
 
+**Retention is one number, used twice.** `core/metrics/retention.ts` owns it: the pruner
+deletes with it and the read side picks detail-vs-rollup with it. Do not reintroduce a
+threshold constant beside it — when the two drifted, raising retention kept rows that
+nothing would ever read.
+
 **Attribution** is by client *and* by gateway API key, and the two compose. The API
 key id is carried into the daily rollups too, so the filter works across the full
 90-day window rather than only the 14-day detail retention.
+
+### Compression attribution
+
+`prepareRequestPayload` measures the payload between each pass, so every engine's
+saving is recorded on its own. Rules:
+
+- **The parts must sum to the total.** `tokensSaved` is the sum of `byEngine`, never a
+  separately-computed figure — a remainder shows up in the dashboard as savings that
+  nothing accounts for.
+- **Enabled-but-saved-nothing is reported at 0; disabled is absent.** Collapsing the two
+  hides a filter that has stopped matching anything.
+- **The breakdown is a JSON column on the detail log only.** The engine set is not
+  fixed, so widening the rollup key per engine would multiply its rows. Longer windows
+  return `available: false` rather than a partial breakdown that reads as "saved
+  nothing".
+
+Adding an engine means measuring it in `compression.ts` and giving it a label in the
+dashboard's `ENGINE_LABELS`; no schema change.
 
 ### Pricing: never invent a rate
 

@@ -23,6 +23,7 @@ export const ddl = [
     tokens_before_compression INTEGER,
     tokens_after_compression INTEGER,
     tokens_saved INTEGER NOT NULL DEFAULT 0,
+    compression_breakdown TEXT,
     estimated INTEGER NOT NULL DEFAULT 0,
     input_cost REAL NOT NULL DEFAULT 0,
     output_cost REAL NOT NULL DEFAULT 0,

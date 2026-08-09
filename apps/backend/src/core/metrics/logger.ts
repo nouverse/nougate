@@ -18,6 +18,8 @@ export interface TokenLogEntry {
   tokensBeforeCompression?: number | null;
   tokensAfterCompression?: number | null;
   tokensSaved: number;
+  /** Per-engine attribution; serialised to JSON on write. */
+  compressionBreakdown?: Array<{ engine: string; tokensSaved: number }> | null;
   /** True when token counts came from the estimator instead of the upstream. */
   estimated: boolean;
   inputCost: number;
@@ -120,6 +122,13 @@ function toRow(entry: TokenLogEntry) {
     tokensBeforeCompression: entry.tokensBeforeCompression ?? null,
     tokensAfterCompression: entry.tokensAfterCompression ?? null,
     tokensSaved: Math.round(entry.tokensSaved),
+    compressionBreakdown: entry.compressionBreakdown?.length
+      ? JSON.stringify(
+          Object.fromEntries(
+            entry.compressionBreakdown.map((item) => [item.engine, Math.round(item.tokensSaved)]),
+          ),
+        )
+      : null,
     estimated: entry.estimated ? 1 : 0,
     inputCost: entry.inputCost,
     outputCost: entry.outputCost,

@@ -429,8 +429,14 @@ Every request through the gateway is recorded to SQLite (`data/nougate.db`, or
 - **Real usage when available** — token counts come from the upstream's `usage` block for
   both streamed and non-streamed responses. When a provider reports nothing, counts are
   estimated from payload size and the row is flagged `est` in the dashboard.
-- **Compression ROI** — the token delta across RTK and Headroom is recorded per request, so
-  the dashboard shows what compression actually saved in dollars.
+- **Compression ROI, per engine** — the payload is measured *between* passes, not just at
+  each end, so each engine's contribution is recorded separately. The dashboard's **Savings
+  by engine** panel shows what RTK removed versus what Headroom removed, how many requests
+  each ran on, and what those tokens were worth. An engine that is enabled but found nothing
+  to compress is reported at zero, which is a different fact from being switched off — that
+  is how you notice a filter that has stopped matching. Per-engine detail lives in the
+  detail log, so it covers the 14-day retention window; longer windows are served from the
+  rollups and report the combined total only, and say so rather than showing an empty chart.
 - **Cost estimation** — spend is computed at upstream *list* prices. For subscription-based
   providers like Copilot and Antigravity this is the value routed through the gateway, not
   what you were billed. Price resolution: the model's own rate → the built-in price book
@@ -439,9 +445,17 @@ Every request through the gateway is recorded to SQLite (`data/nougate.db`, or
   the model is reported as **unpriced** at $0 and flagged in the dashboard; its tokens are
   still recorded. A guessed rate is indistinguishable from a real one on a chart, so nothing
   is invented silently.
-- **Retention** — an hourly job rolls per-request rows into daily aggregates, prunes detail
-  rows past `detailRetentionDays` (14), and prunes rollups past `rollupRetentionDays` (90).
-  Windows longer than 14 days are served from the rollup table, so the dashboard stays fast.
+- **Retention, two tiers** — `token_usage_logs` holds one row per request; an hourly job
+  folds finished days into `token_usage_daily_rollups` (one row per day × model × client ×
+  API key) *before* pruning, so nothing is lost from the aggregate. Detail rows are pruned
+  past `detailRetentionDays` (14), rollups past `rollupRetentionDays` (90). The dashboard
+  reads whichever table covers the window, and the switchover point **is**
+  `detailRetentionDays` — raise it and longer windows start being served from the detail
+  log automatically. Past the detail window you keep every total (requests, tokens, cost,
+  savings, sliced per day/model/provider/client/key) and lose only per-request facts:
+  exact timestamps, latency, status codes, per-engine compression detail, and row-level
+  CSV export. Detail grows linearly with traffic; rollups plateau, which is the whole
+  point of the split.
 - **Attribution** — usage is grouped by both **client** and **gateway API key**, and either
   can be used as a filter (they compose). The client ID comes from the `x-client-id` header,
   else the name of the key used, else `unknown`; the key is recorded separately, so naming a
@@ -509,7 +523,7 @@ Admin endpoints (behind the dashboard guard):
 | `/api/providers/:id/config` | POST | Update that provider's own config |
 | `/api/providers/:id/accounts/add` | POST | Start or complete this provider's account flow |
 | `/api/models` | GET | Full catalogue of callable `provider:model` IDs with resolved pricing |
-| `/api/metrics/token-usage` | GET | Summary, time series, and per-model/provider/client/API-key breakdowns. Query: `lookback`, `clientId`, `provider`, `apiKeyId` |
+| `/api/metrics/token-usage` | GET | Summary, time series, per-model/provider/client/API-key breakdowns, and per-compression-engine savings. Query: `lookback`, `clientId`, `provider`, `apiKeyId` |
 | `/api/metrics/recent` | GET | Most recent individual requests |
 | `/api/metrics/export` | GET | CSV export of the detail log for the selected window |
 | `/api/metrics/maintenance` | POST | Run rollup + pruning immediately |
