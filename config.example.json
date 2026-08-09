@@ -61,8 +61,5 @@
     "rollupRetentionDays": 90,
     "defaultInputPricePer1M": 0,
     "defaultOutputPricePer1M": 0
-  },
-  "apiKeys": {
-    "enabled": false
   }
 }

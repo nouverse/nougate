@@ -6,7 +6,7 @@ import { api } from '@/lib/api';
 import { CreatedApiKey } from '@/lib/types';
 import { formatCount, formatTimestamp } from '@/lib/format';
 import { ConfirmModal } from '@/components/shared/ConfirmModal';
-import { KeyRound, Copy, Check, Trash2, ShieldCheck, ShieldOff, Plus } from 'lucide-react';
+import { KeyRound, Copy, Check, Trash2, ShieldCheck, Plus } from 'lucide-react';
 
 export const Route = createFileRoute('/api-keys')({
   component: ApiKeysPage,
@@ -45,16 +45,6 @@ function ApiKeysPage() {
       refresh();
     },
     onError: (err: any) => notify(err.message || 'Failed to create key', 'error'),
-  });
-
-  const toggleMutation = useMutation({
-    mutationFn: (enabled: boolean) => api.post('/api/api-keys/settings', { enabled }),
-    onSuccess: (_result, enabled) => {
-      refresh();
-      queryClient.invalidateQueries({ queryKey: ['config'] });
-      notify(enabled ? 'Key authentication is now REQUIRED' : 'Key authentication disabled');
-    },
-    onError: (err: any) => notify(err.message || 'Failed to update setting', 'error'),
   });
 
   const revokeMutation = useMutation({
@@ -106,33 +96,17 @@ function ApiKeysPage() {
           </p>
         </div>
 
-        <label className="flex items-center gap-3 self-start bg-base-200 border border-base-300 rounded-xl px-4 py-2.5">
-          <input
-            type="checkbox"
-            className="toggle toggle-sm toggle-primary"
-            checked={data.enabled}
-            disabled={toggleMutation.isPending}
-            onChange={(event) => toggleMutation.mutate(event.target.checked)}
-          />
-          <span className="text-xs font-bold flex items-center gap-1.5">
-            {data.enabled ? (
-              <>
-                <ShieldCheck className="w-3.5 h-3.5 text-success" /> Required
-              </>
-            ) : (
-              <>
-                <ShieldOff className="w-3.5 h-3.5 text-warning" /> Open access
-              </>
-            )}
-          </span>
-        </label>
+        <span className="flex items-center gap-2 self-start bg-base-200 border border-base-300 rounded-xl px-4 py-2.5 text-xs font-bold">
+          <ShieldCheck className="w-3.5 h-3.5 text-success shrink-0" />
+          Always required
+        </span>
       </div>
 
-      {!data.enabled && (
+      {activeKeys.length === 0 && (
         <div className="alert alert-warning text-xs font-semibold shadow-sm">
           <span>
-            Key authentication is off — anyone who can reach <code>{baseUrl}</code> can use your
-            providers. Create a key, point your clients at it, then flip the toggle.
+            No active keys, so <code>{baseUrl}</code> is currently serving nobody — every proxy
+            request is rejected. Create one below and point your clients at it.
           </span>
         </div>
       )}

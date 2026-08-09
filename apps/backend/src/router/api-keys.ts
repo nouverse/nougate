@@ -2,11 +2,9 @@ import {
   createApiKey,
   deleteApiKey,
   flushApiKeyUsage,
-  isApiKeyAuthEnabled,
   listApiKeys,
   revokeApiKey,
 } from '@/auth/api-keys';
-import { getProxyConfig, updateProxyConfig } from '@/config/manager';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -30,10 +28,7 @@ export async function handleApiKeysRoute(req: Request, url: URL): Promise<Respon
       // first so the dashboard never shows a stale request count.
       await flushApiKeyUsage();
 
-      return json({
-        enabled: isApiKeyAuthEnabled(),
-        keys: await listApiKeys(),
-      });
+      return json({ keys: await listApiKeys() });
     }
 
     if (url.pathname === '/api/api-keys' && req.method === 'POST') {
@@ -50,25 +45,6 @@ export async function handleApiKeysRoute(req: Request, url: URL): Promise<Respon
 
       // The plaintext key is returned here and never again.
       return json(created, 201);
-    }
-
-    if (url.pathname === '/api/api-keys/settings' && req.method === 'POST') {
-      const body = (await req.json().catch(() => ({}))) as any;
-      const enabled = body?.enabled === true;
-
-      if (enabled && (await listApiKeys()).filter((key) => !key.revoked).length === 0) {
-        return json(
-          { error: 'Create at least one API key before enforcing key authentication.' },
-          400,
-        );
-      }
-
-      await updateProxyConfig({
-        apiKeys: { ...getProxyConfig().apiKeys, enabled },
-      });
-
-      console.log(`[ApiKeys] Gateway key enforcement ${enabled ? 'ENABLED' : 'DISABLED'}`);
-      return json({ enabled });
     }
 
     const revokeMatch = url.pathname.match(/^\/api\/api-keys\/([^/]+)\/revoke$/);

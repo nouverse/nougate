@@ -14,7 +14,7 @@
 - **Strict Model Namespacing**: All models use `provider:model-id` format (e.g. `antigravity:gemini-3.5-flash-low`, `copilot:claude-opus-4.6`).
 - **Per-Provider Auth Isolation**: Credentials and account storage are fully isolated per provider.
 - **Custom Providers**: Define your own upstream from the dashboard — pick an ID, base URL, OpenAI or Anthropic API style, keys and pricing, then call it as `{provider_id}:{model}`.
-- **Gateway API Keys**: Issue `sk-nou-…` keys so clients authenticate against the proxy routes. Off by default; one toggle turns it on.
+- **Gateway API Keys**: Issue `sk-nou-…` keys so clients authenticate against the proxy routes. Always required — an instance with no keys serves nobody.
 - **Dashboard Accounts**: Username + password auth stored in SQLite — add users, change your own username and password, no external identity provider.
 
 ### Account Management
@@ -223,8 +223,7 @@ or `SESSION_SECRET_FILE`.
     "rollupRetentionDays": 90,
     "defaultInputPricePer1M": 0,     // 0 = off: an unpriceable model is reported "unpriced", not estimated
     "defaultOutputPricePer1M": 0
-  },
-  "apiKeys": { "enabled": false }  // true = /openai/v1/* and /anthropic/v1/* require a gateway key
+  }
 }
 ```
 
@@ -415,8 +414,8 @@ and metrics pipeline your clients hit, not a simulation.
 - See status, latency, input/output tokens and estimated cost after each run.
 - Copy the equivalent `curl` command, ready to paste into a terminal or a teammate's chat.
 
-When key enforcement is on, paste a gateway key into the playground's key field — the
-playground is deliberately subject to the same check as any other client.
+Paste a gateway key into the playground's key field — the playground is deliberately
+subject to the same check as any other client, so a request without one is rejected.
 
 ---
 
@@ -461,10 +460,11 @@ Set `metrics.enabled` to `false` to turn recording off entirely.
 Issue `sk-nou-…` keys on the **API Keys** page so clients authenticate against the proxy
 routes. Only a SHA-256 hash is stored — the full key is shown exactly once, at creation.
 
-Enforcement is off by default so existing deployments keep working after an upgrade. Create
-a key, point your clients at it, then flip the **Required** toggle (or set
-`apiKeys.enabled: true`). Once on, `/openai/v1/*` and `/anthropic/v1/*` reject any request
-without a valid key, in the error shape that protocol expects.
+**Keys are always required.** `/openai/v1/*` and `/anthropic/v1/*` reject any request
+without a valid key, in the error shape that protocol expects. There is no setting that
+turns this off, and a fresh instance with no keys yet rejects everything — "no keys
+configured" fails closed rather than being read as "no key needed". Create a key before
+pointing clients at the gateway.
 
 Both header conventions are accepted, so no client needs special handling:
 
@@ -514,7 +514,6 @@ Admin endpoints (behind the dashboard guard):
 | `/api/metrics/export` | GET | CSV export of the detail log for the selected window |
 | `/api/metrics/maintenance` | POST | Run rollup + pruning immediately |
 | `/api/api-keys` | GET / POST | List keys, or mint a new one |
-| `/api/api-keys/settings` | POST | Toggle key enforcement |
 | `/api/api-keys/:id/revoke` | POST | Revoke a key |
 | `/api/api-keys/:id` | DELETE | Delete a key |
 | `/api/custom-providers` | GET / POST | List or create custom providers |

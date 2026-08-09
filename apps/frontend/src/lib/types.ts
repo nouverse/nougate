@@ -102,7 +102,6 @@ export interface ApiKey {
 }
 
 export interface ApiKeysResponse {
-  enabled: boolean;
   keys: ApiKey[];
 }
 
@@ -254,7 +253,6 @@ export interface ProxyConfig {
   tokens?: Record<string, any>;
   logging?: Record<string, any>;
   metrics?: Record<string, any>;
-  apiKeys?: { enabled?: boolean };
   headroom?: {
     enabled?: boolean;
     url?: string;

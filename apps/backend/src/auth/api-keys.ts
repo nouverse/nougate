@@ -1,6 +1,5 @@
 import { eq, sql } from 'drizzle-orm';
 import { getDb, t } from '@/core/db';
-import { getProxyConfig } from '@/config/manager';
 
 export interface ApiKeyRecord {
   id: string;
@@ -83,17 +82,6 @@ async function refreshCache(): Promise<void> {
  */
 export async function initApiKeys(): Promise<void> {
   await loadCache();
-}
-
-/**
- * Whether gateway key auth is switched on in config.
- */
-export function isApiKeyAuthEnabled(): boolean {
-  try {
-    return getProxyConfig().apiKeys?.enabled === true;
-  } catch {
-    return false;
-  }
 }
 
 /**

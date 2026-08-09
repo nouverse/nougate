@@ -28,7 +28,7 @@ verified here. Both move fast, so treat version-specific numbers as a snapshot.
 | Cross-provider fallback | **No** | Yes — 3-tier (subscription → cheap → free) | Yes — 19 strategies, auto-combos, live scoring |
 | Compression | RTK + Headroom + Caveman | RTK + Caveman | 12-engine stack, claims 15–95% |
 | Cost/usage analytics | Per request, per model, per client, **per gateway API key**; rollups to 90 days | Quota tracking + cost estimate | Cost telemetry, free-tier budget tracker |
-| Client authentication | Gateway API keys (`sk-nou-…`), optional | — | Scoped tokens, per-key rate limits |
+| Client authentication | Gateway API keys (`sk-nou-…`), mandatory | — | Scoped tokens, per-key rate limits |
 | Dashboard authentication | Username + password, argon2id, always on | JWT / OAuth / API keys | Password, optional OIDC |
 | MCP / A2A / agents | No | No | Yes — MCP server, A2A, memory, guardrails |
 | Deployment | Docker Compose, self-hosted | npm, Docker, PM2/systemd | npm, Docker, Electron, Termux, PWA, remote mode |
@@ -73,7 +73,8 @@ The design centre is operability by more than one person:
   answers across the full 90-day window rather than only the detail-log retention.
 - **Two independent auth systems**, because the clients are different. The dashboard
   is username + password (argon2id, HMAC-signed sessions) and is always on. The proxy
-  routes take `sk-nou-…` keys, which CLI tools can hold and browsers need not.
+  routes take `sk-nou-…` keys, which CLI tools can hold and browsers need not, and are
+  required unconditionally — a fresh instance serves nobody until a key exists.
 - **A database you can grow into.** Drizzle over two dialect schemas selected by
   `DB_URL`: empty means SQLite, a Postgres URL means Postgres, and no application
   code branches on the choice. A parity test fails the build if the schemas drift.

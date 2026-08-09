@@ -11,7 +11,6 @@ export interface ProxyConfig {
   rtk?: RtkConfig;
   debugLogger?: DebugLoggerConfig;
   metrics?: MetricsConfig;
-  apiKeys?: ApiKeysConfig;
 }
 
 export interface RotationConfig {
@@ -89,13 +88,6 @@ export interface MetricsConfig {
   defaultOutputPricePer1M: number;
 }
 
-export interface ApiKeysConfig {
-  /**
-   * When true, /openai/v1/* and /anthropic/v1/* require a gateway key.
-   * Kept false by default so existing clients keep working after upgrade.
-   */
-  enabled: boolean;
-}
 
 export interface DebugLoggerConfig {
   enabled: boolean;

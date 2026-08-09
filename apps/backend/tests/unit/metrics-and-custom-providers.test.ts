@@ -362,13 +362,24 @@ describe('gateway api keys', () => {
     expect(apiKeys.extractApiKey(new Request('http://x'))).toBeNull();
   });
 
-  test('enforcement follows the config toggle', async () => {
-    await updateProxyConfig({ apiKeys: { enabled: false } });
-    expect(apiKeys.isApiKeyAuthEnabled()).toBe(false);
+  test('there is no way to switch enforcement off', async () => {
+    // Enforcement used to be a config toggle that defaulted to off, so a fresh
+    // deployment served anyone who could reach it. The toggle is gone: proxy
+    // routes always verify, and the only exported surface is verification.
+    expect('isApiKeyAuthEnabled' in apiKeys).toBe(false);
 
-    await updateProxyConfig({ apiKeys: { enabled: true } });
-    expect(apiKeys.isApiKeyAuthEnabled()).toBe(true);
-    await updateProxyConfig({ apiKeys: { enabled: false } });
+    const { getProxyConfig } = await import('@/config/manager');
+    expect('apiKeys' in (getProxyConfig() as unknown as Record<string, unknown>)).toBe(false);
+  });
+
+  test('an instance with no keys at all rejects rather than opens up', async () => {
+    // Fail closed: "no keys configured" must never be read as "no key needed".
+    for (const key of await apiKeys.listApiKeys()) {
+      await apiKeys.deleteApiKey(key.id);
+    }
+
+    expect(apiKeys.verifyApiKey(null)).toEqual({ ok: false, reason: 'missing' });
+    expect(apiKeys.verifyApiKey('sk-nou-anything').ok).toBe(false);
   });
 });
 

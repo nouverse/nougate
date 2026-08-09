@@ -164,6 +164,9 @@ rate is indistinguishable from a real one on a chart, so nothing is invented sil
 - Throttling is per username: five failures, 60-second lockout, isolated per account.
 - `getActiveUser` and `enforceDashboardAuth` are **async**.
 - Gateway API keys are separate and guard `/openai/v1/*` and `/anthropic/v1/*`.
+  They are **always required** — there is no `apiKeys.enabled` config any more, and an
+  instance with zero keys rejects every proxy request. Do not reintroduce a switch, and
+  do not special-case the empty-key-list state into an open one.
   `verifyApiKey` is **synchronous**, reading an in-memory cache. After any mutation
   call `refreshCache()` — setting the cache to `null` breaks synchronous verification,
   which was a real bug.

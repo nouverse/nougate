@@ -70,7 +70,7 @@ graph TD
    flagged `mustChangePassword` can reach only `/api/auth/{me,logout,profile}`.
 4. **`findHandler(path, method)`** — if a protocol handler claims the path, this is a
    proxy request:
-   - **Gateway API key** check when `apiKeys.enabled`, returning a 401 shaped for the
+   - **Gateway API key** check — unconditional, returning a 401 shaped for the
      protocol the client is speaking.
    - **Preview body** — the body is cloned and parsed only to read `model`, so
      routing can happen before the handler consumes the stream.
@@ -301,10 +301,12 @@ Two independent systems, because the clients are different.
 HMAC-signed session cookies. Always on; there is no switch. The signed-in user is
 re-read on every request, so deleting an account takes effect immediately.
 
-**Proxy routes** — gateway API keys (`sk-nou-…`), SHA-256 hashed, shown once. Off by
-default; when enabled, `/openai/v1/*` and `/anthropic/v1/*` reject unauthenticated
-requests in the shape the client's protocol expects. Verification is synchronous
-against an in-memory cache, refreshed on mutation.
+**Proxy routes** — gateway API keys (`sk-nou-…`), SHA-256 hashed, shown once. Always
+required: `/openai/v1/*` and `/anthropic/v1/*` reject unauthenticated requests in the
+shape the client's protocol expects, and there is no config that relaxes it. An
+instance with no keys serves nobody, which is the safe direction for something
+reachable from the internet — "none configured" must never read as "none needed".
+Verification is synchronous against an in-memory cache, refreshed on mutation.
 
 CLI clients cannot hold a browser session, which is exactly why the two are separate.
 

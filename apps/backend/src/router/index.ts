@@ -4,12 +4,7 @@ import { buildSessionId } from "@/protocols/openai/handler";
 import { handleAdminRoute } from "@/router/admin";
 import { handleAuthRoute } from "@/router/auth";
 import { enforceDashboardAuth } from "@/auth/guard";
-import {
-  extractApiKey,
-  isApiKeyAuthEnabled,
-  touchApiKey,
-  verifyApiKey,
-} from "@/auth/api-keys";
+import { extractApiKey, touchApiKey, verifyApiKey } from "@/auth/api-keys";
 import {
   handleCorsPreflight,
   logIncomingRequest,
@@ -99,19 +94,17 @@ export async function handleRequest(req: Request): Promise<Response> {
 
   const handler = findHandler(cleanPath, req.method);
   if (handler) {
-    let apiKeyId: string | null = null;
-    let apiKeyName: string | null = null;
-
-    if (isApiKeyAuthEnabled()) {
-      const verification = verifyApiKey(extractApiKey(req));
-      if (!verification.ok) {
-        return withCorsHeaders(apiKeyDenied(handler.protocol, verification.reason));
-      }
-
-      apiKeyId = verification.record.id;
-      apiKeyName = verification.record.name;
-      touchApiKey(apiKeyId);
+    // Every proxied request carries a gateway key. There is no switch: an
+    // instance with no keys yet serves nobody, which is the safe direction for
+    // something reachable from the internet.
+    const verification = verifyApiKey(extractApiKey(req));
+    if (!verification.ok) {
+      return withCorsHeaders(apiKeyDenied(handler.protocol, verification.reason));
     }
+
+    const apiKeyId = verification.record.id;
+    const apiKeyName = verification.record.name;
+    touchApiKey(apiKeyId);
 
     const previewBody = await getPreviewBody(req);
     // An explicit x-client-id still wins, but a gateway key names its own

@@ -97,7 +97,9 @@ function PlaygroundPage() {
   const abortRef = useRef<AbortController | null>(null);
   const outputRef = useRef<HTMLPreElement>(null);
 
-  const keyRequired = apiKeys?.enabled ?? false;
+  // Proxy routes always require a key — the playground is deliberately subject
+  // to the same check as any other client.
+  const hasActiveKey = (apiKeys?.keys ?? []).some((key) => !key.revoked);
   const baseUrl = config?.baseUrl || window.location.origin;
 
   /** Providers present in the catalogue, with how many models each contributes. */
@@ -178,11 +180,11 @@ function PlaygroundPage() {
     return [
       `curl ${baseUrl}${endpoint} \\`,
       `  -H "Content-Type: application/json" \\`,
-      ...(keyRequired ? [`  ${authHeader} \\`] : []),
+      `  ${authHeader} \\`,
       `  -d '${JSON.stringify(buildBody())}'`,
     ].join('\n');
     // buildBody reads the same state this depends on.
-  }, [protocol, endpoint, baseUrl, apiKey, keyRequired, model, stream, systemPrompt, userPrompt, temperature, maxTokens]);
+  }, [protocol, endpoint, baseUrl, apiKey, model, stream, systemPrompt, userPrompt, temperature, maxTokens]);
 
   const stop = () => {
     abortRef.current?.abort();
@@ -497,7 +499,7 @@ function PlaygroundPage() {
             <div className="form-control w-full">
               <label className="label">
                 <span className="label-text font-semibold text-xs text-base-content/75">
-                  Gateway API key {keyRequired ? '(required — enforcement is on)' : '(optional — enforcement is off)'}
+                  Gateway API key <span className="text-error">*</span>
                 </span>
               </label>
               <input
@@ -507,11 +509,13 @@ function PlaygroundPage() {
                 value={apiKey}
                 onChange={(event) => setApiKey(event.target.value)}
               />
-              {keyRequired && !apiKey && (
+              {!apiKey && (
                 <label className="label">
                   <span className="label-text-alt text-[10px] text-warning flex items-center gap-1">
-                    <AlertTriangle className="w-3 h-3" />
-                    Key auth is enabled, so this request will be rejected without a key.
+                    <AlertTriangle className="w-3 h-3 shrink-0" />
+                    {hasActiveKey
+                      ? 'Proxy routes always require a key — this request will be rejected without one.'
+                      : 'No keys exist yet. Create one on the API Keys page first.'}
                   </span>
                 </label>
               )}
