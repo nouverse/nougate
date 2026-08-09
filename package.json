@@ -13,6 +13,7 @@
     "build:frontend": "npm run --prefix apps/frontend build",
     "lint:check": "bun run --filter @nouverse/nougate-backend lint:check",
     "test": "bun run --filter @nouverse/nougate-backend test",
-    "test:functional": "bun run --filter @nouverse/nougate-backend test:functional"
+    "test:functional": "bun run --filter @nouverse/nougate-backend test:functional",
+    "test:frontend": "cd apps/frontend && bun test tests"
   }
 }

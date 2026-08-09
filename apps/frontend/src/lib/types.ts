@@ -47,7 +47,7 @@ export interface UsageSummary {
 }
 
 export interface ApiKeyStat {
-  /** Key ID, or 'none' for traffic recorded while key auth was off. */
+  /** Key ID, or 'none' for historical traffic from before keys were required. */
   apiKeyId: string;
   name: string;
   revoked: boolean;

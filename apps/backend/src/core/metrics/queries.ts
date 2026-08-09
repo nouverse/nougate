@@ -14,7 +14,7 @@ const LOOKBACK_DAYS: Record<Lookback, number> = {
   '90d': 90,
 };
 
-/** Filter value for requests made while gateway key auth was off. */
+/** Filter value for keyless traffic — historical rows from before keys were required. */
 export const NO_API_KEY = 'none';
 
 export interface UsageFilters {

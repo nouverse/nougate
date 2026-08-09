@@ -460,8 +460,11 @@ Every request through the gateway is recorded to SQLite (`data/nougate.db`, or
   can be used as a filter (they compose). The client ID comes from the `x-client-id` header,
   else the name of the key used, else `unknown`; the key is recorded separately, so naming a
   key per machine or per agent gives you per-machine spend even when clients set their own
-  `x-client-id`. Traffic recorded while key auth was off appears as **no key**, and a key that
-  was deleted still shows its historical usage as **deleted key**. The API key is stored in
+  `x-client-id`. Historical traffic from before keys were required appears as **no key**, and
+  a key that was deleted still shows its usage as **deleted key**. Because the client ID falls
+  back to the key's name, the per-client and per-key breakdowns are identical until some caller
+  actually sends `x-client-id` — the dashboard collapses them to one panel while that is true,
+  rather than showing the same numbers twice. The API key is stored in
   the daily rollups too, so the filter works across the full 90-day window, not just the
   detail-log retention period.
 

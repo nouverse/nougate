@@ -16,6 +16,42 @@ import {
 } from '@/lib/format';
 import { DollarSign, Scissors, Zap, Activity, Download, Table2, LineChart, KeyRound } from 'lucide-react';
 
+/** The bucket each side uses for traffic that carried no gateway key. */
+const KEYLESS_CLIENT = 'unknown';
+const KEYLESS_KEY = 'no key';
+
+/**
+ * Whether the per-client split says anything the per-key split does not.
+ *
+ * Compared on the numbers, not just the labels: two rows that happen to share a
+ * name but differ in spend are genuinely different attributions.
+ */
+export function breakdownsMatch(
+  clients: Array<{ clientId: string; requests: number; totalCost: number }>,
+  keys: Array<{ name: string; requests: number; totalCost: number }>,
+): boolean {
+  if (clients.length === 0 || clients.length !== keys.length) {
+    return false;
+  }
+
+  const fingerprint = (label: string, requests: number, totalCost: number) =>
+    `${label}|${requests}|${totalCost.toFixed(6)}`;
+
+  const keySide = new Set(
+    keys.map((entry) =>
+      fingerprint(
+        entry.name === KEYLESS_KEY ? KEYLESS_CLIENT : entry.name,
+        entry.requests,
+        entry.totalCost,
+      ),
+    ),
+  );
+
+  return clients.every((entry) =>
+    keySide.has(fingerprint(entry.clientId, entry.requests, entry.totalCost)),
+  );
+}
+
 export const Route = createFileRoute('/tokens')({
   component: TokensPage,
 });
@@ -54,6 +90,10 @@ function TokensPage() {
   // The rate the saved tokens were actually valued at. Derived from the two
   // recorded totals rather than blending input and output prices, which would
   // overstate it — output is usually the dearer side.
+  // The client ID falls back to the key's name when a caller sends no
+  // x-client-id, so with no callers setting it the two panels are the same
+  // numbers under different labels. Showing both then reads as a bug.
+  const clientsMirrorKeys = breakdownsMatch(clientStats, apiKeyStats);
   const savedTokenPricePer1M =
     summary.tokensSaved > 0 ? (summary.costSaved / summary.tokensSaved) * 1_000_000 : 0;
   const exportUrl =
@@ -287,21 +327,27 @@ function TokensPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="card bg-base-200 border border-base-300 shadow-sm">
-          <div className="card-body p-5 space-y-4">
-            <h3 className="card-title text-sm font-bold tracking-wide">SPEND BY CLIENT</h3>
-            <BarList
-              items={clientStats.slice(0, 8).map((entry) => ({
-                label: entry.clientId,
-                value: entry.totalCost,
-                secondary: `${formatCount(entry.requests)} req`,
-              }))}
-              format={formatCost}
-              emptyMessage="No client attribution yet"
-            />
+      <div className={`grid grid-cols-1 gap-4 ${clientsMirrorKeys ? '' : 'lg:grid-cols-2'}`}>
+        {!clientsMirrorKeys && (
+          <div className="card bg-base-200 border border-base-300 shadow-sm">
+            <div className="card-body p-5 space-y-4">
+              <h3 className="card-title text-sm font-bold tracking-wide">SPEND BY CLIENT</h3>
+              <BarList
+                items={clientStats.slice(0, 8).map((entry) => ({
+                  label: entry.clientId,
+                  value: entry.totalCost,
+                  secondary: `${formatCount(entry.requests)} req`,
+                }))}
+                format={formatCost}
+                emptyMessage="No client attribution yet"
+              />
+              <p className="text-[10px] text-base-content/40">
+                Who the caller says it is, from the <code className="font-mono">x-client-id</code>{' '}
+                header. Callers that send none are counted under the key they used.
+              </p>
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="card bg-base-200 border border-base-300 shadow-sm">
           <div className="card-body p-5 space-y-4">
@@ -318,8 +364,23 @@ function TokensPage() {
               format={formatCost}
               emptyMessage="No key-attributed traffic yet"
             />
-            <p className="text-[10px] text-base-content/40">
-              "no key" covers requests made while gateway key auth was switched off.
+            <p className="text-[10px] text-base-content/40 leading-relaxed">
+              {clientsMirrorKeys ? (
+                <>
+                  Spend by client is not shown separately: no caller is sending an{' '}
+                  <code className="font-mono">x-client-id</code> header, so each one is named
+                  after the key it authenticated with and the two breakdowns are the same
+                  numbers twice. Set that header to split a single key across machines or
+                  agents.
+                </>
+              ) : (
+                'Who authenticated, regardless of what the caller called itself.'
+              )}
+              {' '}
+              <span className="block mt-1">
+                "no key" is historical traffic from before keys were required; "deleted key" is
+                usage from a key that has since been removed.
+              </span>
             </p>
           </div>
         </div>

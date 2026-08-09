@@ -35,7 +35,7 @@ export const ddl = [
   `CREATE INDEX IF NOT EXISTS idx_token_logs_provider ON token_usage_logs (provider)`,
 
   // api_key_id is part of the key so long-window charts can be filtered by
-  // gateway key, not just by client. '' means "recorded while key auth was off".
+  // gateway key, not just by client. '' means keyless: historical rows from before keys were required.
   `CREATE TABLE IF NOT EXISTS token_usage_daily_rollups (
     date TEXT NOT NULL,
     provider TEXT NOT NULL,
