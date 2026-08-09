@@ -1,14 +1,19 @@
 import { useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
-export interface AuthState {
-  /** False when the gateway runs without dashboard authentication configured. */
-  authEnabled: boolean;
-  /** The signed-in Google account, or null when there is no valid session. */
-  email: string | null;
+export interface SessionUser {
+  id: string;
+  username: string;
+  /** True until the account replaces the credential it was created with. */
+  mustChangePassword: boolean;
 }
 
-const AUTH_QUERY_KEY = ['auth', 'session'];
+export interface AuthState {
+  /** The signed-in user, or null when there is no valid session. */
+  user: SessionUser | null;
+}
+
+export const AUTH_QUERY_KEY = ['auth', 'session'];
 
 /**
  * Read the current session. A 401 is a normal "signed out" answer here, not an
@@ -18,7 +23,7 @@ async function fetchSession(): Promise<AuthState> {
   const res = await fetch('/api/auth/me');
 
   if (res.status === 401) {
-    return { authEnabled: true, email: null };
+    return { user: null };
   }
 
   if (!res.ok) {
@@ -50,11 +55,46 @@ export function useAuth() {
 }
 
 /**
- * Send the browser to the Google consent screen, returning to the current page.
+ * Exchange credentials for a session cookie.
  */
-export function startLogin() {
-  const next = `${window.location.pathname}${window.location.search}`;
-  window.location.href = `/api/auth/login?next=${encodeURIComponent(next)}`;
+export async function login(username: string, password: string): Promise<void> {
+  const res = await fetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || 'Sign-in failed');
+  }
+}
+
+export interface ProfileUpdate {
+  currentPassword: string;
+  /** Omit or leave empty to keep the current username. */
+  newUsername?: string;
+  /** Omit or leave empty to keep the current password. */
+  newPassword?: string;
+}
+
+/**
+ * Update the signed-in user's own username and/or password.
+ */
+export async function updateProfile(update: ProfileUpdate): Promise<SessionUser> {
+  const res = await fetch('/api/auth/profile', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(update),
+  });
+
+  const body = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new Error(body.error || 'Could not update your account');
+  }
+
+  return body.user;
 }
 
 /**

@@ -15,6 +15,7 @@
 - **Per-Provider Auth Isolation**: Credentials and account storage are fully isolated per provider.
 - **Custom Providers**: Define your own upstream from the dashboard — pick an ID, base URL, OpenAI or Anthropic API style, keys and pricing, then call it as `{provider_id}:{model}`.
 - **Gateway API Keys**: Issue `sk-nou-…` keys so clients authenticate against the proxy routes. Off by default; one toggle turns it on.
+- **Dashboard Accounts**: Username + password auth stored in SQLite — add users, change your own username and password, no external identity provider.
 
 ### Account Management
 - **Hybrid Intelligent Routing**: Sticky by default (preserves prompt cache), auto-failover on rate limit/error.
@@ -122,17 +123,17 @@ directory — so `bun run dev` (which runs from `apps/backend`), `bun run start`
 
 | What | Docker | Local |
 |------|--------|-------|
-| Metrics, gateway API keys, custom providers | `/app/data/nougate.db` | `./data/nougate.db` |
+| Dashboard users, metrics, gateway API keys, custom providers | `/app/data/nougate.db` | `./data/nougate.db` |
 | Provider accounts | `/app/data/providers/<id>/accounts.json` | `./data/providers/<id>/accounts.json` |
 | Provider config | `/app/data/providers/<id>/config.json` | `./data/providers/<id>/config.json` |
 | Global config | `/app/data/config.json` | `./config.json` |
-| Dashboard allowlist | `/app/data/auth.json` | `./data/auth.json` |
+| Session signing secret | `/app/data/.session-secret` | `./data/.session-secret` |
 
 Only the SQLite database is new — provider accounts and configs stay plain JSON so they
 remain easy to inspect, diff, and hand-edit.
 
 Override with `NOUGATE_DB_PATH`, `CONFIG_FILE`, `ACCOUNTS_FILE`, `COPILOT_ACCOUNTS_FILE`,
-`ANTIGRAVITY_CONFIG_FILE`, `COPILOT_CONFIG_FILE`, or `AUTH_FILE`.
+`ANTIGRAVITY_CONFIG_FILE`, `COPILOT_CONFIG_FILE`, or `SESSION_SECRET_FILE`.
 
 > **Upgrading from an earlier build?** Paths used to be derived from the working directory,
 > so starting the server two different ways produced two separate sets of state. On boot the
@@ -234,65 +235,69 @@ GOOGLE_CLIENT_SECRET=xxxxxxxx
 SESSION_SECRET=<openssl rand -base64 32>
 ```
 
-### Dashboard Authentication (`auth.json`)
+### Dashboard Authentication (username + password)
 
-Restricts the dashboard to an allowlist of Google accounts. **Scope: the dashboard
-and the `/api/*` admin endpoints only.** The LLM proxy routes (`/openai/*`,
-`/anthropic/*`) are deliberately left open — CLI clients cannot hold a browser
-session, so they need a separate key-based guard.
+The dashboard and the `/api/*` admin endpoints are **always** protected — there is
+no switch that turns this off. Accounts live in the SQLite database, so no config
+file or external identity provider is involved.
 
-**`"enabled"` is the only switch.** When it is true the dashboard is closed —
-missing Google credentials, an empty allowlist, or a corrupt file all keep it
-closed and deny everyone, rather than silently reopening it. The startup banner
-says which state you are in.
+The LLM proxy routes (`/openai/v1/*`, `/anthropic/v1/*`) are deliberately *not*
+covered here: CLI clients cannot hold a browser session, so they are guarded
+separately by [gateway API keys](#gateway-api-keys).
 
-The file is looked up in this order, first match wins: `/app/data/auth.json`
-(Docker), `./data/auth.json`, `./auth.json`. Override with `AUTH_FILE`. Copy
-`auth.example.json` to whichever applies — under Docker Compose that is
-`./data/auth.json` for dev and `./nougate-data/auth.json` for prod:
+**First run.** When the database has no users, an account is seeded:
 
-```json
-{
-  "enabled": true,
-  "allowedEmails": ["you@example.com"],
-  "hostedDomain": null,
-  "sessionTtlHours": 168
-}
+```
+username: admin
+password: admin123
 ```
 
-| Field | Description |
-|-------|-------------|
-| `enabled` | The switch. True closes the dashboard; nothing else can reopen it |
-| `allowedEmails` | Google accounts permitted to sign in, matched case-insensitively |
-| `hostedDomain` | Optional Workspace domain; pre-filters the Google account chooser |
-| `sessionTtlHours` | Session cookie lifetime (default 168 = 7 days) |
+That credential is flagged for mandatory replacement. It unlocks exactly one
+screen — "finish setting up your account" — and every other endpoint answers
+`403 password_change_required` until a real password is set. So the well-known
+default never grants access to a publicly reachable gateway, even if you forget
+to change it right away. That screen also lets you claim a real **username**
+instead of `admin`, which is optional and can be done later.
 
-Setup:
+Two pages, deliberately separate:
 
-1. Create a **Web application** OAuth client at
-   [Google Cloud Console → Credentials](https://console.cloud.google.com/apis/credentials).
-2. Register `<BASE_URL>/api/auth/callback` as an authorized redirect URI.
-3. Put `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `.env`.
-4. List the allowed emails in `auth.json` and restart.
+**Account Settings** — your own sign-in details:
+
+- Change your username (you sign in with the new one from then on).
+- Change your password.
+
+Both require your current password, so an unattended browser tab is not enough
+to take the account over.
+
+**Users** — everyone else's accounts:
+
+- Add a user with a temporary password; they are required to replace it on first
+  sign-in, so you never end up knowing their real password.
+- Reset someone else's password.
+- Delete a user — which revokes their open sessions on the next request.
+
+Every user is an administrator; there are no roles.
 
 Notes:
 
-- **No database required.** Sessions are stateless HMAC-signed cookies
-  (`HttpOnly`, `SameSite=Lax`, `Secure` when `BASE_URL` is https), so there is
-  nothing to store or clean up.
-- **No `SESSION_SECRET` needed.** If unset, one is generated on first use and
-  stored as `.session-secret` next to `auth.json`, so sessions survive restarts.
-- The dashboard shows an **Unprotected** badge in the header whenever the guard
-  is off, so an open gateway is visible without reading the logs.
-- The allowlist is read live on each dashboard request — adding or removing an
-  email takes effect immediately, and a removed email loses access on its very
-  next request rather than when its cookie expires.
-- `auth.json` is never writable through the admin API, so a compromised dashboard
-  cannot grant access to a new account.
-- Signing in with an unlisted account returns **403**.
-- If the file is missing, disabled, or the env vars are absent, the dashboard
-  stays open exactly as before — a half-finished setup will not lock you out.
-  Startup logs state which posture is active.
+- **Passwords are hashed with argon2id** via `Bun.password`, never stored or
+  logged in plain text.
+- **Sessions are stateless HMAC-signed cookies** (`HttpOnly`, `SameSite=Lax`,
+  `Secure` when `BASE_URL` is https). If `SESSION_SECRET` is unset, one is
+  generated on first use and stored at `data/.session-secret`, so sessions
+  survive restarts. Set `SESSION_TTL_HOURS` to change the 7-day default.
+- **Failed sign-ins are throttled** per username: five failures trigger a
+  60-second lockout, and one account being hammered never locks out the others.
+- **Wrong password and unknown username return the identical response**, so the
+  login form cannot be used to enumerate accounts.
+- The signed-in user is re-read from the database on every request, so deleting
+  an account takes effect immediately rather than when its cookie expires.
+- The last remaining user cannot be deleted, and you cannot delete the account
+  you are signed in with — there is no way to lock yourself out.
+
+> Serve the dashboard over HTTPS in production. A password crosses the network on
+> every sign-in, and the session cookie only gets its `Secure` flag when
+> `BASE_URL` starts with `https://`.
 
 ---
 
@@ -401,7 +406,7 @@ key's name doubles as the client ID in cost reports, so naming keys per machine 
 gives you per-client spend for free.
 
 **Note:** this guards the LLM proxy routes. The dashboard and `/api/*` are guarded separately
-by Google sign-in — see *Dashboard Authentication* above.
+by username + password — see *Dashboard Authentication* above.
 
 ---
 
@@ -437,14 +442,17 @@ Admin endpoints (behind the dashboard guard):
 | `/api/custom-providers/:id/models/:modelId` | DELETE | Remove a model |
 | `/api/custom-providers/:id/sync-models` | POST | Auto-discover models from the upstream |
 
-Dashboard authentication endpoints (only active when `auth.json` is configured):
+Dashboard authentication endpoints (always active):
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/auth/me` | GET | Current session, or 401 when signed out |
-| `/api/auth/login` | GET | Redirect to the Google consent screen |
-| `/api/auth/callback` | GET | OAuth redirect target; issues the session cookie |
+| `/api/auth/login` | POST | Exchange `{username, password}` for a session cookie |
+| `/api/auth/profile` | POST | Change your own username and/or password |
 | `/api/auth/logout` | POST | Expire the session cookie |
+| `/api/users` | GET / POST | List users, or create one |
+| `/api/users/:id` | DELETE | Delete a user |
+| `/api/users/:id/password` | POST | Reset another user's password |
 
 ---
 

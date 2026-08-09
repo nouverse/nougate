@@ -1,9 +1,8 @@
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { getAuthConfig, getSessionSecret } from "@/auth/config";
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { getSessionSecret, getSessionTtlHours } from "@/auth/config";
 import { type SessionPayload } from "@/auth/types";
 
 export const SESSION_COOKIE = "nougate_session";
-export const STATE_COOKIE = "nougate_oauth_state";
 
 /**
  * Encode bytes or text as base64url without padding.
@@ -58,9 +57,8 @@ export function parseCookies(req: Request): Record<string, string> {
 /**
  * Build a Set-Cookie header value with the shared hardening flags.
  *
- * SameSite=Lax keeps the cookie on the top-level redirect back from Google
- * while blocking it on cross-site POSTs, which is what protects the
- * state-changing admin endpoints from CSRF.
+ * SameSite=Lax blocks the cookie on cross-site POSTs, which is what protects
+ * the state-changing admin endpoints from CSRF.
  */
 function buildCookie(
   name: string,
@@ -89,18 +87,22 @@ function useSecureCookies(baseUrl: string): boolean {
 }
 
 /**
- * Issue a signed, stateless session cookie for an authenticated email.
+ * Issue a signed, stateless session cookie for an authenticated user.
  */
-export function createSessionCookie(email: string, baseUrl: string): string {
+export function createSessionCookie(
+  user: { id: string; username: string },
+  baseUrl: string,
+): string {
   const secret = getSessionSecret();
   if (!secret) {
     throw new Error("SESSION_SECRET is not configured");
   }
 
-  const ttlSeconds = getAuthConfig().sessionTtlHours * 3600;
+  const ttlSeconds = getSessionTtlHours() * 3600;
   const issuedAt = Math.floor(Date.now() / 1000);
   const payload: SessionPayload = {
-    email,
+    sub: user.id,
+    username: user.username,
     iat: issuedAt,
     exp: issuedAt + ttlSeconds,
   };
@@ -144,7 +146,7 @@ export function readSession(req: Request): SessionPayload | null {
 
   try {
     const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as SessionPayload;
-    if (!payload.email || typeof payload.exp !== "number") {
+    if (!payload.sub || !payload.username || typeof payload.exp !== "number") {
       return null;
     }
     if (payload.exp <= Math.floor(Date.now() / 1000)) {
@@ -154,50 +156,4 @@ export function readSession(req: Request): SessionPayload | null {
   } catch {
     return null;
   }
-}
-
-/**
- * Create a single-use OAuth state value plus the cookie that carries its copy.
- */
-export function createOAuthState(
-  next: string,
-  baseUrl: string,
-): { state: string; cookie: string } {
-  const nonce = randomBytes(16).toString("base64url");
-  const state = toBase64Url(JSON.stringify({ nonce, next }));
-  return {
-    state,
-    cookie: buildCookie(STATE_COOKIE, nonce, 600, useSecureCookies(baseUrl)),
-  };
-}
-
-/**
- * Validate the state returned by Google against the nonce cookie.
- */
-export function verifyOAuthState(
-  req: Request,
-  state: string | null,
-): { valid: boolean; next: string } {
-  const expected = parseCookies(req)[STATE_COOKIE];
-  if (!state || !expected) {
-    return { valid: false, next: "/frontend/" };
-  }
-
-  try {
-    const decoded = JSON.parse(Buffer.from(state, "base64url").toString("utf8"));
-    if (typeof decoded.nonce !== "string" || !signaturesMatch(decoded.nonce, expected)) {
-      return { valid: false, next: "/frontend/" };
-    }
-    const next = typeof decoded.next === "string" ? decoded.next : "/frontend/";
-    return { valid: true, next };
-  } catch {
-    return { valid: false, next: "/frontend/" };
-  }
-}
-
-/**
- * Expire the short-lived OAuth state cookie.
- */
-export function createStateClearCookie(baseUrl: string): string {
-  return buildCookie(STATE_COOKIE, "", 0, useSecureCookies(baseUrl));
 }

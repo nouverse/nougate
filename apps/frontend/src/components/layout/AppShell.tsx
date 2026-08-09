@@ -7,7 +7,7 @@ import { useSSE } from '@/hooks/useSSE';
 import { api } from '@/lib/api';
 import { LogViewer } from '@/components/shared/LogViewer';
 import { useAuth, logout } from '@/hooks/useAuth';
-import { Menu, Settings, Terminal, Shield, ShieldAlert, List, Sun, Moon, LogOut, BarChart3, KeyRound, Boxes, FlaskConical } from 'lucide-react';
+import { Menu, Settings, Terminal, Shield, List, Sun, Moon, LogOut, BarChart3, KeyRound, Boxes, FlaskConical, UsersRound, UserCog } from 'lucide-react';
 
 interface Props {
   children: React.ReactNode;
@@ -64,6 +64,8 @@ export function AppShell({ children }: Props) {
     { label: 'Token Metrics', to: '/tokens' as any, icon: <BarChart3 className="w-4 h-4" /> },
     { label: 'API Keys', to: '/api-keys' as any, icon: <KeyRound className="w-4 h-4" /> },
     { label: 'Custom Providers', to: '/custom-providers' as any, icon: <Boxes className="w-4 h-4" /> },
+    { label: 'Users', to: '/users' as any, icon: <UsersRound className="w-4 h-4" /> },
+    { label: 'Account Settings', to: '/settings' as any, icon: <UserCog className="w-4 h-4" /> },
     { label: 'Global Config', to: '/config' as any, icon: <Settings className="w-4 h-4" /> },
     { label: 'System Logs', to: '/logs' as any, icon: <Terminal className="w-4 h-4 text-primary" /> },
   ];
@@ -218,24 +220,15 @@ export function AppShell({ children }: Props) {
               {theme === 'nougate' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
 
-            {auth && !auth.authEnabled && (
-              <span
-                className="badge badge-warning badge-sm gap-1 font-bold text-[10px] uppercase tracking-wider"
-                title="No sign-in required — anyone who can reach this port has admin access. See auth.json in the README."
-              >
-                <ShieldAlert className="w-3 h-3" />
-                <span className="hidden sm:inline">Unprotected</span>
-              </span>
-            )}
-
-            {auth?.email && (
+            {auth?.user && (
               <div className="flex items-center gap-2 pl-3 border-l border-base-300">
-                <span
-                  className="text-[10px] font-mono text-base-content/50 hidden md:block max-w-[14rem] truncate"
-                  title={auth.email}
+                <Link
+                  to={'/settings' as any}
+                  className="text-[10px] font-mono text-base-content/50 hover:text-base-content hidden md:block max-w-[14rem] truncate"
+                  title={`${auth.user.username} — account settings`}
                 >
-                  {auth.email}
-                </span>
+                  {auth.user.username}
+                </Link>
                 <button
                   onClick={logout}
                   className="btn btn-ghost btn-xs px-2 text-base-content"

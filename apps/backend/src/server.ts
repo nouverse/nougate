@@ -1,7 +1,6 @@
 #!/usr/bin/env bun
 import { registerProvider } from "@/core/registry";
 import { loadProxyConfig } from "@/config/manager";
-import { loadAuthConfig } from "@/auth/config";
 import { AntigravityProvider } from "@/providers/antigravity";
 import { CopilotProvider } from "@/providers/copilot";
 import { registerOpenAIProtocol } from "@/protocols/openai";
@@ -10,14 +9,15 @@ import { handleRequest } from "@/router";
 import { setupLogCapture } from "@/router/middleware";
 import { initDb } from "@/core/db";
 import { initApiKeys } from "@/auth/api-keys";
+import { initUsers } from "@/auth/users";
 import { initCustomProviders } from "@/providers/custom/manager";
 import { startMetricsMaintenance } from "@/core/metrics/maintenance";
 import { projectPath } from "@/core/paths";
 
 await loadProxyConfig();
-loadAuthConfig();
 setupLogCapture();
 initDb();
+await initUsers();
 initApiKeys();
 
 const antigravityProvider = new AntigravityProvider();

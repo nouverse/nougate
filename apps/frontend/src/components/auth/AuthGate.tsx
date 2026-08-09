@@ -2,6 +2,7 @@ import React from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { LoginScreen } from '@/components/auth/LoginScreen';
+import { AccountSetupScreen } from '@/components/auth/AccountSetupScreen';
 
 interface Props {
   children: React.ReactNode;
@@ -39,8 +40,14 @@ export function AuthGate({ children }: Props) {
     );
   }
 
-  if (data?.authEnabled && !data.email) {
+  if (!data?.user) {
     return <LoginScreen />;
+  }
+
+  // The API blocks every other endpoint until this is done, so showing the
+  // dashboard here would only render a wall of failed requests.
+  if (data.user.mustChangePassword) {
+    return <AccountSetupScreen username={data.user.username} />;
   }
 
   return <>{children}</>;

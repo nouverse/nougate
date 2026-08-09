@@ -1,11 +1,21 @@
-import { isAuthEnabled, isEmailAllowed } from "@/auth/config";
 import { readSession } from "@/auth/session";
-import { type SessionPayload } from "@/auth/types";
+import { type User, getUserById } from "@/auth/users";
 
 /**
- * Paths that the dashboard guard protects. The LLM protocol routes are
- * deliberately excluded — they are called by CLI clients that cannot hold a
- * browser session and are guarded separately.
+ * Endpoints a signed-in user may still reach while their password change is
+ * outstanding. Everything else stays closed until the default credential is
+ * replaced, so a seeded account never grants real access.
+ */
+const CHANGE_PASSWORD_ALLOWLIST = new Set([
+  "/api/auth/me",
+  "/api/auth/logout",
+  "/api/auth/profile",
+]);
+
+/**
+ * Paths the dashboard guard protects. The LLM protocol routes are deliberately
+ * excluded — they are called by CLI clients that cannot hold a browser session
+ * and are guarded separately by gateway API keys.
  */
 function isGuardedPath(pathname: string): boolean {
   if (pathname.startsWith("/api/auth/")) {
@@ -29,37 +39,40 @@ function denied(status: number, code: string, message: string): Response {
 }
 
 /**
- * Reject unauthenticated or no-longer-allowed access to the dashboard API.
- * Returns null when the request may proceed.
+ * Resolve the signed-in user for a request, or null.
+ *
+ * The user is re-read from the database on every request so deleting an account
+ * revokes its sessions immediately instead of waiting for the cookie to expire.
  */
-export function enforceDashboardAuth(req: Request, url: URL): Response | null {
-  // Path check first: it is a string comparison, while isAuthEnabled() reads the
-  // allowlist from disk. This keeps the LLM proxy hot path free of file I/O.
-  if (!isGuardedPath(url.pathname) || !isAuthEnabled()) {
-    return null;
-  }
-
+export function getActiveUser(req: Request): User | null {
   const session = readSession(req);
   if (!session) {
-    return denied(401, "unauthenticated", "Sign in to access the dashboard");
+    return null;
   }
-
-  // Re-check on every request so removing an email from the allowlist revokes
-  // access immediately instead of waiting for the cookie to expire.
-  if (!isEmailAllowed(session.email)) {
-    return denied(403, "forbidden", `${session.email} is not allowed to access this dashboard`);
-  }
-
-  return null;
+  return getUserById(session.sub);
 }
 
 /**
- * Resolve the current session for the /api/auth/me endpoint.
+ * Reject unauthenticated access to the dashboard API.
+ * Returns null when the request may proceed.
  */
-export function getActiveSession(req: Request): SessionPayload | null {
-  const session = readSession(req);
-  if (!session || !isEmailAllowed(session.email)) {
+export function enforceDashboardAuth(req: Request, url: URL): Response | null {
+  if (!isGuardedPath(url.pathname)) {
     return null;
   }
-  return session;
+
+  const user = getActiveUser(req);
+  if (!user) {
+    return denied(401, "unauthenticated", "Sign in to access the dashboard");
+  }
+
+  if (user.mustChangePassword && !CHANGE_PASSWORD_ALLOWLIST.has(url.pathname)) {
+    return denied(
+      403,
+      "password_change_required",
+      "Set a new password before using the dashboard",
+    );
+  }
+
+  return null;
 }

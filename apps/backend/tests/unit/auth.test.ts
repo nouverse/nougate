@@ -1,157 +1,143 @@
 import { expect, test, describe, beforeAll, afterAll } from "bun:test";
 import { createHmac } from "node:crypto";
-import { writeFileSync, rmSync, mkdtempSync, existsSync } from "fs";
+import { rmSync, mkdtempSync, existsSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
-const AUTH_DIR = mkdtempSync(join(tmpdir(), "nougate-auth-"));
-const AUTH_FILE = join(AUTH_DIR, "auth.json");
+const STATE_DIR = mkdtempSync(join(tmpdir(), "nougate-auth-"));
 const SESSION_SECRET = "test-session-secret-abcdefghijklmnop";
-const ALLOWED = "owner@example.com";
 
-// The auth module resolves its file path and credentials from the environment,
-// so these must be in place before it is imported.
-process.env.AUTH_FILE = AUTH_FILE;
-process.env.GOOGLE_CLIENT_ID = "test-client.apps.googleusercontent.com";
-process.env.GOOGLE_CLIENT_SECRET = "test-secret";
+// Both the database path and the signing secret are read when their modules are
+// first imported, so they must be set before any dynamic import below.
+process.env.NOUGATE_DB_PATH = join(STATE_DIR, "auth-test.db");
+process.env.SESSION_SECRET_FILE = join(STATE_DIR, ".session-secret");
 process.env.SESSION_SECRET = SESSION_SECRET;
 
-/**
- * Rewrite the allowlist. The module reads it live, so no reload call is needed.
- */
-function setAllowlist(emails: string[], enabled = true): void {
-  writeFileSync(
-    AUTH_FILE,
-    JSON.stringify({ enabled, allowedEmails: emails, sessionTtlHours: 168 }, null, 2),
-  );
-}
-
 const { loadProxyConfig } = await import("@/config/manager");
-const { loadAuthConfig, isAuthEnabled, isEmailAllowed, getSessionSecret } =
-  await import("@/auth/config");
+const { initDb, closeDb } = await import("@/core/db");
+const { getSessionSecret } = await import("@/auth/config");
 const { enforceDashboardAuth } = await import("@/auth/guard");
 const { handleAuthRoute } = await import("@/router/auth");
-const {
-  createSessionCookie,
-  readSession,
-  verifyOAuthState,
-} = await import("@/auth/session");
+const { handleUsersRoute } = await import("@/router/users");
+const { createSessionCookie, readSession } = await import("@/auth/session");
+const users = await import("@/auth/users");
 
 /**
- * Build a request carrying an optional cookie header.
+ * Build a request carrying an optional cookie header and JSON body.
  */
-function request(path: string, cookie?: string, method = "GET"): Request {
+function request(path: string, cookie?: string, method = "GET", body?: unknown): Request {
+  const headers: Record<string, string> = {};
+  if (cookie) {
+    headers.cookie = cookie;
+  }
+  if (body !== undefined) {
+    headers["content-type"] = "application/json";
+  }
   return new Request(`http://localhost:3000${path}`, {
     method,
-    headers: cookie ? { cookie } : undefined,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
   });
 }
 
-/**
- * Run the dashboard guard for a path, returning the rejection or null.
- */
 function guard(path: string, cookie?: string): Response | null {
   return enforceDashboardAuth(request(path, cookie), new URL(`http://localhost:3000${path}`));
 }
 
-/**
- * Route through the auth endpoints.
- */
-function authRoute(path: string, cookie?: string, method = "GET"): Promise<Response | null> {
-  return handleAuthRoute(request(path, cookie, method), new URL(`http://localhost:3000${path}`));
+function authRoute(path: string, cookie?: string, method = "GET", body?: unknown) {
+  return handleAuthRoute(
+    request(path, cookie, method, body),
+    new URL(`http://localhost:3000${path}`),
+  );
+}
+
+function usersRoute(path: string, cookie?: string, method = "GET", body?: unknown) {
+  return handleUsersRoute(
+    request(path, cookie, method, body),
+    new URL(`http://localhost:3000${path}`),
+  );
 }
 
 /**
- * A valid session cookie header value for an email.
+ * A valid session cookie header value for a user.
  */
-function sessionCookie(email: string): string {
-  return createSessionCookie(email, "http://localhost:3000").split(";")[0];
+function sessionCookie(user: { id: string; username: string }): string {
+  return createSessionCookie(user, "http://localhost:3000").split(";")[0];
 }
+
+/** A signed-in account with no outstanding password change. */
+let owner: { id: string; username: string };
+let ownerCookie: string;
 
 beforeAll(async () => {
   await loadProxyConfig();
-  setAllowlist([ALLOWED]);
-  loadAuthConfig();
+  initDb();
+  await users.initUsers();
+
+  owner = await users.createUser("owner", "correct-horse-battery");
+  ownerCookie = sessionCookie(owner);
 });
 
 afterAll(() => {
-  rmSync(AUTH_DIR, { recursive: true, force: true });
+  closeDb();
+  rmSync(STATE_DIR, { recursive: true, force: true });
 });
 
-describe("Auth config", () => {
-  test("is enabled once the file and credentials are present", () => {
-    setAllowlist([ALLOWED]);
-    expect(isAuthEnabled()).toBe(true);
+describe("First-run seeding", () => {
+  test("creates the default admin flagged for a password change", () => {
+    const admin = users.getUserByUsername(users.DEFAULT_USERNAME);
+    expect(admin).not.toBeNull();
+    expect(admin!.mustChangePassword).toBe(true);
   });
 
-  test("matches emails case-insensitively and ignores surrounding space", () => {
-    setAllowlist(["  Owner@Example.COM  "]);
-    expect(isEmailAllowed("owner@example.com")).toBe(true);
-    expect(isEmailAllowed("OWNER@EXAMPLE.COM")).toBe(true);
-    expect(isEmailAllowed("attacker@evil.com")).toBe(false);
+  test("the default credential authenticates", async () => {
+    const verified = await users.verifyCredentials(
+      users.DEFAULT_USERNAME,
+      users.DEFAULT_PASSWORD,
+    );
+    expect(verified?.username).toBe(users.DEFAULT_USERNAME);
   });
 
-  test("stays off when disabled in the file", () => {
-    setAllowlist([ALLOWED], false);
-    expect(isAuthEnabled()).toBe(false);
-    expect(guard("/api/status")).toBeNull();
-    setAllowlist([ALLOWED]);
+  test("does not reseed once a user exists", async () => {
+    const before = users.countUsers();
+    await users.initUsers();
+    expect(users.countUsers()).toBe(before);
+  });
+});
+
+describe("Credentials", () => {
+  test("stores a hash, never the password", () => {
+    const row: any = users.getUserByUsername("owner");
+    expect(JSON.stringify(row)).not.toContain("correct-horse-battery");
   });
 
-  test("stays ON with an empty allowlist, admitting nobody", () => {
-    setAllowlist([]);
-    expect(isAuthEnabled()).toBe(true);
-    expect(guard("/api/status")?.status).toBe(401);
-    expect(guard("/api/status", sessionCookie(ALLOWED))?.status).toBe(403);
-    setAllowlist([ALLOWED]);
+  test("rejects a wrong password and an unknown user identically", async () => {
+    expect(await users.verifyCredentials("owner", "wrong")).toBeNull();
+    expect(await users.verifyCredentials("ghost", "whatever")).toBeNull();
   });
 
-  test("stays ON when the Google credentials go missing", () => {
-    // A typo in the environment must never silently reopen the dashboard.
-    const clientId = process.env.GOOGLE_CLIENT_ID;
-    delete process.env.GOOGLE_CLIENT_ID;
-
-    expect(isAuthEnabled()).toBe(true);
-    expect(guard("/api/status")?.status).toBe(401);
-
-    process.env.GOOGLE_CLIENT_ID = clientId;
+  test("matches usernames case-insensitively", async () => {
+    expect(await users.verifyCredentials("OWNER", "correct-horse-battery")).not.toBeNull();
   });
 
-  test("generates and reuses a signing secret when SESSION_SECRET is unset", () => {
-    delete process.env.SESSION_SECRET;
-
-    const generated = getSessionSecret();
-    expect(generated).toBeTruthy();
-    expect(generated).not.toBe(SESSION_SECRET);
-    expect(existsSync(join(AUTH_DIR, ".session-secret"))).toBe(true);
-
-    // A second call must not mint a new secret, or every restart would sign
-    // everyone out.
-    expect(getSessionSecret()).toBe(generated!);
-
-    // The env var still takes precedence when present.
-    process.env.SESSION_SECRET = SESSION_SECRET;
-    expect(getSessionSecret()).toBe(SESSION_SECRET);
+  test("enforces the password policy", async () => {
+    expect(users.createUser("shorty", "abc")).rejects.toThrow(/at least 8/);
+    // The seeded default must not survive a "change your password" step.
+    expect(users.createUser("lazy", users.DEFAULT_PASSWORD)).rejects.toThrow(/other than the default/);
   });
 
-  test("picks up allowlist edits without a restart", () => {
-    setAllowlist([ALLOWED]);
-    expect(isEmailAllowed("late@example.com")).toBe(false);
-
-    setAllowlist([ALLOWED, "late@example.com"]);
-    expect(isEmailAllowed("late@example.com")).toBe(true);
-
-    setAllowlist([ALLOWED]);
+  test("rejects malformed usernames and duplicates", async () => {
+    expect(users.createUser("A B", "a-good-password")).rejects.toThrow(/Username must be/);
+    expect(users.createUser("owner", "a-good-password")).rejects.toThrow(/already exists/);
   });
 
-  test("fails closed on a malformed allowlist", () => {
-    writeFileSync(AUTH_FILE, "{ this is not json");
-    // A corrupt file must deny everyone, never admit everyone.
-    expect(isAuthEnabled()).toBe(true);
-    expect(isEmailAllowed(ALLOWED)).toBe(false);
-    expect(guard("/api/status")?.status).toBe(401);
-    expect(guard("/api/status", sessionCookie(ALLOWED))?.status).toBe(403);
-    setAllowlist([ALLOWED]);
+  test("throttles repeated failures for one username", async () => {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await users.verifyCredentials("throttled", "nope");
+    }
+    expect(users.loginLockoutSeconds("throttled")).toBeGreaterThan(0);
+    // Other accounts are unaffected by one username being hammered.
+    expect(users.loginLockoutSeconds("owner")).toBe(0);
   });
 });
 
@@ -161,6 +147,7 @@ describe("Dashboard guard coverage", () => {
     expect(guard("/api/sse")?.status).toBe(401);
     expect(guard("/api/providers/antigravity/accounts")?.status).toBe(401);
     expect(guard("/api/config")?.status).toBe(401);
+    expect(guard("/api/users")?.status).toBe(401);
   });
 
   test("blocks the provider OAuth entry points", () => {
@@ -183,28 +170,144 @@ describe("Dashboard guard coverage", () => {
   });
 
   test("admits a valid session", () => {
-    expect(guard("/api/status", sessionCookie(ALLOWED))).toBeNull();
+    expect(guard("/api/status", ownerCookie)).toBeNull();
+  });
+
+  test("revokes the session of a deleted user", async () => {
+    const doomed = await users.createUser("doomed", "a-good-password-1");
+    const cookie = sessionCookie(doomed);
+    expect(guard("/api/status", cookie)).toBeNull();
+
+    users.deleteUser(doomed.id);
+    expect(guard("/api/status", cookie)?.status).toBe(401);
+  });
+});
+
+describe("Forced password change", () => {
+  test("locks the dashboard down to the change-password endpoints", async () => {
+    const admin = users.getUserByUsername(users.DEFAULT_USERNAME)!;
+    const cookie = sessionCookie(admin);
+
+    const denied = guard("/api/status", cookie);
+    expect(denied?.status).toBe(403);
+    expect((await denied!.json()).code).toBe("password_change_required");
+
+    expect(guard("/api/users", cookie)?.status).toBe(403);
+    expect(guard("/api/api-keys", cookie)?.status).toBe(403);
+
+    // The escape hatch stays reachable, or the account could never recover.
+    expect(guard("/api/auth/profile", cookie)).toBeNull();
+    expect(guard("/api/auth/me", cookie)).toBeNull();
+  });
+
+  test("clears once the password is replaced, and requires the current one", async () => {
+    const admin = users.getUserByUsername(users.DEFAULT_USERNAME)!;
+    const cookie = sessionCookie(admin);
+
+    const wrong = await authRoute("/api/auth/profile", cookie, "POST", {
+      currentPassword: "not-the-password",
+      newPassword: "a-brand-new-password",
+    });
+    expect(wrong?.status).toBe(401);
+
+    const ok = await authRoute("/api/auth/profile", cookie, "POST", {
+      currentPassword: users.DEFAULT_PASSWORD,
+      newPassword: "a-brand-new-password",
+    });
+    expect(ok?.status).toBe(200);
+    expect((await ok!.json()).user.mustChangePassword).toBe(false);
+
+    expect(users.getUserByUsername(users.DEFAULT_USERNAME)!.mustChangePassword).toBe(false);
+    expect(guard("/api/status", cookie)).toBeNull();
+  });
+});
+
+describe("Profile updates", () => {
+  test("renames the account and reissues the cookie", async () => {
+    const user = await users.createUser("renameme", "a-good-password-3");
+    const cookie = sessionCookie(user);
+
+    const res = await authRoute("/api/auth/profile", cookie, "POST", {
+      currentPassword: "a-good-password-3",
+      newUsername: "renamed",
+    });
+
+    expect(res?.status).toBe(200);
+    expect((await res!.json()).user.username).toBe("renamed");
+    // The cookie carries the username, so it has to be reissued.
+    expect(res!.headers.get("set-cookie")).toContain("nougate_session=");
+
+    expect(users.getUserByUsername("renamed")).not.toBeNull();
+    expect(users.getUserByUsername("renameme")).toBeNull();
+    // The old password still works under the new name.
+    expect(await users.verifyCredentials("renamed", "a-good-password-3")).not.toBeNull();
+  });
+
+  test("a rename alone does not clear an outstanding password change", () => {
+    const renamed = users.getUserByUsername("renamed")!;
+    expect(renamed.mustChangePassword).toBe(false);
+
+    const seeded = users.setUsername(renamed.id, "renamed");
+    // Renaming to the current name is a no-op, not a conflict.
+    expect(seeded.username).toBe("renamed");
+  });
+
+  test("refuses a username already taken by someone else", async () => {
+    const target = users.getUserByUsername("renamed")!;
+    expect(() => users.setUsername(target.id, "owner")).toThrow(/already exists/);
+  });
+
+  test("requires the current password to rename", async () => {
+    const target = users.getUserByUsername("renamed")!;
+    const res = await authRoute("/api/auth/profile", sessionCookie(target), "POST", {
+      currentPassword: "wrong",
+      newUsername: "hijacked",
+    });
+
+    expect(res?.status).toBe(401);
+    expect(users.getUserByUsername("hijacked")).toBeNull();
+  });
+
+  test("rejects an empty update", async () => {
+    const res = await authRoute("/api/auth/profile", ownerCookie, "POST", {
+      currentPassword: "correct-horse-battery",
+    });
+    expect(res?.status).toBe(400);
+  });
+
+  test("changes username and password in one call", async () => {
+    const user = await users.createUser("bothchange", "a-good-password-4");
+    const res = await authRoute("/api/auth/profile", sessionCookie(user), "POST", {
+      currentPassword: "a-good-password-4",
+      newUsername: "bothchanged",
+      newPassword: "a-good-password-5",
+    });
+
+    expect(res?.status).toBe(200);
+    expect((await res!.json()).user.username).toBe("bothchanged");
+    expect(await users.verifyCredentials("bothchanged", "a-good-password-5")).not.toBeNull();
   });
 });
 
 describe("Session cookie", () => {
   test("round-trips the signed identity", () => {
-    const cookie = sessionCookie(ALLOWED);
-    expect(readSession(request("/", cookie))?.email).toBe(ALLOWED);
+    const payload = readSession(request("/", ownerCookie));
+    expect(payload?.sub).toBe(owner.id);
+    expect(payload?.username).toBe("owner");
   });
 
   test("is HttpOnly and SameSite=Lax, and Secure only over https", () => {
-    const insecure = createSessionCookie(ALLOWED, "http://localhost:3000");
+    const insecure = createSessionCookie(owner, "http://localhost:3000");
     expect(insecure).toContain("HttpOnly");
     expect(insecure).toContain("SameSite=Lax");
     expect(insecure).not.toContain("Secure");
-    expect(createSessionCookie(ALLOWED, "https://nougate.nouverse.tech")).toContain("Secure");
+    expect(createSessionCookie(owner, "https://nougate.nouverse.tech")).toContain("Secure");
   });
 
   test("rejects a payload swapped onto a stolen signature", () => {
-    const signature = sessionCookie(ALLOWED).split(".")[1];
+    const signature = ownerCookie.split(".")[1];
     const payload = Buffer.from(
-      JSON.stringify({ email: "attacker@evil.com", iat: 0, exp: 9999999999 }),
+      JSON.stringify({ sub: "someone-else", username: "attacker", iat: 0, exp: 9999999999 }),
     ).toString("base64url");
     expect(guard("/api/status", `nougate_session=${payload}.${signature}`)?.status).toBe(401);
   });
@@ -216,22 +319,26 @@ describe("Session cookie", () => {
 
   test("rejects a correctly signed but expired session", () => {
     const payload = Buffer.from(
-      JSON.stringify({ email: ALLOWED, iat: 1, exp: 2 }),
+      JSON.stringify({ sub: owner.id, username: owner.username, iat: 1, exp: 2 }),
     ).toString("base64url");
     const signature = createHmac("sha256", SESSION_SECRET).update(payload).digest("base64url");
     expect(guard("/api/status", `nougate_session=${payload}.${signature}`)?.status).toBe(401);
   });
 
-  test("revokes an existing session when the email leaves the allowlist", async () => {
-    const cookie = sessionCookie(ALLOWED);
-    expect(guard("/api/status", cookie)).toBeNull();
+  test("generates and reuses a signing secret when SESSION_SECRET is unset", () => {
+    delete process.env.SESSION_SECRET;
 
-    setAllowlist(["someone.else@example.com"]);
-    const denied = guard("/api/status", cookie);
-    expect(denied?.status).toBe(403);
-    expect((await denied!.json()).code).toBe("forbidden");
+    const generated = getSessionSecret();
+    expect(generated).toBeTruthy();
+    expect(generated).not.toBe(SESSION_SECRET);
+    expect(existsSync(join(STATE_DIR, ".session-secret"))).toBe(true);
 
-    setAllowlist([ALLOWED]);
+    // A second call must not mint a new secret, or every restart would sign
+    // everyone out.
+    expect(getSessionSecret()).toBe(generated!);
+
+    process.env.SESSION_SECRET = SESSION_SECRET;
+    expect(getSessionSecret()).toBe(SESSION_SECRET);
   });
 });
 
@@ -239,48 +346,77 @@ describe("Auth endpoints", () => {
   test("me reports the signed-out and signed-in states", async () => {
     const anon = await authRoute("/api/auth/me");
     expect(anon?.status).toBe(401);
-    expect((await anon!.json()).email).toBeNull();
+    expect((await anon!.json()).user).toBeNull();
 
-    const authed = await authRoute("/api/auth/me", sessionCookie(ALLOWED));
+    const authed = await authRoute("/api/auth/me", ownerCookie);
     expect(authed?.status).toBe(200);
-    expect((await authed!.json()).email).toBe(ALLOWED);
+    expect((await authed!.json()).user.username).toBe("owner");
   });
 
-  test("login redirects to Google with the registered callback", async () => {
-    const res = await authRoute("/api/auth/login?next=/frontend/config");
-    const location = res!.headers.get("location") || "";
-    expect(location).toStartWith("https://accounts.google.com/o/oauth2/v2/auth");
+  test("login issues a session for correct credentials", async () => {
+    const res = await authRoute("/api/auth/login", undefined, "POST", {
+      username: "owner",
+      password: "correct-horse-battery",
+    });
 
-    const params = new URL(location).searchParams;
-    expect(params.get("scope")).toBe("openid email profile");
-    expect(params.get("redirect_uri")).toBe("http://localhost:3000/api/auth/callback");
-    expect(res!.headers.get("set-cookie")).toContain("nougate_oauth_state");
+    expect(res?.status).toBe(200);
+    expect(res!.headers.get("set-cookie")).toContain("nougate_session=");
+    expect((await res!.json()).user.username).toBe("owner");
   });
 
-  test("rewrites a protocol-relative next into the dashboard path", async () => {
-    const res = await authRoute("/api/auth/login?next=//evil.com/steal");
-    const state = new URL(res!.headers.get("location")!).searchParams.get("state")!;
-    const decoded = JSON.parse(Buffer.from(state, "base64url").toString("utf8"));
-    expect(decoded.next).toBe("/frontend/");
-  });
+  test("login rejects bad credentials without revealing which part was wrong", async () => {
+    const badPassword = await authRoute("/api/auth/login", undefined, "POST", {
+      username: "owner",
+      password: "nope",
+    });
+    const noSuchUser = await authRoute("/api/auth/login", undefined, "POST", {
+      username: "nobody",
+      password: "nope",
+    });
 
-  test("validates the OAuth state against its cookie", async () => {
-    const res = await authRoute("/api/auth/login");
-    const state = new URL(res!.headers.get("location")!).searchParams.get("state")!;
-    const stateCookie = res!.headers.get("set-cookie")!.split(";")[0];
-
-    expect(verifyOAuthState(request("/", stateCookie), state).valid).toBe(true);
-    expect(verifyOAuthState(request("/"), state).valid).toBe(false);
-    expect(verifyOAuthState(request("/", "nougate_oauth_state=other"), state).valid).toBe(false);
-  });
-
-  test("rejects a callback that carries no state", async () => {
-    const res = await authRoute("/api/auth/callback?code=abc");
-    expect(res?.status).toBe(400);
+    expect(badPassword?.status).toBe(401);
+    expect(noSuchUser?.status).toBe(401);
+    expect(await badPassword!.json()).toEqual(await noSuchUser!.json());
   });
 
   test("logout expires the session cookie", async () => {
-    const res = await authRoute("/api/auth/logout", sessionCookie(ALLOWED), "POST");
+    const res = await authRoute("/api/auth/logout", ownerCookie, "POST");
     expect(res!.headers.get("set-cookie")).toContain("Max-Age=0");
+  });
+});
+
+describe("User management", () => {
+  test("lists users and marks the caller", async () => {
+    const res = await usersRoute("/api/users", ownerCookie);
+    const list = await res!.json();
+    expect(list.some((entry: any) => entry.username === "owner" && entry.isCurrent)).toBe(true);
+    // The hash must never reach the dashboard.
+    expect(JSON.stringify(list)).not.toContain("$argon2");
+  });
+
+  test("creates a user that must set its own password", async () => {
+    const res = await usersRoute("/api/users", ownerCookie, "POST", {
+      username: "teammate",
+      password: "temporary-pass-1",
+    });
+
+    expect(res?.status).toBe(201);
+    expect((await res!.json()).mustChangePassword).toBe(true);
+  });
+
+  test("refuses to delete the account you are signed in with", async () => {
+    const res = await usersRoute(`/api/users/${owner.id}`, ownerCookie, "DELETE");
+    expect(res?.status).toBe(409);
+  });
+
+  test("refuses to delete the last remaining user", () => {
+    for (const user of users.listUsers()) {
+      if (users.countUsers() > 1) {
+        users.deleteUser(user.id);
+      }
+    }
+
+    expect(users.countUsers()).toBe(1);
+    expect(() => users.deleteUser(users.listUsers()[0].id)).toThrow(/last remaining user/);
   });
 });

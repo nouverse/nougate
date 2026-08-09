@@ -11,6 +11,7 @@ import { getAllProviders, getProvider, getDefaultProvider } from "@/core/registr
 import { handleMetricsRoute } from "@/router/metrics";
 import { handleApiKeysRoute } from "@/router/api-keys";
 import { handleCustomProvidersRoute } from "@/router/custom-providers";
+import { handleUsersRoute } from "@/router/users";
 import { CustomProvider } from "@/providers/custom";
 import { resolvePricing } from "@/core/metrics/pricing";
 import { projectPath } from "@/core/paths";
@@ -154,23 +155,37 @@ function createAdminEventStream(): Response {
 
 /**
  * Read and serve a frontend asset from the embedded dashboard bundle.
+ *
+ * Vite fingerprints asset filenames, so those are safe to cache forever. The
+ * entry document must never be cached: it is what points at the current bundle,
+ * and a stale copy keeps serving an old dashboard after a rebuild — which shows
+ * up as a route that "does not exist" rather than as an obvious caching problem.
  */
 function serveFrontendAsset(pathname: string): Response {
   const relativePath = pathname.replace("/frontend/", "") || "index.html";
   const lastSegment = relativePath.split("/").pop() || "";
   const isFile = lastSegment.includes(".");
-  
+
   const distDir = [
     join(import.meta.dir, "../../../frontend/dist"),
     projectPath("apps/frontend/dist"),
     projectPath("frontend/dist"),
   ].find((dir) => existsSync(dir)) || join(import.meta.dir, "../../../frontend/dist");
-  
+
   if (!isFile) {
-    return new Response(Bun.file(join(distDir, "index.html")));
+    return new Response(Bun.file(join(distDir, "index.html")), {
+      headers: { "Cache-Control": "no-store, must-revalidate" },
+    });
   }
-  
-  return new Response(Bun.file(join(distDir, relativePath)));
+
+  const isFingerprinted = relativePath.startsWith("assets/");
+  return new Response(Bun.file(join(distDir, relativePath)), {
+    headers: {
+      "Cache-Control": isFingerprinted
+        ? "public, max-age=31536000, immutable"
+        : "no-cache",
+    },
+  });
 }
 
 /**
@@ -237,6 +252,11 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
   const customProvidersResponse = await handleCustomProvidersRoute(req, url);
   if (customProvidersResponse) {
     return customProvidersResponse;
+  }
+
+  const usersResponse = await handleUsersRoute(req, url);
+  if (usersResponse) {
+    return usersResponse;
   }
 
   if (url.pathname === "/oauth/start") {

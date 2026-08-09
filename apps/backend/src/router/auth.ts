@@ -1,31 +1,19 @@
 import { getProxyConfig } from "@/config/manager";
-import { isAuthEnabled, isEmailAllowed } from "@/auth/config";
-import { buildAuthUrl, exchangeCode, readIdentity } from "@/auth/google";
-import { getActiveSession } from "@/auth/guard";
+import { getActiveUser } from "@/auth/guard";
+import { createLogoutCookie, createSessionCookie } from "@/auth/session";
 import {
-  createLogoutCookie,
-  createOAuthState,
-  createSessionCookie,
-  createStateClearCookie,
-  verifyOAuthState,
-} from "@/auth/session";
+  AuthError,
+  loginLockoutSeconds,
+  setPassword,
+  setUsername,
+  verifyCredentials,
+} from "@/auth/users";
 
 /**
- * The gateway base URL used to build redirect targets.
+ * The gateway base URL, used to decide whether cookies carry the Secure flag.
  */
 function getBaseUrl(): string {
   return (getProxyConfig()?.baseUrl || "http://localhost:3000").replace(/\/$/, "");
-}
-
-/**
- * Only allow same-origin relative paths as a post-login redirect target so the
- * `next` parameter cannot be used as an open redirect.
- */
-function sanitizeNext(next: string | null): string {
-  if (!next || !next.startsWith("/") || next.startsWith("//")) {
-    return "/frontend/";
-  }
-  return next;
 }
 
 /**
@@ -40,122 +28,107 @@ function jsonResponse(body: unknown, status = 200, cookie?: string): Response {
 }
 
 /**
- * Render the standalone page shown when a Google account is not on the allowlist.
+ * Shape a user for the dashboard. Never includes the password hash.
  */
-function renderForbiddenPage(email: string): Response {
-  const safeEmail = email.replace(/[<>&"]/g, "");
-  const html = `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>403 · Access denied</title>
-<style>
-  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
-         background:#0f1115; color:#e6e8ee; font-family:ui-sans-serif,system-ui,-apple-system,sans-serif; }
-  .card { max-width:26rem; padding:2.5rem; text-align:center; }
-  .code { font-size:3rem; font-weight:800; letter-spacing:-0.02em; margin:0 0 .5rem; }
-  h1 { font-size:1.05rem; margin:0 0 .75rem; font-weight:600; }
-  p { font-size:.85rem; line-height:1.6; color:#9aa1b1; margin:0 0 1.5rem; }
-  code { background:#1a1d26; padding:.15rem .4rem; border-radius:.3rem; font-size:.8rem; color:#e6e8ee; }
-  a { display:inline-block; padding:.6rem 1.2rem; border-radius:.6rem; background:#3b6ef5;
-      color:#fff; text-decoration:none; font-size:.8rem; font-weight:600; }
-</style>
-</head>
-<body>
-  <div class="card">
-    <p class="code">403</p>
-    <h1>This account can't access Nougate</h1>
-    <p><code>${safeEmail}</code> is not on the allowlist. Ask an administrator to add it to <code>auth.json</code>, then sign in again.</p>
-    <a href="/api/auth/login">Try another account</a>
-  </div>
-</body>
-</html>`;
-
-  return new Response(html, {
-    status: 403,
-    headers: { "Content-Type": "text/html; charset=utf-8" },
-  });
+function publicUser(user: { id: string; username: string; mustChangePassword: boolean }) {
+  return {
+    id: user.id,
+    username: user.username,
+    mustChangePassword: user.mustChangePassword,
+  };
 }
 
 /**
- * Redirect the browser while clearing the one-shot OAuth state cookie.
+ * Exchange a username and password for a session cookie.
  */
-function redirectWithCookies(location: string, cookies: string[]): Response {
-  const headers = new Headers({ Location: location });
-  for (const cookie of cookies) {
-    headers.append("Set-Cookie", cookie);
-  }
-  return new Response(null, { status: 302, headers });
-}
+async function handleLogin(req: Request): Promise<Response> {
+  const body = (await req.json().catch(() => ({}))) as any;
+  const username = String(body?.username ?? "");
+  const password = String(body?.password ?? "");
 
-/**
- * Start the Google consent flow.
- */
-function handleLogin(url: URL): Response {
-  const baseUrl = getBaseUrl();
-  const next = sanitizeNext(url.searchParams.get("next"));
-  const { state, cookie } = createOAuthState(next, baseUrl);
-
-  try {
-    return redirectWithCookies(buildAuthUrl(state, baseUrl), [cookie]);
-  } catch (error: any) {
-    return jsonResponse({ error: error.message || "Login is not configured" }, 500);
-  }
-}
-
-/**
- * Complete the Google consent flow and issue a session when the email is allowed.
- */
-async function handleCallback(req: Request, url: URL): Promise<Response> {
-  const baseUrl = getBaseUrl();
-  const clearState = createStateClearCookie(baseUrl);
-
-  const googleError = url.searchParams.get("error");
-  if (googleError) {
-    return jsonResponse({ error: `Google sign-in failed: ${googleError}` }, 400, clearState);
+  if (!username || !password) {
+    return jsonResponse({ error: "Username and password are required." }, 400);
   }
 
-  const { valid, next } = verifyOAuthState(req, url.searchParams.get("state"));
-  if (!valid) {
+  const lockedFor = loginLockoutSeconds(username);
+  if (lockedFor > 0) {
     return jsonResponse(
-      { error: "Invalid or expired sign-in request. Please start again." },
-      400,
-      clearState,
+      { error: `Too many failed attempts. Try again in ${lockedFor}s.`, code: "rate_limited" },
+      429,
     );
   }
 
-  const code = url.searchParams.get("code");
-  if (!code) {
-    return jsonResponse({ error: "Missing authorization code" }, 400, clearState);
+  const user = await verifyCredentials(username, password);
+  if (!user) {
+    // Deliberately identical for unknown users and wrong passwords.
+    console.warn(`[Auth] Failed sign-in attempt for "${username}"`);
+    return jsonResponse({ error: "Incorrect username or password." }, 401);
   }
+
+  console.log(`[Auth] ${user.username} signed in to the dashboard`);
+  return jsonResponse(
+    { user: publicUser(user) },
+    200,
+    createSessionCookie(user, getBaseUrl()),
+  );
+}
+
+/**
+ * Update the signed-in user's own username and/or password.
+ *
+ * Both fields are optional so one form can serve the first-run setup screen
+ * (where the password is mandatory and the username is a nicety) and the
+ * account settings page (where either may be changed alone).
+ */
+async function handleUpdateProfile(req: Request): Promise<Response> {
+  const user = getActiveUser(req);
+  if (!user) {
+    return jsonResponse({ error: "Sign in first." }, 401);
+  }
+
+  const body = (await req.json().catch(() => ({}))) as any;
+  const currentPassword = String(body?.currentPassword ?? "");
+  const newUsername = typeof body?.newUsername === "string" ? body.newUsername.trim() : "";
+  const newPassword = typeof body?.newPassword === "string" ? body.newPassword : "";
+
+  if (!newUsername && !newPassword) {
+    return jsonResponse({ error: "Nothing to change." }, 400);
+  }
+
+  // Re-authenticate even for a forced change: the session cookie alone must not
+  // be enough to take over an account left signed in on a shared machine.
+  const verified = await verifyCredentials(user.username, currentPassword);
+  if (!verified) {
+    return jsonResponse({ error: "Current password is incorrect." }, 401);
+  }
+
+  let updated = user;
 
   try {
-    const tokens = await exchangeCode(code, baseUrl);
-    if (!tokens.id_token) {
-      return jsonResponse({ error: "Google did not return an ID token" }, 502, clearState);
+    if (newUsername) {
+      updated = setUsername(user.id, newUsername);
     }
-
-    const identity = readIdentity(tokens.id_token);
-    if (!identity.emailVerified) {
-      console.warn(`[Auth] Rejected sign-in for unverified email ${identity.email}`);
-      return renderForbiddenPage(identity.email);
+    if (newPassword) {
+      await setPassword(user.id, newPassword);
+      updated = { ...updated, mustChangePassword: false };
     }
-
-    if (!isEmailAllowed(identity.email)) {
-      console.warn(`[Auth] Rejected sign-in for ${identity.email} (not on allowlist)`);
-      return renderForbiddenPage(identity.email);
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return jsonResponse({ error: error.message }, error.status);
     }
-
-    console.log(`[Auth] ${identity.email} signed in to the dashboard`);
-    return redirectWithCookies(`${baseUrl}${next}`, [
-      createSessionCookie(identity.email, baseUrl),
-      clearState,
-    ]);
-  } catch (error: any) {
-    console.error("[Auth] Sign-in failed:", error);
-    return jsonResponse({ error: error.message || "Sign-in failed" }, 500, clearState);
+    throw error;
   }
+
+  const changes = [newUsername && "username", newPassword && "password"].filter(Boolean);
+  console.log(`[Auth] ${user.username} updated their ${changes.join(" and ")}`);
+
+  // Re-issue the cookie: it carries the username, and the forced-change flag
+  // must stop applying immediately.
+  return jsonResponse(
+    { user: publicUser(updated) },
+    200,
+    createSessionCookie(updated, getBaseUrl()),
+  );
 }
 
 /**
@@ -167,28 +140,19 @@ export async function handleAuthRoute(req: Request, url: URL): Promise<Response 
   }
 
   if (url.pathname === "/api/auth/me" && req.method === "GET") {
-    if (!isAuthEnabled()) {
-      return jsonResponse({ authEnabled: false, email: null });
+    const user = getActiveUser(req);
+    if (!user) {
+      return jsonResponse({ user: null }, 401);
     }
-    const session = getActiveSession(req);
-    if (!session) {
-      return jsonResponse({ authEnabled: true, email: null }, 401);
-    }
-    return jsonResponse({ authEnabled: true, email: session.email });
+    return jsonResponse({ user: publicUser(user) });
   }
 
-  if (url.pathname === "/api/auth/login" && req.method === "GET") {
-    if (!isAuthEnabled()) {
-      return redirectWithCookies(`${getBaseUrl()}/frontend/`, []);
-    }
-    return handleLogin(url);
+  if (url.pathname === "/api/auth/login" && req.method === "POST") {
+    return handleLogin(req);
   }
 
-  if (url.pathname === "/api/auth/callback" && req.method === "GET") {
-    if (!isAuthEnabled()) {
-      return redirectWithCookies(`${getBaseUrl()}/frontend/`, []);
-    }
-    return handleCallback(req, url);
+  if (url.pathname === "/api/auth/profile" && req.method === "POST") {
+    return handleUpdateProfile(req);
   }
 
   if (url.pathname === "/api/auth/logout" && (req.method === "POST" || req.method === "GET")) {
