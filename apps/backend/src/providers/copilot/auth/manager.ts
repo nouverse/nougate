@@ -1,5 +1,6 @@
 import { getProxyConfig as getGlobalProxyConfig } from '@/config/manager';
 import { adminEventBus } from '@/core/events';
+import { capRotationPool } from '@/core/rotation-pool';
 import type { UpstreamErrorKind } from '@/core/upstream-errors';
 import { ensureSessionToken, TokenExchangeError } from './token-exchange';
 import { loadConfig, saveConfig, type SelectionStrategy } from './storage';
@@ -219,6 +220,11 @@ export async function getBestAccount(
       }
       return priorityB - priorityA;
     });
+
+    // MAX_ACCOUNT_MULTIPLEXING bounds how wide the rotation gets, not which
+    // account wins: the list is already ranked, so this only stops a request
+    // from falling further down it than the operator allows.
+    candidates = capRotationPool(candidates);
 
     // Simple offset to vary selection across multiple parallel requests
     const offset = process.pid % Math.max(candidates.length, 1);

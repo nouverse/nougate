@@ -6,6 +6,7 @@ import type {
   IProviderQuota,
   ProviderExecuteParams,
 } from '@/core/interfaces';
+import { type JitterConfig, normalizeJitterConfig } from '@/core/jitter';
 import {
   getAccounts,
   getBestAccount as getBestAntigravityAccount,
@@ -354,6 +355,13 @@ export class AntigravityProvider implements IProvider {
     const antigravityConfig = getAntigravityConfig();
     setInterval(refreshAllQuotas, antigravityConfig.quota.refreshIntervalMs);
     refreshAllQuotas();
+  }
+
+  /**
+   * Google is the strictest upstream here, so the window is the widest.
+   */
+  getJitterConfig(): JitterConfig {
+    return normalizeJitterConfig(getAntigravityConfig().features);
   }
 
   /**

@@ -15,6 +15,7 @@ readonly id: string;            // lowercase, [a-z][a-z0-9_-]* — becomes the m
 readonly displayName: string;   // see the getter warning below
 
 init(): Promise<void>;
+getJitterConfig(): JitterConfig;   // see below — required, not a capability
 getBestAccount(options: AccountRequestOptions): Promise<IAccount | null>;
 updateAccountUsage(accountId, success, meta): Promise<void>;
 getAccounts(): IAccount[];
@@ -27,6 +28,32 @@ Everything else is optional and is a **capability**: implementing it is what tur
 the corresponding dashboard feature on. `getQuotas()` gives you the Quota tab.
 `getConfig()`/`updateConfig()` give you the Provider Config tab. `addAccount()`
 gives you the add-account button. No registration list, no switch statement.
+
+### `getJitterConfig()` is required, and you do not implement the waiting
+
+Jitter used to be three fields copied into each provider's config plus a
+`min + random * (max - min)` block next to `fetch`. That made it unenforceable:
+an operator could not set a minimum spacing for the whole deployment, and a new
+provider could ship with no delay at all.
+
+So the shape is `JitterConfig` from `core/jitter.ts`, and the sleep happens once
+in `executeProviderRequest` — the single path both protocol handlers use to reach
+a provider. Your job is only to declare the window:
+
+```ts
+getJitterConfig(): JitterConfig {
+  return normalizeJitterConfig(getYourConfig().features);
+}
+```
+
+Returning `DEFAULT_JITTER_CONFIG` is a fine answer. Omitting the method is not,
+and will not compile. **Do not put a jitter sleep in your executor** — it would
+stack on top of the one the gateway already applied, and it would sit below the
+`BOTTOM_JITTER` floor rather than above it.
+
+If your provider stores config in a JSON file, extend `JitterConfig` on its
+features interface (`AntigravityFeaturesConfig`, `CopilotFeaturesConfig`) so the
+three field names cannot drift.
 
 ### `displayName` must read through to live state
 
@@ -164,6 +191,12 @@ scale — the dashboard renders all providers with the same bars.
 cooldown, then pick the highest health score, breaking ties by least-recently-used.
 Return `null` when nothing is available; the protocol handler turns that into a
 protocol-shaped error.
+
+Once the list is ranked, pass it through `capRotationPool()` from
+`core/rotation-pool.ts` before selecting. That applies `MAX_ACCOUNT_MULTIPLEXING`,
+which bounds how many accounts an upstream sees rotating behind one egress IP.
+It only trims the tail of an already-sorted list, so it never changes which
+account wins — but the list must be sorted first, or it will bench the wrong ones.
 
 ---
 

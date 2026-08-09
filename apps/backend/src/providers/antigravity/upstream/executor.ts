@@ -359,15 +359,9 @@ export class AntigravityExecutor {
       let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
       try {
-        if (providerConfig.features.jitterEnabled) {
-          const jitterMs =
-            providerConfig.features.jitterMinMs +
-            Math.random() * (providerConfig.features.jitterMaxMs - providerConfig.features.jitterMinMs);
-          await new Promise((resolve) => setTimeout(resolve, jitterMs));
-        }
-
-        // Started after the jitter, so the anti-fingerprinting delay does not
-        // eat into the model's request budget.
+        // Jitter is applied once per request by `executeProviderRequest`, before
+        // this executor is reached, so the floor an operator sets in
+        // BOTTOM_JITTER cannot be reimplemented away here.
         timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
         const googleRes = await fetch(googleUrl, {

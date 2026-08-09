@@ -6,6 +6,7 @@ import type {
   IProviderQuota,
   ProviderExecuteParams,
 } from '@/core/interfaces';
+import { type JitterConfig, normalizeJitterConfig } from '@/core/jitter';
 import {
   ACCOUNT_WIDE,
   getAccounts,
@@ -42,6 +43,10 @@ export class CopilotProvider implements IProvider {
     await loadCopilotConfig();
     await loadModelSpecOverrides();
     await initManager();
+  }
+
+  getJitterConfig(): JitterConfig {
+    return normalizeJitterConfig(getCopilotConfig().features);
   }
 
   async getBestAccount(options: AccountRequestOptions): Promise<IAccount | null> {

@@ -6,6 +6,7 @@ import type {
   IProvider,
   ProviderExecuteParams,
 } from '@/core/interfaces';
+import type { JitterConfig } from '@/core/jitter';
 import { getProxyConfig } from '@/config/manager';
 import { getCavemanPrompt } from '@/core/caveman';
 import {
@@ -120,6 +121,14 @@ export class CustomProvider implements IProvider {
 
   async init(): Promise<void> {
     await this.refresh();
+  }
+
+  /**
+   * Read through to the record, so a jitter change made in the dashboard takes
+   * effect on the next request rather than the next restart.
+   */
+  getJitterConfig(): JitterConfig {
+    return this.record.jitter;
   }
 
   /**

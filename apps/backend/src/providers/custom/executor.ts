@@ -1,6 +1,7 @@
 import type { IModelSpec } from '@/core/interfaces';
 import { getProxyConfig } from '@/config/manager';
 import { adminEventBus } from '@/core/events';
+import { capRotationPool } from '@/core/rotation-pool';
 import { ProviderUnavailableError } from '@/core/upstream-errors';
 import {
   type CustomProviderKeyRecord,
@@ -189,11 +190,23 @@ export async function executeCustomRequest(
   options: CustomExecuteOptions,
 ): Promise<CustomExecuteResult> {
   const { provider, body, modelSpec } = options;
-  const keys = await listProviderKeys(provider.id);
+  const stored = await listProviderKeys(provider.id);
 
-  if (keys.length === 0) {
+  if (stored.length === 0) {
     throw new NoUsableKeyError(provider.id);
   }
+
+  // Cap the working set once, up front, so everything downstream — selection,
+  // the retry budget, and the "everything is cooling" check — agrees on which
+  // keys exist for this request. Ranked the same way `selectKey` ranks, so the
+  // cap only removes keys that were already last in line.
+  const keys = capRotationPool(
+    [...stored].sort((a, b) =>
+      b.healthScore !== a.healthScore
+        ? b.healthScore - a.healthScore
+        : a.lastUsed - b.lastUsed,
+    ),
+  );
 
   const maxAttempts = Math.min(
     Math.max((() => {

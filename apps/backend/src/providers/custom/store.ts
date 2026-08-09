@@ -1,5 +1,6 @@
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { getDb, t } from '@/core/db';
+import { type JitterConfig, normalizeJitterConfig } from '@/core/jitter';
 import { getProvider } from '@/core/registry';
 
 export type CustomApiStyle = 'openai' | 'anthropic';
@@ -11,6 +12,12 @@ export interface CustomProviderRecord {
   apiStyle: CustomApiStyle;
   enabled: boolean;
   extraHeaders: Record<string, string>;
+  /**
+   * How long to wait before this provider's requests go upstream. Per provider
+   * rather than shared: a self-hosted endpoint has no reason to be spaced out
+   * the way a rate-limited commercial one does.
+   */
+  jitter: JitterConfig;
   createdAt: number;
   updatedAt: number;
 }
@@ -68,6 +75,15 @@ function rowToProvider(row: any): CustomProviderRecord {
     apiStyle: row.apiStyle === 'anthropic' ? 'anthropic' : 'openai',
     enabled: row.enabled === 1,
     extraHeaders: row.extraHeaders ? safeParseHeaders(row.extraHeaders) : {},
+    // A null column is a provider created before jitter was configurable, so it
+    // takes the shared default rather than being read as "no delay".
+    jitter: normalizeJitterConfig({
+      jitterEnabled: row.jitterEnabled === null || row.jitterEnabled === undefined
+        ? undefined
+        : row.jitterEnabled === 1,
+      jitterMinMs: row.jitterMinMs ?? undefined,
+      jitterMaxMs: row.jitterMaxMs ?? undefined,
+    }),
     createdAt: Number(row.createdAt),
     updatedAt: Number(row.updatedAt),
   };
@@ -149,6 +165,7 @@ export interface CreateCustomProviderInput {
   apiStyle?: CustomApiStyle;
   extraHeaders?: Record<string, string>;
   enabled?: boolean;
+  jitter?: Partial<JitterConfig>;
 }
 
 export async function createCustomProvider(input: CreateCustomProviderInput): Promise<CustomProviderRecord> {
@@ -174,6 +191,7 @@ export async function createCustomProvider(input: CreateCustomProviderInput): Pr
     apiStyle: input.apiStyle === 'anthropic' ? 'anthropic' : 'openai',
     enabled: input.enabled !== false,
     extraHeaders: input.extraHeaders ?? {},
+    jitter: normalizeJitterConfig(input.jitter),
     createdAt: now,
     updatedAt: now,
   };
@@ -185,6 +203,9 @@ export async function createCustomProvider(input: CreateCustomProviderInput): Pr
     apiStyle: record.apiStyle,
     enabled: record.enabled ? 1 : 0,
     extraHeaders: JSON.stringify(record.extraHeaders),
+    jitterEnabled: record.jitter.jitterEnabled ? 1 : 0,
+    jitterMinMs: record.jitter.jitterMinMs,
+    jitterMaxMs: record.jitter.jitterMaxMs,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   });
@@ -210,6 +231,9 @@ export async function updateCustomProvider(
     apiStyle: updates.apiStyle ?? existing.apiStyle,
     enabled: updates.enabled ?? existing.enabled,
     extraHeaders: updates.extraHeaders ?? existing.extraHeaders,
+    // Merged field by field, so the dashboard can send just the one control the
+    // user touched without resetting the other two to defaults.
+    jitter: normalizeJitterConfig({ ...existing.jitter, ...updates.jitter }),
     updatedAt: Date.now(),
   };
 
@@ -221,6 +245,9 @@ export async function updateCustomProvider(
       apiStyle: merged.apiStyle,
       enabled: merged.enabled ? 1 : 0,
       extraHeaders: JSON.stringify(merged.extraHeaders),
+      jitterEnabled: merged.jitter.jitterEnabled ? 1 : 0,
+      jitterMinMs: merged.jitter.jitterMinMs,
+      jitterMaxMs: merged.jitter.jitterMaxMs,
       updatedAt: merged.updatedAt,
     })
     .where(eq(t.customProviders.id, merged.id));

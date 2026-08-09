@@ -4,9 +4,16 @@ import { transformGoogleEventToOpenAI } from "@/providers/antigravity/mappers/op
 import { loadProxyConfig } from "@/config/manager";
 import { loadAntigravityConfig } from "@/providers/antigravity";
 import type { IModelSpec } from "@/core/interfaces";
+import type { JitterConfig } from "@/core/jitter";
 import { resolveModel } from "@/core/model-resolver";
 import { OpenAIProtocolHandler } from "@/protocols/openai/handler";
 import { registerProvider, unregisterProvider } from "@/core/registry";
+
+/**
+ * Mocks opt out of the delay: this suite exercises transformation, and the real
+ * windows would add seconds of sleep to every handled request.
+ */
+const NO_JITTER: JitterConfig = { jitterEnabled: false, jitterMinMs: 0, jitterMaxMs: 0 };
 
 beforeAll(async () => {
   await loadProxyConfig();
@@ -313,6 +320,7 @@ describe("Unit Tests: OpenAIProtocolHandler", () => {
         id: "antigravity",
         displayName: "Google Antigravity",
         init: async () => {},
+        getJitterConfig: () => NO_JITTER,
         getBestAccount: async () => null,
         updateAccountUsage: async () => {},
         getAccounts: () => [],
@@ -342,6 +350,7 @@ describe("Unit Tests: OpenAIProtocolHandler", () => {
       id,
       displayName: id,
       init: async () => {},
+      getJitterConfig: () => NO_JITTER,
       getBestAccount: async () => null,
       updateAccountUsage: async () => {},
       getAccounts: () => [],

@@ -3,12 +3,13 @@ import { mkdir } from 'fs/promises';
 import { dirname, join } from 'path';
 import { dataPath } from '@/core/paths';
 import { writeJsonAtomic } from '@/core/state-file';
+import type { JitterConfig } from '@/core/jitter';
 
-export interface CopilotFeaturesConfig {
-  jitterEnabled: boolean;
-  jitterMinMs: number;
-  jitterMaxMs: number;
-}
+/**
+ * The jitter fields come from the shared `JitterConfig` so this provider cannot
+ * drift from the shape the gateway enforces the `BOTTOM_JITTER` floor against.
+ */
+export interface CopilotFeaturesConfig extends JitterConfig {}
 
 export interface CopilotConfig {
   features: CopilotFeaturesConfig;

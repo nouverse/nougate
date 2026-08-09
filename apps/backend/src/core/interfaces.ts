@@ -1,3 +1,4 @@
+import type { JitterConfig } from '@/core/jitter';
 import type { RequestContext } from '@/core/request-context';
 
 /**
@@ -129,6 +130,21 @@ export interface IProvider {
   readonly accountFlow?: AccountFlow;
 
   init(): Promise<void>;
+
+  /**
+   * The delay window applied before this provider's requests leave the gateway.
+   *
+   * Required, not a capability: every upstream is somebody's account being used
+   * from one egress IP, and a provider that ships without a considered answer
+   * here is a provider that machine-guns its upstream. Returning
+   * `DEFAULT_JITTER_CONFIG` is a valid answer — omitting the method is not, and
+   * will not compile.
+   *
+   * The gateway, not the provider, does the waiting: see
+   * `executeProviderRequest`, which also applies the `BOTTOM_JITTER` floor.
+   */
+  getJitterConfig(): JitterConfig;
+
   getBestAccount(options: AccountRequestOptions): Promise<IAccount | null>;
   updateAccountUsage(
     accountId: string,

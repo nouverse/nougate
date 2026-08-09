@@ -171,6 +171,9 @@ export async function initDb(): Promise<void> {
  */
 const ADDED_COLUMNS: Array<{ table: string; column: string; type: string }> = [
   { table: 'token_usage_logs', column: 'compression_breakdown', type: 'TEXT' },
+  { table: 'custom_providers', column: 'jitter_enabled', type: 'INTEGER' },
+  { table: 'custom_providers', column: 'jitter_min_ms', type: 'INTEGER' },
+  { table: 'custom_providers', column: 'jitter_max_ms', type: 'INTEGER' },
 ];
 
 async function addMissingColumns(): Promise<void> {

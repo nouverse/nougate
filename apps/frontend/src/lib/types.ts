@@ -163,6 +163,16 @@ export interface CustomProviderModel {
   effectiveOutputPricePer1M?: number;
 }
 
+/**
+ * The delay window applied before requests leave the gateway. Every provider
+ * has one; `BOTTOM_JITTER` on the server can raise it but never lower it.
+ */
+export interface JitterConfig {
+  jitterEnabled: boolean;
+  jitterMinMs: number;
+  jitterMaxMs: number;
+}
+
 export interface CustomProviderSummary {
   id: string;
   displayName: string;
@@ -170,6 +180,7 @@ export interface CustomProviderSummary {
   apiStyle: CustomApiStyle;
   enabled: boolean;
   extraHeaders: Record<string, string>;
+  jitter: JitterConfig;
   createdAt: number;
   updatedAt: number;
   keyCount?: number;

@@ -285,6 +285,15 @@ NOUGATE_DB_PATH=./data/nougate.db   # SQLite file location (auto-resolved; rarel
 DEFAULT_INPUT_PRICE_1M=0            # blanket price fallback; 0 = off, models stay "unpriced"
 DEFAULT_OUTPUT_PRICE_1M=0
 
+# Pod limits. Both are unset by default, and unset means "not enforced" — neither
+# has a built-in value that would silently change how an existing deployment behaves.
+BOTTOM_JITTER=                      # ms; minimum delay before ANY provider's request
+                                    # goes upstream. Raises a provider's own window and
+                                    # overrides a provider that turned jitter off.
+                                    # BOTTOM_JITTER_MS is accepted as an alias.
+MAX_ACCOUNT_MULTIPLEXING=           # cap on how many accounts a provider may rotate
+                                    # through — the top N of its own ranking.
+
 # Dashboard sessions. Optional — one is generated into data/.session-secret on
 # first run if unset. Set it to keep sessions valid across a wiped data volume.
 SESSION_SECRET=<openssl rand -base64 32>

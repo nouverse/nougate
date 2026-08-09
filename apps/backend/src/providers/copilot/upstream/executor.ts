@@ -4,7 +4,6 @@ import { getBestAccount, updateAccountUsage, markCooldown, cooldownScope } from 
 import { classifyUpstreamError, ModelUnavailableError } from '@/core/upstream-errors';
 import { getCopilotHeaders } from './headers';
 import { getProxyConfig } from '@/config/manager';
-import { getCopilotConfig } from '../config/provider-config';
 
 export interface CopilotExecuteOptions {
   body: any;
@@ -58,14 +57,10 @@ export class CopilotExecutor {
       let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
       try {
-        const copilotConfig = getCopilotConfig();
-        if (copilotConfig.features.jitterEnabled) {
-          const jitterMs =
-            copilotConfig.features.jitterMinMs +
-            Math.random() * (copilotConfig.features.jitterMaxMs - copilotConfig.features.jitterMinMs);
-          await new Promise((resolve) => setTimeout(resolve, jitterMs));
-        }
-
+        // Jitter is applied once per request by `executeProviderRequest`, before
+        // this executor is reached, so the floor an operator sets in
+        // BOTTOM_JITTER cannot be reimplemented away here.
+        //
         // Every model spec declares a timeoutMs and nothing used to read it,
         // so a stalled upstream connection hung the request forever — the
         // server runs with idleTimeout disabled, so nothing else would cut it.

@@ -91,6 +91,9 @@ export const ddl = [
     api_style TEXT NOT NULL DEFAULT 'openai',
     enabled INTEGER NOT NULL DEFAULT 1,
     extra_headers TEXT,
+    jitter_enabled INTEGER,
+    jitter_min_ms INTEGER,
+    jitter_max_ms INTEGER,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   )`,

@@ -9,6 +9,7 @@ import type { RequestContext } from "@/core/request-context";
 import { getAllProviders } from "@/core/registry";
 import { prepareRequestPayload } from "@/core/metrics/compression";
 import { instrumentResponse } from "@/core/metrics/tracker";
+import { executeProviderRequest } from "@/core/provider-execute";
 
 /**
  * Build a JSON response with the shared OpenAI proxy headers.
@@ -149,7 +150,7 @@ export class OpenAIProtocolHandler implements IProtocolHandler {
     // escaping into the server's default HTML error page.
     let response: Response;
     try {
-      response = await ctx.provider.execute({
+      response = await executeProviderRequest(ctx.provider, {
         protocol: "openai",
         body: compressedBody,
         resolvedModel: ctx.resolvedModel,

@@ -1,5 +1,6 @@
 import { getProxyConfig as getGlobalProxyConfig } from '@/config/manager';
 import { adminEventBus } from '@/core/events';
+import { capRotationPool } from '@/core/rotation-pool';
 import type { UpstreamErrorKind } from '@/core/upstream-errors';
 import { getAntigravityConfig, loadAntigravityConfig } from '@/providers/antigravity/provider-config';
 import { generateFingerprint } from '@/providers/antigravity/upstream/headers';
@@ -409,6 +410,11 @@ export async function getBestAccount(pool?: "cli" | "sandbox", model?: string, c
       }
       return priorityB - priorityA;
     });
+
+    // MAX_ACCOUNT_MULTIPLEXING bounds how wide the rotation gets, not which
+    // account wins: the list is already ranked, so this only stops a request
+    // from falling further down it than the operator allows.
+    candidates = capRotationPool(candidates);
 
     const offset = getPidOffset();
 

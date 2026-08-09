@@ -106,6 +106,11 @@ export const customProviders = sqliteTable('custom_providers', {
   apiStyle: text('api_style').notNull().default('openai'),
   enabled: integer('enabled').notNull().default(1),
   extraHeaders: text('extra_headers'),
+  // Nullable rather than defaulted: null means "never configured", which reads
+  // back as the shared DEFAULT_JITTER_CONFIG instead of a stored 0.
+  jitterEnabled: integer('jitter_enabled'),
+  jitterMinMs: integer('jitter_min_ms'),
+  jitterMaxMs: integer('jitter_max_ms'),
   createdAt: integer('created_at').notNull(),
   updatedAt: integer('updated_at').notNull(),
 });

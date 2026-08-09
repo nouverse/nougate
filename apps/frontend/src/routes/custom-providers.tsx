@@ -8,7 +8,7 @@ import {
   useInvalidateCustomProviders,
 } from '@/hooks/useQueries';
 import { api } from '@/lib/api';
-import { CustomApiStyle, CustomProviderModel } from '@/lib/types';
+import { CustomApiStyle, CustomProviderModel, JitterConfig } from '@/lib/types';
 import { ConfirmModal } from '@/components/shared/ConfirmModal';
 import { CollapsibleCard } from '@/components/shared/CollapsibleCard';
 import { CopyButton, ModelIdChip } from '@/components/shared/CopyButton';
@@ -589,6 +589,7 @@ function ProviderSettings({
   const [displayName, setDisplayName] = useState(detail.displayName);
   const [apiStyle, setApiStyle] = useState<CustomApiStyle>(detail.apiStyle);
   const [enabled, setEnabled] = useState<boolean>(detail.enabled);
+  const [jitter, setJitter] = useState<JitterConfig>(detail.jitter);
 
   // Re-seed the form whenever a different provider is selected.
   useEffect(() => {
@@ -596,7 +597,8 @@ function ProviderSettings({
     setDisplayName(detail.displayName);
     setApiStyle(detail.apiStyle);
     setEnabled(detail.enabled);
-  }, [detail.id, detail.baseUrl, detail.displayName, detail.apiStyle, detail.enabled]);
+    setJitter(detail.jitter);
+  }, [detail.id, detail.baseUrl, detail.displayName, detail.apiStyle, detail.enabled, detail.jitter]);
 
   return (
     <div className="card bg-base-200 border border-base-300 shadow-sm">
@@ -668,12 +670,66 @@ function ProviderSettings({
           </span>
         </label>
 
+        <div className="divider my-0 text-[10px] text-base-content/40">Request jitter</div>
+
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            className="toggle toggle-sm toggle-primary shrink-0 mt-0.5"
+            checked={jitter.jitterEnabled}
+            onChange={(event) => setJitter({ ...jitter, jitterEnabled: event.target.checked })}
+          />
+          <span className="min-w-0">
+            <span className="label-text font-semibold text-xs text-base-content/75 block">
+              Delay requests before they go upstream
+            </span>
+            <span className="text-[10px] text-base-content/50 block leading-relaxed">
+              A random wait inside the window below, so requests do not leave on a machine-perfect
+              cadence. If the server sets <code className="font-mono">BOTTOM_JITTER</code>, that floor
+              applies on top of these values — and overrides this switch.
+            </span>
+          </span>
+        </label>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Field label="Minimum delay (ms)">
+            <input
+              type="number"
+              min={0}
+              className="input input-bordered input-sm w-full bg-base-100 font-mono text-xs"
+              value={jitter.jitterMinMs}
+              onChange={(event) =>
+                setJitter({ ...jitter, jitterMinMs: Math.max(0, Number(event.target.value) || 0) })
+              }
+            />
+          </Field>
+
+          <Field
+            label="Maximum delay (ms)"
+            hint={
+              jitter.jitterMaxMs < jitter.jitterMinMs
+                ? 'Below the minimum — the server will raise it to match.'
+                : undefined
+            }
+          >
+            <input
+              type="number"
+              min={0}
+              className="input input-bordered input-sm w-full bg-base-100 font-mono text-xs"
+              value={jitter.jitterMaxMs}
+              onChange={(event) =>
+                setJitter({ ...jitter, jitterMaxMs: Math.max(0, Number(event.target.value) || 0) })
+              }
+            />
+          </Field>
+        </div>
+
         <div className="flex justify-end">
           <button
             type="button"
             className="btn btn-sm btn-primary rounded-xl font-semibold gap-1.5"
             disabled={isSaving}
-            onClick={() => onSave({ displayName, baseUrl, apiStyle, enabled })}
+            onClick={() => onSave({ displayName, baseUrl, apiStyle, enabled, jitter })}
           >
             <Save className="w-3.5 h-3.5" />
             Save

@@ -114,3 +114,56 @@ if (effectiveJitterMs > 0) {
 * **WARP Egress Intact:** Traffic outbound continues to route through WARP tunnel.
 * **Controlled Rotation Density:** Max 5 accounts rotating concurrently per pod instance.
 * **Enforced Delay Floor:** Admins can enforce global minimum delay (e.g. `BOTTOM_JITTER=1500`) via container ENV, overriding any user/config attempt to set zero delay.
+
+---
+
+## 📌 Implementation notes (as shipped)
+
+The behaviour matches the objective above. Three things landed differently from
+the sketch in the code samples, each for a stated reason.
+
+### No built-in default for either variable
+
+The table above gives `MAX_ACCOUNT_MULTIPLEXING` a default of `5`. It shipped
+with **no default**: unset means uncapped, exactly as every deployment behaves
+today. A default of 5 would silently bench accounts an operator had already added,
+on nothing more than an upgrade. `BOTTOM_JITTER` behaves the same way — unset
+means no clamping at all, and providers get the window they configured.
+
+### Neither value is persisted into `config.json`
+
+Section 2 parses both into `config.rotation`. They are instead read from the
+environment on each use, via `core/jitter.ts` and `core/rotation-pool.ts`.
+Merging them into the saved config would write the value to disk, so removing the
+variable from the container would leave the old floor in force — the opposite of
+"unset means not enforced". `RotationConfig` is unchanged.
+
+### Jitter is applied by the gateway, not by each provider
+
+Section 4 shows the clamp at each provider's call site. Doing it there is what
+made the floor unenforceable in the first place: three duplicated fields and three
+duplicated sleeps, any of which a new provider could omit. Instead:
+
+- `JitterConfig` lives in `core/jitter.ts` and every provider config uses it.
+- `getJitterConfig()` is a **required** member of `IProvider` — a new provider
+  that omits it does not compile.
+- The sleep happens once, in `executeProviderRequest`, the single path both
+  protocol handlers use to reach a provider. The per-provider jitter blocks in
+  the Antigravity and Copilot executors were removed.
+
+One consequence worth knowing: jitter is now applied **once per client request**
+rather than once per upstream retry attempt. Retries already carry their own
+parsed backoff, so this removes a delay that was compounding, not one that was
+doing work.
+
+### Where the cap is applied
+
+`capRotationPool()` trims the tail of an **already-ranked** candidate list in
+`getBestAccount` (Antigravity, Copilot) and in the key rotation for custom
+providers. It never reorders, so it cannot change which account wins — only how
+far down the ranking a request may fall.
+
+Antigravity's cache-first sticky account is honoured before the cap, which is
+what preserves prompt caching. This does not widen the working set: every
+non-sticky selection goes through the cap, so the set of accounts that can ever
+become sticky is itself capped.
