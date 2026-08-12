@@ -144,32 +144,32 @@ function findCurrentTurnStartIndex(messages: any[]): number {
 }
 
 /**
- * Collect tool call IDs that are missing cached signatures in prior turns.
+ * Strip the "sig:<signature>:" prefix some clients prepend to tool call IDs.
  */
-function collectUnsignedCallIds(messages: any[], thinkingEnabled: boolean): Set<string> {
-  const unsignedCallIds = new Set<string>();
-
-  if (!thinkingEnabled) {
-    return unsignedCallIds;
+function cleanToolCallId(rawId: unknown): string {
+  const id = typeof rawId === "string" ? rawId : "";
+  if (!id.startsWith("sig:")) {
+    return id;
   }
 
+  const idParts = id.split(":");
+  return idParts.length >= 3 ? idParts.slice(2).join(":") : id;
+}
+
+/**
+ * Report how many function calls in the history have no cached signature.
+ */
+function logUnsignedCallCount(messages: any[], thinkingEnabled: boolean): void {
+  if (!thinkingEnabled) {
+    return;
+  }
+
+  const unsignedCallIds = new Set<string>();
   for (const message of messages) {
-    if (!message?.tool_calls) {
-      continue;
-    }
-
-    for (const toolCall of message.tool_calls) {
-      let cleanId = toolCall.id || "";
-      if (cleanId.startsWith("sig:")) {
-        const idParts = cleanId.split(":");
-        if (idParts.length >= 3) {
-          cleanId = idParts.slice(2).join(":");
-        }
-      }
-
+    for (const toolCall of message?.tool_calls || []) {
+      const cleanId = cleanToolCallId(toolCall.id);
       if (!getSignatureByCallId(cleanId)) {
         unsignedCallIds.add(cleanId);
-        unsignedCallIds.add(toolCall.id || "");
       }
     }
   }
@@ -179,8 +179,6 @@ function collectUnsignedCallIds(messages: any[], thinkingEnabled: boolean): Set<
       `[Signature] Found ${unsignedCallIds.size} unsigned function calls in history, will convert to text summaries`,
     );
   }
-
-  return unsignedCallIds;
 }
 
 /**
@@ -188,14 +186,9 @@ function collectUnsignedCallIds(messages: any[], thinkingEnabled: boolean): Set<
  */
 function buildToolResponseMap(
   messages: any[],
-  unsignedCallIds: Set<string>,
   toolCallNameMap: Map<string, string>,
 ): Map<string, { name: string; content: string }> {
   const toolResponseMap = new Map<string, { name: string; content: string }>();
-
-  if (unsignedCallIds.size === 0) {
-    return toolResponseMap;
-  }
 
   for (const message of messages) {
     if (message?.role !== "tool" || !message.tool_call_id) {
@@ -228,10 +221,7 @@ function buildToolResponseMap(
 function buildToolResponseParts(
   message: any,
   googleModel: string,
-  isInCurrentTurn: boolean,
-  unsignedCallIds: Set<string>,
   toolCallNameMap: Map<string, string>,
-  keepThinking: boolean,
   convertedCallIds: Set<string>,
 ): any[] {
   // If the corresponding tool_call was converted to a text summary, skip functionResponse
@@ -337,63 +327,78 @@ function appendThoughtParts(parts: any[], message: any, sessionId: string | unde
 }
 
 /**
+ * Render one tool call — and its result, when known — as plain text.
+ */
+function buildToolCallSummary(
+  toolCall: any,
+  toolResponseMap: Map<string, { name: string; content: string }>,
+): string {
+  let argsString: string;
+  try {
+    const args =
+      typeof toolCall.function.arguments === "string"
+        ? JSON.parse(toolCall.function.arguments || "{}")
+        : toolCall.function.arguments;
+    argsString = JSON.stringify(args ?? {});
+  } catch {
+    argsString = toolCall.function.arguments || "{}";
+  }
+
+  if (argsString.length > 300) {
+    argsString = `${argsString.substring(0, 300)}...`;
+  }
+
+  let summary = `[Tool Call: ${toolCall.function.name}(${argsString})]`;
+  const response =
+    toolResponseMap.get(toolCall.id) || toolResponseMap.get(cleanToolCallId(toolCall.id));
+  if (response) {
+    summary += `\n[Tool Result: ${response.content}]`;
+  }
+
+  return summary;
+}
+
+/**
  * Append function call parts from assistant messages.
+ *
+ * Upstream validates the thought signature on the *first* functionCall part of a
+ * model turn, so a turn is all-or-nothing: if the leading call cannot be signed,
+ * every call in that turn has to be downgraded to text. Downgrading only the
+ * leader would just promote the next call to leader and fail identically.
  */
 function appendToolCallParts(params: {
   parts: any[];
   message: any;
   googleModel: string;
-  isInCurrentTurn: boolean;
-  unsignedCallIds: Set<string>;
+  signaturesRequired: boolean;
   toolResponseMap: Map<string, { name: string; content: string }>;
-  keepThinking: boolean;
   convertedCallIds: Set<string>;
 }): void {
-  const { parts, message, googleModel, isInCurrentTurn, unsignedCallIds, toolResponseMap, keepThinking, convertedCallIds } =
+  const { parts, message, googleModel, signaturesRequired, toolResponseMap, convertedCallIds } =
     params;
-  let isFirstFunctionCallInStep = true;
+  const toolCalls = (message?.tool_calls || []).filter((toolCall: any) => toolCall.function);
+  if (toolCalls.length === 0) {
+    return;
+  }
 
-  for (const toolCall of message?.tool_calls || []) {
-    if (!toolCall.function) {
-      continue;
-    }
+  const leadSignature = getSignatureByCallId(cleanToolCallId(toolCalls[0].id));
 
-    let cleanId = toolCall.id || "";
-    if (cleanId.startsWith("sig:")) {
-      const idParts = cleanId.split(":");
-      if (idParts.length >= 3) {
-        cleanId = idParts.slice(2).join(":");
-      }
-    }
+  if (signaturesRequired && !leadSignature) {
+    console.log(
+      `[Signature] tool_call ${cleanToolCallId(toolCalls[0].id)} (${toolCalls[0].function.name}) has no cached signature, converting ${toolCalls.length} call(s) in this turn to text summaries`,
+    );
 
-    if (!isInCurrentTurn && unsignedCallIds.has(cleanId)) {
-      let argsString: string;
-      try {
-        const args =
-          typeof toolCall.function.arguments === "string"
-            ? JSON.parse(toolCall.function.arguments || "{}")
-            : toolCall.function.arguments;
-        argsString = JSON.stringify(args);
-      } catch {
-        argsString = toolCall.function.arguments || "{}";
-      }
-
-      if (argsString.length > 300) {
-        argsString = `${argsString.substring(0, 300)}...`;
-      }
-
-      let summary = `[Tool Call: ${toolCall.function.name}(${argsString})]`;
-      const response = toolResponseMap.get(toolCall.id) || toolResponseMap.get(cleanId);
-      if (response) {
-        summary += `\n[Tool Result: ${response.content}]`;
-      }
-
+    for (const toolCall of toolCalls) {
       convertedCallIds.add(toolCall.id);
-      convertedCallIds.add(cleanId);
-      parts.push({ text: summary });
-      continue;
+      convertedCallIds.add(cleanToolCallId(toolCall.id));
+      parts.push({ text: buildToolCallSummary(toolCall, toolResponseMap) });
     }
 
+    return;
+  }
+
+  for (const [index, toolCall] of toolCalls.entries()) {
+    const cleanId = cleanToolCallId(toolCall.id);
     const functionCall: any = {
       name: toolCall.function.name,
       args:
@@ -406,44 +411,11 @@ function appendToolCallParts(params: {
       functionCall.id = cleanId;
     }
 
-    const functionPart: any = {
-      functionCall,
-    };
+    const functionPart: any = { functionCall };
 
-    if (isInCurrentTurn && isFirstFunctionCallInStep) {
-      const signature = getSignatureByCallId(cleanId);
-      if (signature) {
-        functionPart.thoughtSignature = signature;
-        functionPart.thought_signature = signature;
-      } else if (keepThinking) {
-        // No signature available — fall back to text summary to avoid Google 400 error
-        console.log(
-          `[Signature] Current-turn tool_call ${cleanId} (${toolCall.function.name}) has no cached signature, converting to text summary`,
-        );
-        let argsString: string;
-        try {
-          argsString = typeof toolCall.function.arguments === "string"
-            ? toolCall.function.arguments
-            : JSON.stringify(toolCall.function.arguments ?? {});
-        } catch {
-          argsString = "{}";
-        }
-        if (argsString.length > 300) {
-          argsString = `${argsString.substring(0, 300)}...`;
-        }
-
-        let summary = `[Tool Call: ${toolCall.function.name}(${argsString})]`;
-        const response = toolResponseMap.get(toolCall.id) || toolResponseMap.get(cleanId);
-        if (response) {
-          summary += `\n[Tool Result: ${response.content}]`;
-        }
-        convertedCallIds.add(toolCall.id);
-        convertedCallIds.add(cleanId);
-        parts.push({ text: summary });
-        isFirstFunctionCallInStep = false;
-        continue;
-      }
-      isFirstFunctionCallInStep = false;
+    if (index === 0 && leadSignature) {
+      functionPart.thoughtSignature = leadSignature;
+      functionPart.thought_signature = leadSignature;
     }
 
     parts.push(functionPart);
@@ -458,12 +430,12 @@ function buildStandardParts(params: {
   googleModel: string;
   isInCurrentTurn: boolean;
   sessionId?: string;
-  unsignedCallIds: Set<string>;
+  signaturesRequired: boolean;
   toolResponseMap: Map<string, { name: string; content: string }>;
   keepThinking: boolean;
   convertedCallIds: Set<string>;
 }): any[] {
-  const { message, googleModel, isInCurrentTurn, sessionId, unsignedCallIds, toolResponseMap, keepThinking, convertedCallIds } =
+  const { message, googleModel, isInCurrentTurn, sessionId, signaturesRequired, toolResponseMap, keepThinking, convertedCallIds } =
     params;
   const parts: any[] = [];
 
@@ -476,10 +448,8 @@ function buildStandardParts(params: {
     parts,
     message,
     googleModel,
-    isInCurrentTurn,
-    unsignedCallIds,
+    signaturesRequired,
     toolResponseMap,
-    keepThinking,
     convertedCallIds,
   });
 
@@ -504,29 +474,25 @@ function buildGoogleContents(
   const currentTurnStartIndex = findCurrentTurnStartIndex(messages);
   // Use modelSpec.isThinking when available; fall back to name-based check for backward compat
   const thinkingEnabled = isThinking ?? googleModel.includes("thinking");
-  const unsignedCallIds = collectUnsignedCallIds(messages, thinkingEnabled);
-  const toolResponseMap = buildToolResponseMap(messages, unsignedCallIds, toolCallNameMap);
+  // Gemini 3 rejects the whole request when a functionCall part carries no
+  // thought_signature. No other upstream enforces it, so only Gemini 3 turns get
+  // downgraded to text when the signature is missing from the cache.
+  const signaturesRequired = thinkingEnabled && googleModel.includes("gemini-3");
+  logUnsignedCallCount(messages, signaturesRequired);
+  const toolResponseMap = buildToolResponseMap(messages, toolCallNameMap);
 
   const convertedCallIds = new Set<string>();
   const rawContents = messages.map((message, messageIndex) => {
     const isInCurrentTurn = messageIndex >= currentTurnStartIndex;
     const parts =
       message.role === "tool"
-        ? buildToolResponseParts(
-            message,
-            googleModel,
-            isInCurrentTurn,
-            unsignedCallIds,
-            toolCallNameMap,
-            keepThinking,
-            convertedCallIds,
-          )
+        ? buildToolResponseParts(message, googleModel, toolCallNameMap, convertedCallIds)
         : buildStandardParts({
             message,
             googleModel,
             isInCurrentTurn,
             sessionId,
-            unsignedCallIds,
+            signaturesRequired,
             toolResponseMap,
             keepThinking,
             convertedCallIds,

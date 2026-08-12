@@ -52,6 +52,11 @@ export function transformGoogleEventToOpenAI(
 
   const delta: any = {};
   const toolCalls: any[] = [];
+  // Upstream may put the signature on a thought part that trails the functionCall
+  // part in the same event, so the whole event is scanned before mapping.
+  const eventSignature = parts
+    .map((part: any) => part.thoughtSignature || part.thought_signature || part.signature)
+    .find((signature: string | undefined) => Boolean(signature));
   let extractedSignature: string | undefined;
   let extractedThought: string | undefined;
 
@@ -87,12 +92,21 @@ export function transformGoogleEventToOpenAI(
     if (part.functionCall || part.function_call) {
       const call = part.functionCall || part.function_call;
       const signature =
-        part.thoughtSignature || part.thought_signature || extractedSignature || activeSignature || "";
+        part.thoughtSignature ||
+        part.thought_signature ||
+        extractedSignature ||
+        eventSignature ||
+        activeSignature ||
+        "";
       const rawId =
         call.id || call.callId || call.call_id || `call_${Math.random().toString(36).substring(7)}`;
 
       if (signature) {
         cacheSignatureByCallId(rawId, signature);
+      } else {
+        console.log(
+          `[Signature] Upstream returned functionCall ${call.name} (${rawId}) without a thought signature`,
+        );
       }
 
       const functionName = getOriginalToolName(call.name) || call.name;

@@ -253,6 +253,85 @@ describe("Unit Tests: mapOpenAIToGoogle", () => {
     expect(funcRespPart).toBeDefined();
     expect(funcRespPart.functionResponse.id).toBe("call_abc123");
   });
+
+  /**
+   * Gemini 3 rejects the whole request when a functionCall part has no
+   * thought_signature, so an uncached call in the *active* turn — the one the
+   * client is asking us to continue — has to be downgraded like any other.
+   */
+  test("Gemini 3 downgrades the active turn's unsigned tool calls to text", () => {
+    const openaiBody = {
+      model: "antigravity:gemini-3.6-flash-medium",
+      messages: [
+        { role: "user", content: "analyse this image" },
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            {
+              id: "call256486",
+              type: "function",
+              function: { name: "image", arguments: '{"path":"a.png"}' },
+            },
+            {
+              id: "call256487",
+              type: "function",
+              function: { name: "exec", arguments: '{"cmd":"ls"}' },
+            },
+          ],
+        },
+        { role: "tool", tool_call_id: "call256486", name: "image", content: '{"caption":"a cat"}' },
+        { role: "tool", tool_call_id: "call256487", name: "exec", content: "a.png" },
+      ],
+    };
+
+    const result = mapOpenAIToGoogle(
+      openaiBody,
+      buildModelSpec({ modelId: "gemini-3.6-flash-medium", isThinking: true }),
+      "session-signature-gap",
+    );
+
+    const allParts = result.request.contents.flatMap((content: any) => content.parts);
+    expect(allParts.some((part: any) => part.functionCall)).toBe(false);
+    expect(allParts.some((part: any) => part.functionResponse)).toBe(false);
+
+    const summaries = allParts
+      .filter((part: any) => typeof part.text === "string")
+      .map((part: any) => part.text)
+      .join("\n");
+    expect(summaries).toContain("[Tool Call: image(");
+    expect(summaries).toContain("[Tool Result: {\"caption\":\"a cat\"}]");
+    // The second call of the same turn must go too: left alone it would become
+    // the leading — and still unsigned — functionCall part.
+    expect(summaries).toContain("[Tool Call: exec(");
+  });
+
+  test("Non-thinking Gemini 3 keeps unsigned tool calls as function calls", () => {
+    const openaiBody = {
+      model: "antigravity:gemini-3.6-flash-medium",
+      messages: [
+        { role: "user", content: "run it" },
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            { id: "call999", type: "function", function: { name: "exec", arguments: "{}" } },
+          ],
+        },
+      ],
+    };
+
+    const result = mapOpenAIToGoogle(
+      openaiBody,
+      buildModelSpec({ modelId: "gemini-3.6-flash-medium", isThinking: false }),
+      "session-no-thinking",
+    );
+
+    const allParts = result.request.contents.flatMap((content: any) => content.parts);
+    const funcCallPart = allParts.find((part: any) => part.functionCall);
+    expect(funcCallPart).toBeDefined();
+    expect(funcCallPart.functionCall.id).toBe("call999");
+  });
 });
 
 describe("Unit Tests: transformGoogleEventToOpenAI", () => {
