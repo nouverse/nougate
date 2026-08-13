@@ -482,7 +482,7 @@ export class AntigravityExecutor {
 
           if (status === 400 && errText.includes("thought_signature")) {
             console.error(
-              "[Signature] Fatal: thought_signature error persists after text summarization fallback. Breaking retry loop.",
+              "[Signature] Fatal: upstream rejected the request over thought signatures even though every unsignable call carries the validation-skip placeholder. Breaking retry loop.",
             );
             await updateAccountUsage(account.email, false, modelId, pool, options.clientId, status);
             return {

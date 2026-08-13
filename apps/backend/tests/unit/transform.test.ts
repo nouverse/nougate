@@ -1,6 +1,7 @@
 import { describe, expect, test, beforeAll } from "bun:test";
 import { mapOpenAIToGoogle } from "@/providers/antigravity/mappers/openai-in";
 import { transformGoogleEventToOpenAI } from "@/providers/antigravity/mappers/openai-out";
+import { PLACEHOLDER_THOUGHT_SIGNATURE } from "@/providers/antigravity/utils/thought-signature";
 import { loadProxyConfig } from "@/config/manager";
 import { loadAntigravityConfig } from "@/providers/antigravity";
 import type { IModelSpec } from "@/core/interfaces";
@@ -255,11 +256,13 @@ describe("Unit Tests: mapOpenAIToGoogle", () => {
   });
 
   /**
-   * Gemini 3 rejects the whole request when a functionCall part has no
-   * thought_signature, so an uncached call in the *active* turn — the one the
-   * client is asking us to continue — has to be downgraded like any other.
+   * Gemini 3 rejects the whole request when the leading functionCall part of a
+   * turn has no thought_signature. An uncached call keeps its real shape and
+   * borrows the documented validation-skip placeholder instead of being rendered
+   * as prose — prose in the context taught the model to answer with
+   * "[Tool Result: ...]" text of its own.
    */
-  test("Gemini 3 downgrades the active turn's unsigned tool calls to text", () => {
+  test("Gemini 3 signs unsigned tool calls with the validation-skip placeholder", () => {
     const openaiBody = {
       model: "antigravity:gemini-3.6-flash-medium",
       messages: [
@@ -292,18 +295,58 @@ describe("Unit Tests: mapOpenAIToGoogle", () => {
     );
 
     const allParts = result.request.contents.flatMap((content: any) => content.parts);
-    expect(allParts.some((part: any) => part.functionCall)).toBe(false);
-    expect(allParts.some((part: any) => part.functionResponse)).toBe(false);
+    const functionCalls = allParts.filter((part: any) => part.functionCall);
+    const functionResponses = allParts.filter((part: any) => part.functionResponse);
 
-    const summaries = allParts
+    // Structure survives: both calls and both results stay machine-readable.
+    expect(functionCalls.map((part: any) => part.functionCall.name)).toEqual(["image", "exec"]);
+    expect(functionResponses).toHaveLength(2);
+    expect(functionResponses[0].functionResponse.response).toEqual({ caption: "a cat" });
+
+    // Only the leading call carries a signature — that is the part upstream validates.
+    expect(functionCalls[0].thoughtSignature).toBe(PLACEHOLDER_THOUGHT_SIGNATURE);
+    expect(functionCalls[0].thought_signature).toBe(PLACEHOLDER_THOUGHT_SIGNATURE);
+    expect(functionCalls[1].thoughtSignature).toBeUndefined();
+
+    // Nothing anywhere in the payload teaches the model to write tool traffic as text.
+    const text = allParts
       .filter((part: any) => typeof part.text === "string")
       .map((part: any) => part.text)
       .join("\n");
-    expect(summaries).toContain("[Tool Call: image(");
-    expect(summaries).toContain("[Tool Result: {\"caption\":\"a cat\"}]");
-    // The second call of the same turn must go too: left alone it would become
-    // the leading — and still unsigned — functionCall part.
-    expect(summaries).toContain("[Tool Call: exec(");
+    expect(text).not.toContain("[Tool Call:");
+    expect(text).not.toContain("[Tool Result:");
+  });
+
+  test("Non-Gemini-3 thinking models get no placeholder signature", () => {
+    const openaiBody = {
+      model: "antigravity:claude-opus-4-6-thinking",
+      messages: [
+        { role: "user", content: "run it" },
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            { id: "call555", type: "function", function: { name: "exec", arguments: "{}" } },
+          ],
+        },
+      ],
+    };
+
+    const result = mapOpenAIToGoogle(
+      openaiBody,
+      buildModelSpec({
+        modelId: "claude-opus-4-6-thinking",
+        isThinking: true,
+        thinkingMode: "budget",
+        thinkingBudget: 32768,
+      }),
+      "session-claude-no-placeholder",
+    );
+
+    const allParts = result.request.contents.flatMap((content: any) => content.parts);
+    const funcCallPart = allParts.find((part: any) => part.functionCall);
+    expect(funcCallPart).toBeDefined();
+    expect(funcCallPart.thoughtSignature).toBeUndefined();
   });
 
   test("Non-thinking Gemini 3 keeps unsigned tool calls as function calls", () => {

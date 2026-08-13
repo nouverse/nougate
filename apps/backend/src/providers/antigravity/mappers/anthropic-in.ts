@@ -1,5 +1,9 @@
 import type { IModelSpec } from "@/core/interfaces";
-import { getSignature, getSignatureByCallId, getSignatureFamily } from "@/providers/antigravity/utils/signature-cache";
+import { getSignature, getSignatureFamily } from "@/providers/antigravity/utils/signature-cache";
+import {
+  resolveLeadThoughtSignature,
+  thoughtSignatureRequired,
+} from "@/providers/antigravity/utils/thought-signature";
 import { getCavemanPrompt } from "@/core/caveman";
 import { cleanJSONSchemaForAntigravity } from "@/providers/antigravity/utils/schema";
 import { getFamilyName } from "@/providers/antigravity/auth/manager";
@@ -205,106 +209,6 @@ function findCurrentTurnStartIndex(messages: AnthropicMessage[]): number {
 }
 
 /**
- * Report how many tool_use blocks in the history lack a cached thought signature.
- */
-function logUnsignedToolUseCount(
-  messages: AnthropicMessage[],
-  signaturesRequired: boolean,
-): void {
-  if (!signaturesRequired) {
-    return;
-  }
-
-  const unsignedIds = new Set<string>();
-  for (const message of messages) {
-    if (message.role !== "assistant" || typeof message.content === "string") {
-      continue;
-    }
-
-    for (const block of message.content) {
-      if (block.type === "tool_use" && block.id && !getSignatureByCallId(block.id)) {
-        unsignedIds.add(block.id);
-      }
-    }
-  }
-
-  if (unsignedIds.size > 0) {
-    console.log(
-      `[Signature] Found ${unsignedIds.size} unsigned tool_use calls in Anthropic history, will convert to text summaries`,
-    );
-  }
-}
-
-/**
- * Build a lookup of tool_result content keyed by tool_use_id for text summary fallback.
- */
-function buildToolResultMap(
-  messages: AnthropicMessage[],
-  nameMap: Map<string, string>,
-): Map<string, { name: string; content: string }> {
-  const resultMap = new Map<string, { name: string; content: string }>();
-
-  for (const message of messages) {
-    if (typeof message.content === "string") {
-      continue;
-    }
-
-    for (const block of message.content) {
-      if (block.type !== "tool_result" || !block.tool_use_id) {
-        continue;
-      }
-
-      const functionName = nameMap.get(block.tool_use_id) || "function_result";
-      const rawContent =
-        typeof block.content === "string"
-          ? block.content
-          : (block.content as AnthropicContent[])
-              .filter((c): c is { type: "text"; text: string } => c.type === "text")
-              .map((c) => c.text)
-              .join("");
-      const truncated =
-        rawContent.length > 500
-          ? `${rawContent.substring(0, 500)}... [truncated]`
-          : rawContent;
-
-      resultMap.set(block.tool_use_id, {
-        name: functionName,
-        content: truncated,
-      });
-    }
-  }
-
-  return resultMap;
-}
-
-/**
- * Render one tool_use block — and its result, when known — as plain text.
- */
-function buildToolUseSummary(
-  block: Extract<AnthropicContent, { type: "tool_use" }>,
-  resultMap: Map<string, { name: string; content: string }>,
-): string {
-  let argsString: string;
-  try {
-    argsString = JSON.stringify(block.input ?? {});
-  } catch {
-    argsString = "{}";
-  }
-
-  if (argsString.length > 300) {
-    argsString = `${argsString.substring(0, 300)}...`;
-  }
-
-  let summary = `[Tool Call: ${block.name}(${argsString})]`;
-  const response = resultMap.get(block.id);
-  if (response) {
-    summary += `\n[Tool Result: ${response.content}]`;
-  }
-
-  return summary;
-}
-
-/**
  * Transform a single Anthropic content block into Google parts.
  */
 function transformContentBlock(
@@ -312,11 +216,9 @@ function transformContentBlock(
   googleModel: string,
   isInCurrentTurn: boolean,
   sessionId: string | undefined,
-  toolUseState: { downgrade: boolean; leadId?: string; leadSignature?: string },
+  toolUseState: { leadId?: string; leadSignature?: string },
   nameMap: Map<string, string>,
-  resultMap: Map<string, { name: string; content: string }>,
   keepThinking: boolean,
-  convertedToolUseIds: Set<string>,
 ): any[] {
   const parts: any[] = [];
 
@@ -337,15 +239,6 @@ function transformContentBlock(
     }
 
     case "tool_use": {
-      // The whole turn is downgraded together: upstream validates the signature on
-      // its leading functionCall part, so keeping the trailing calls would only
-      // promote the next unsigned one to leader.
-      if (toolUseState.downgrade) {
-        convertedToolUseIds.add(block.id);
-        parts.push({ text: buildToolUseSummary(block, resultMap) });
-        break;
-      }
-
       const functionCall: any = {
         name: block.name,
         args: block.input ?? {},
@@ -367,12 +260,6 @@ function transformContentBlock(
     }
 
     case "tool_result": {
-      // If the corresponding tool_use was converted to a text summary, skip functionResponse
-      if (convertedToolUseIds.has(block.tool_use_id)) {
-        parts.push({ text: "." });
-        break;
-      }
-
       const resultContent =
         typeof block.content === "string"
           ? block.content
@@ -455,9 +342,7 @@ function transformMessage(
   sessionId: string | undefined,
   signaturesRequired: boolean,
   nameMap: Map<string, string>,
-  resultMap: Map<string, { name: string; content: string }>,
   keepThinking: boolean,
-  convertedToolUseIds: Set<string>,
 ): { role: string; parts: any[] } {
   const role = message.role === "assistant" ? "model" : "user";
   const parts: any[] = [];
@@ -467,19 +352,19 @@ function transformMessage(
     return { role, parts };
   }
 
-  const leadToolUse = message.content.find((block) => block.type === "tool_use");
-  const leadSignature = leadToolUse ? getSignatureByCallId(leadToolUse.id) : undefined;
+  const leadToolUse = message.content.find(
+    (block): block is Extract<AnthropicContent, { type: "tool_use" }> => block.type === "tool_use",
+  );
   const toolUseState = {
-    downgrade: Boolean(leadToolUse) && signaturesRequired && !leadSignature,
     leadId: leadToolUse?.id,
-    leadSignature,
+    leadSignature: leadToolUse
+      ? resolveLeadThoughtSignature({
+          callId: leadToolUse.id,
+          toolName: leadToolUse.name,
+          signatureRequired: signaturesRequired,
+        })
+      : undefined,
   };
-
-  if (toolUseState.downgrade && leadToolUse) {
-    console.log(
-      `[Signature] tool_use ${leadToolUse.id} (${leadToolUse.name}) has no cached signature, converting this turn's tool calls to text summaries`,
-    );
-  }
 
   for (const block of message.content) {
     const blockParts = transformContentBlock(
@@ -489,9 +374,7 @@ function transformMessage(
       sessionId,
       toolUseState,
       nameMap,
-      resultMap,
       keepThinking,
-      convertedToolUseIds,
     );
     parts.push(...blockParts);
   }
@@ -517,14 +400,8 @@ function buildGoogleContents(
   const currentTurnStartIndex = findCurrentTurnStartIndex(messages);
   // Use modelSpec.isThinking when available; fall back to name-based check for backward compat
   const thinkingEnabled = isThinking ?? googleModel.includes("thinking");
-  // Gemini 3 rejects the whole request when a functionCall part carries no
-  // thought_signature. No other upstream enforces it, so only Gemini 3 turns get
-  // downgraded to text when the signature is missing from the cache.
-  const signaturesRequired = thinkingEnabled && googleModel.includes("gemini-3");
-  logUnsignedToolUseCount(messages, signaturesRequired);
-  const resultMap = buildToolResultMap(messages, nameMap);
+  const signaturesRequired = thoughtSignatureRequired(googleModel, thinkingEnabled);
 
-  const convertedToolUseIds = new Set<string>();
   const rawContents = messages.map((message, messageIndex) => {
     const isInCurrentTurn = messageIndex >= currentTurnStartIndex;
     return transformMessage(
@@ -534,9 +411,7 @@ function buildGoogleContents(
       sessionId,
       signaturesRequired,
       nameMap,
-      resultMap,
       keepThinking,
-      convertedToolUseIds,
     );
   });
 

@@ -16,6 +16,9 @@ export function createAnthropicStreamTransformer(model: string, messageId: strin
 
   let activeSignature: string | undefined;
   let activeThought = "";
+  // Anthropic clients decide whether to run the tool from stop_reason, not from
+  // the presence of a tool_use block — "end_turn" ends their agent loop.
+  let sawToolUse = false;
 
   return new TransformStream({
     start(controller) {
@@ -106,6 +109,7 @@ export function createAnthropicStreamTransformer(model: string, messageId: strin
                 blockIndex++;
               }
               const toolId = call.id ?? `toolu_${Math.random().toString(36).slice(2, 10)}`;
+              sawToolUse = true;
               if (activeSignature) {
                 cacheSignatureByCallId(toolId, activeSignature);
               }
@@ -135,7 +139,7 @@ export function createAnthropicStreamTransformer(model: string, messageId: strin
               controller.enqueue(encoder.encode(sseEvent("content_block_stop", { type: "content_block_stop", index: blockIndex })));
               currentBlockType = null;
             }
-            const stopReason = finishReason === "STOP" ? "end_turn"
+            const stopReason = sawToolUse ? "tool_use"
               : finishReason === "MAX_TOKENS" ? "max_tokens"
               : "end_turn";
             controller.enqueue(encoder.encode(sseEvent("message_delta", {
@@ -217,6 +221,7 @@ export function createAnthropicStreamTransformer(model: string, messageId: strin
                   blockIndex++;
                 }
                 const toolId = call.id ?? `toolu_${Math.random().toString(36).slice(2, 10)}`;
+                sawToolUse = true;
                 if (activeSignature) {
                   cacheSignatureByCallId(toolId, activeSignature);
                 }
@@ -253,7 +258,7 @@ export function createAnthropicStreamTransformer(model: string, messageId: strin
                 controller.enqueue(encoder.encode(sseEvent("content_block_stop", { type: "content_block_stop", index: blockIndex })));
                 currentBlockType = null;
               }
-              const stopReason = finishReason === "STOP" ? "end_turn"
+              const stopReason = sawToolUse ? "tool_use"
                 : finishReason === "MAX_TOKENS" ? "max_tokens"
                 : "end_turn";
               controller.enqueue(encoder.encode(sseEvent("message_delta", {

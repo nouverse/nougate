@@ -1,5 +1,9 @@
 import type { IModelSpec } from "@/core/interfaces";
-import { getSignature, getSignatureByCallId, getSignatureFamily } from "@/providers/antigravity/utils/signature-cache";
+import { getSignature, getSignatureFamily } from "@/providers/antigravity/utils/signature-cache";
+import {
+  resolveLeadThoughtSignature,
+  thoughtSignatureRequired,
+} from "@/providers/antigravity/utils/thought-signature";
 import { cleanJSONSchemaForAntigravity } from "@/providers/antigravity/utils/schema";
 import { getFamilyName } from "@/providers/antigravity/auth/manager";
 import { getCavemanPrompt } from "@/core/caveman";
@@ -157,78 +161,13 @@ function cleanToolCallId(rawId: unknown): string {
 }
 
 /**
- * Report how many function calls in the history have no cached signature.
- */
-function logUnsignedCallCount(messages: any[], thinkingEnabled: boolean): void {
-  if (!thinkingEnabled) {
-    return;
-  }
-
-  const unsignedCallIds = new Set<string>();
-  for (const message of messages) {
-    for (const toolCall of message?.tool_calls || []) {
-      const cleanId = cleanToolCallId(toolCall.id);
-      if (!getSignatureByCallId(cleanId)) {
-        unsignedCallIds.add(cleanId);
-      }
-    }
-  }
-
-  if (unsignedCallIds.size > 0) {
-    console.log(
-      `[Signature] Found ${unsignedCallIds.size} unsigned function calls in history, will convert to text summaries`,
-    );
-  }
-}
-
-/**
- * Build a lookup of tool response content for unsigned function call summaries.
- */
-function buildToolResponseMap(
-  messages: any[],
-  toolCallNameMap: Map<string, string>,
-): Map<string, { name: string; content: string }> {
-  const toolResponseMap = new Map<string, { name: string; content: string }>();
-
-  for (const message of messages) {
-    if (message?.role !== "tool" || !message.tool_call_id) {
-      continue;
-    }
-
-    const functionName =
-      message.name || toolCallNameMap.get(message.tool_call_id) || "function_result";
-    const rawContent =
-      typeof message.content === "string"
-        ? message.content
-        : JSON.stringify(message.content || {});
-    const truncated =
-      rawContent.length > 500
-        ? `${rawContent.substring(0, 500)}... [truncated]`
-        : rawContent;
-
-    toolResponseMap.set(message.tool_call_id, {
-      name: functionName,
-      content: truncated,
-    });
-  }
-
-  return toolResponseMap;
-}
-
-/**
  * Convert a tool-role message into Google parts.
  */
 function buildToolResponseParts(
   message: any,
   googleModel: string,
   toolCallNameMap: Map<string, string>,
-  convertedCallIds: Set<string>,
 ): any[] {
-  // If the corresponding tool_call was converted to a text summary, skip functionResponse
-  if (convertedCallIds.has(message.tool_call_id)) {
-    return [{ text: "." }];
-  }
-
   let responseObject: any;
   try {
     responseObject =
@@ -327,75 +266,29 @@ function appendThoughtParts(parts: any[], message: any, sessionId: string | unde
 }
 
 /**
- * Render one tool call — and its result, when known — as plain text.
- */
-function buildToolCallSummary(
-  toolCall: any,
-  toolResponseMap: Map<string, { name: string; content: string }>,
-): string {
-  let argsString: string;
-  try {
-    const args =
-      typeof toolCall.function.arguments === "string"
-        ? JSON.parse(toolCall.function.arguments || "{}")
-        : toolCall.function.arguments;
-    argsString = JSON.stringify(args ?? {});
-  } catch {
-    argsString = toolCall.function.arguments || "{}";
-  }
-
-  if (argsString.length > 300) {
-    argsString = `${argsString.substring(0, 300)}...`;
-  }
-
-  let summary = `[Tool Call: ${toolCall.function.name}(${argsString})]`;
-  const response =
-    toolResponseMap.get(toolCall.id) || toolResponseMap.get(cleanToolCallId(toolCall.id));
-  if (response) {
-    summary += `\n[Tool Result: ${response.content}]`;
-  }
-
-  return summary;
-}
-
-/**
  * Append function call parts from assistant messages.
  *
  * Upstream validates the thought signature on the *first* functionCall part of a
- * model turn, so a turn is all-or-nothing: if the leading call cannot be signed,
- * every call in that turn has to be downgraded to text. Downgrading only the
- * leader would just promote the next call to leader and fail identically.
+ * model turn and attaches one only to that part, so the leader is the only call
+ * that needs a signature — real when cached, placeholder when not.
  */
 function appendToolCallParts(params: {
   parts: any[];
   message: any;
   googleModel: string;
   signaturesRequired: boolean;
-  toolResponseMap: Map<string, { name: string; content: string }>;
-  convertedCallIds: Set<string>;
 }): void {
-  const { parts, message, googleModel, signaturesRequired, toolResponseMap, convertedCallIds } =
-    params;
+  const { parts, message, googleModel, signaturesRequired } = params;
   const toolCalls = (message?.tool_calls || []).filter((toolCall: any) => toolCall.function);
   if (toolCalls.length === 0) {
     return;
   }
 
-  const leadSignature = getSignatureByCallId(cleanToolCallId(toolCalls[0].id));
-
-  if (signaturesRequired && !leadSignature) {
-    console.log(
-      `[Signature] tool_call ${cleanToolCallId(toolCalls[0].id)} (${toolCalls[0].function.name}) has no cached signature, converting ${toolCalls.length} call(s) in this turn to text summaries`,
-    );
-
-    for (const toolCall of toolCalls) {
-      convertedCallIds.add(toolCall.id);
-      convertedCallIds.add(cleanToolCallId(toolCall.id));
-      parts.push({ text: buildToolCallSummary(toolCall, toolResponseMap) });
-    }
-
-    return;
-  }
+  const leadSignature = resolveLeadThoughtSignature({
+    callId: cleanToolCallId(toolCalls[0].id),
+    toolName: toolCalls[0].function.name,
+    signatureRequired: signaturesRequired,
+  });
 
   for (const [index, toolCall] of toolCalls.entries()) {
     const cleanId = cleanToolCallId(toolCall.id);
@@ -431,11 +324,9 @@ function buildStandardParts(params: {
   isInCurrentTurn: boolean;
   sessionId?: string;
   signaturesRequired: boolean;
-  toolResponseMap: Map<string, { name: string; content: string }>;
   keepThinking: boolean;
-  convertedCallIds: Set<string>;
 }): any[] {
-  const { message, googleModel, isInCurrentTurn, sessionId, signaturesRequired, toolResponseMap, keepThinking, convertedCallIds } =
+  const { message, googleModel, isInCurrentTurn, sessionId, signaturesRequired, keepThinking } =
     params;
   const parts: any[] = [];
 
@@ -449,8 +340,6 @@ function buildStandardParts(params: {
     message,
     googleModel,
     signaturesRequired,
-    toolResponseMap,
-    convertedCallIds,
   });
 
   if (parts.length === 0) {
@@ -474,28 +363,20 @@ function buildGoogleContents(
   const currentTurnStartIndex = findCurrentTurnStartIndex(messages);
   // Use modelSpec.isThinking when available; fall back to name-based check for backward compat
   const thinkingEnabled = isThinking ?? googleModel.includes("thinking");
-  // Gemini 3 rejects the whole request when a functionCall part carries no
-  // thought_signature. No other upstream enforces it, so only Gemini 3 turns get
-  // downgraded to text when the signature is missing from the cache.
-  const signaturesRequired = thinkingEnabled && googleModel.includes("gemini-3");
-  logUnsignedCallCount(messages, signaturesRequired);
-  const toolResponseMap = buildToolResponseMap(messages, toolCallNameMap);
+  const signaturesRequired = thoughtSignatureRequired(googleModel, thinkingEnabled);
 
-  const convertedCallIds = new Set<string>();
   const rawContents = messages.map((message, messageIndex) => {
     const isInCurrentTurn = messageIndex >= currentTurnStartIndex;
     const parts =
       message.role === "tool"
-        ? buildToolResponseParts(message, googleModel, toolCallNameMap, convertedCallIds)
+        ? buildToolResponseParts(message, googleModel, toolCallNameMap)
         : buildStandardParts({
             message,
             googleModel,
             isInCurrentTurn,
             sessionId,
             signaturesRequired,
-            toolResponseMap,
             keepThinking,
-            convertedCallIds,
           });
 
     return {

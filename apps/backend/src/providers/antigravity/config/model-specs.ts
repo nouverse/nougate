@@ -6,24 +6,6 @@ import { dataPath } from '@/core/paths';
 
 
 const MODEL_REGISTRY: Record<string, IModelSpec> = {
-  'gemini-3-flash': {
-    modelId: 'gemini-3-flash',
-    displayName: 'Gemini 3 Flash',
-    pool: 'sandbox',
-    isThinking: false,
-    maxOutputTokens: 8192, // max: 65536
-    timeoutMs: 60000,
-  },
-  'gemini-3-flash-agent': {
-    modelId: 'gemini-3-flash-agent',
-    displayName: 'Gemini 3 Flash Agent',
-    pool: 'sandbox',
-    isThinking: true,
-    thinkingMode: 'level',
-    thinkingLevel: 'high',
-    maxOutputTokens: 64000, // max: 65536
-    timeoutMs: 60000,
-  },
   'gemini-3.1-flash-lite': {
     modelId: 'gemini-3.1-flash-lite',
     displayName: 'Gemini 3.1 Flash Lite',
@@ -67,36 +49,6 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
     isThinking: true,
     thinkingMode: 'level',
     thinkingLevel: 'high',
-    maxOutputTokens: 64000, // max: 65536
-    timeoutMs: 60000,
-  },
-  'gemini-3.5-flash-extra-low': {
-    modelId: 'gemini-3.5-flash-extra-low',
-    displayName: 'Gemini 3.5 Flash Low',
-    pool: 'sandbox',
-    isThinking: true,
-    thinkingMode: 'level',
-    thinkingLevel: 'low',
-    maxOutputTokens: 64000, // max: 65536
-    timeoutMs: 60000,
-  },
-  'gemini-3.5-flash-low': {
-    modelId: 'gemini-3.5-flash-low',
-    displayName: 'Gemini 3.5 Flash Medium',
-    pool: 'sandbox',
-    isThinking: true,
-    thinkingMode: 'level',
-    thinkingLevel: 'medium',
-    maxOutputTokens: 64000, // max: 65536
-    timeoutMs: 60000,
-  },
-  'gemini-3.1-pro-low': {
-    modelId: 'gemini-3.1-pro-low',
-    displayName: 'Gemini 3.1 Pro Low',
-    pool: 'sandbox',
-    isThinking: true,
-    thinkingMode: 'level',
-    thinkingLevel: 'low',
     maxOutputTokens: 64000, // max: 65536
     timeoutMs: 60000,
   },
