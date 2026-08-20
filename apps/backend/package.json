@@ -17,9 +17,9 @@
     "reset-accounts": "bun run src/scripts/reset-accounts.ts"
   },
   "dependencies": {
-    "bun": "^1.0.0",
-    "drizzle-orm": "^0.45.2",
-    "postgres": "^3.4.9"
+    "bun": "1.1.4",
+    "drizzle-orm": "0.45.2",
+    "postgres": "3.4.9"
   },
   "devDependencies": {
     "@types/bun": "latest",
