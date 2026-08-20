@@ -3,7 +3,7 @@ name: nougate-dev
 services:
   nougate:
     container_name: nougate-dev
-    image: oven/bun:alpine
+    image: oven/bun:1.4-alpine
     working_dir: /app
     entrypoint: ["sh", "-c"]
     command:

@@ -1,5 +1,5 @@
 # ---- Stage 1: Build Frontend ----
-FROM oven/bun:alpine AS frontend-builder
+FROM oven/bun:1.4-alpine AS frontend-builder
 WORKDIR /app
 COPY package.json ./
 COPY apps/frontend/package.json ./apps/frontend/
@@ -9,13 +9,13 @@ COPY apps/frontend ./apps/frontend
 RUN cd apps/frontend && bun run build
 
 # ---- Stage 2: Install backend deps ----
-FROM oven/bun:alpine AS backend-deps
+FROM oven/bun:1.4-alpine AS backend-deps
 WORKDIR /app
 COPY apps/backend/package.json ./
 RUN bun install --production
 
 # ---- Stage 3: Runtime ----
-FROM oven/bun:alpine
+FROM oven/bun:1.4-alpine
 WORKDIR /app
 
 # Backend deps
