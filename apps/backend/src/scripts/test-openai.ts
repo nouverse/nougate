@@ -93,7 +93,7 @@ async function main() {
         }
       }
     }
-    
+
     if (buffer) {
       handleChunk("");
     }
@@ -102,7 +102,7 @@ async function main() {
     const data = await response.json() as any;
     const content = data.choices?.[0]?.message?.content;
     const reasoning = data.choices?.[0]?.message?.reasoning_content;
-    
+
     if (reasoning) {
       console.log(`🤔 Thinking:\n${reasoning}\n`);
     }
