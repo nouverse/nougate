@@ -1,10 +1,10 @@
 import { Database } from 'bun:sqlite';
+import { SQL } from 'bun';
 import { sql } from 'drizzle-orm';
 import { existsSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
 import { drizzle as drizzleSqlite } from 'drizzle-orm/bun-sqlite';
-import { drizzle as drizzlePg } from 'drizzle-orm/postgres-js';
-import postgres from 'postgres';
+import { drizzle as drizzlePg } from 'drizzle-orm/bun-sql';
 
 import { dataPath } from '@/core/paths';
 import * as sqliteSchema from '@/core/db/schema/sqlite';
@@ -75,7 +75,7 @@ type Db = ReturnType<typeof drizzleSqlite<typeof sqliteSchema.schema>>;
 
 let database: Db | null = null;
 let sqliteHandle: Database | null = null;
-let pgClient: ReturnType<typeof postgres> | null = null;
+let pgClient: SQL | null = null;
 let target = '(not opened)';
 
 function openSqlite(): Db {
@@ -100,7 +100,7 @@ function openSqlite(): Db {
 
 function openPostgres(): Db {
   const url = (process.env.DB_URL ?? '').trim();
-  pgClient = postgres(url, { max: 10, idle_timeout: 20, connect_timeout: 10 });
+  pgClient = new SQL(url, { max: 10, idleTimeout: 20, connectionTimeout: 10 });
 
   // Redact credentials before this reaches a log line.
   target = url.replace(/\/\/[^@]*@/, '//***@');
@@ -213,7 +213,7 @@ export async function closeDb(): Promise<void> {
     sqliteHandle = null;
   }
   if (pgClient) {
-    await pgClient.end({ timeout: 5 });
+    await pgClient.end();
     pgClient = null;
   }
   database = null;
