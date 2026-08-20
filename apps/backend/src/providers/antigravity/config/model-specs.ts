@@ -20,9 +20,9 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
     maxOutputTokens: 8192, // max: 65536
     timeoutMs: 60000,
   },
-  'gemini-3.7-flash-low': {
-    modelId: 'gemini-3.7-flash-low',
-    displayName: 'Gemini 3.7 Flash Low',
+  'gemini-3.6-flash-low': {
+    modelId: 'gemini-3.6-flash-low',
+    displayName: 'Gemini 3.6 Flash Low',
     pool: 'sandbox',
     isThinking: true,
     thinkingMode: 'level',
@@ -30,9 +30,9 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
     maxOutputTokens: 64000, // max: 65536
     timeoutMs: 60000,
   },
-  'gemini-3.7-flash-medium': {
-    modelId: 'gemini-3.7-flash-medium',
-    displayName: 'Gemini 3.7 Flash Medium',
+  'gemini-3.6-flash-medium': {
+    modelId: 'gemini-3.6-flash-medium',
+    displayName: 'Gemini 3.6 Flash Medium',
     pool: 'sandbox',
     isThinking: true,
     thinkingMode: 'level',
@@ -40,9 +40,9 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
     maxOutputTokens: 64000, // max: 65536
     timeoutMs: 60000,
   },
-  'gemini-3.7-flash-high': {
-    modelId: 'gemini-3.7-flash-high',
-    displayName: 'Gemini 3.7 Flash High',
+  'gemini-3.6-flash-high': {
+    modelId: 'gemini-3.6-flash-high',
+    displayName: 'Gemini 3.6 Flash High',
     pool: 'sandbox',
     isThinking: true,
     thinkingMode: 'level',
