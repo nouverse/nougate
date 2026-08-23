@@ -50,6 +50,32 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
     maxOutputTokens: 64000, // max: 65536
     timeoutMs: 60000,
   },
+  // ── Gemini 3.7 Flash (tiered thinking budget) ─────────────────────────────
+  // All four entries hit the same upstream model (gemini-3.7-flash-tiered).
+  // The tier suffix is the only thing that differs: it sets the thinking budget
+  // passed upstream (high: 24576, medium: 8192, low: 1024).
+  'gemini-3.7-flash-high': {
+    modelId: 'gemini-3.7-flash-high',
+    displayName: 'Gemini 3.7 Flash High',
+    pool: 'sandbox',
+    upstreamModelId: 'gemini-3.7-flash-tiered',
+    isThinking: true,
+    thinkingMode: 'budget',
+    thinkingBudget: 24576,
+    maxOutputTokens: 65536,
+    timeoutMs: 60000,
+  },
+  'gemini-3.7-flash': {
+    modelId: 'gemini-3.7-flash',
+    displayName: 'Gemini 3.7 Flash',
+    pool: 'sandbox',
+    upstreamModelId: 'gemini-3.7-flash-tiered',
+    isThinking: true,
+    thinkingMode: 'budget',
+    thinkingBudget: 8192,
+    maxOutputTokens: 65536,
+    timeoutMs: 60000,
+  },
   'claude-sonnet-4-6': {
     modelId: 'claude-sonnet-4-6',
     displayName: 'Claude Sonnet 4.6 Thinking',
