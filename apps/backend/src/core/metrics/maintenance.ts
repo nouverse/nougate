@@ -37,6 +37,10 @@ export async function runRollup(): Promise<number> {
       totalInputCost: sql<number>`sum(${logs.inputCost})`,
       totalOutputCost: sql<number>`sum(${logs.outputCost})`,
       totalCostSaved: sql<number>`sum(${logs.costSaved})`,
+      // COALESCE, because these two columns were added to tables that had been collecting for months
+      // — every row written before that has NULL, and a SUM over NULLs is NULL, not 0.
+      totalCachedInputTokens: sql<number>`coalesce(sum(${logs.cachedInputTokens}), 0)`,
+      totalCacheCostSaved: sql<number>`coalesce(sum(${logs.cacheCostSaved}), 0)`,
     })
     .from(logs)
     .where(lt(logs.timestamp, todayStartMs))
@@ -63,6 +67,8 @@ export async function runRollup(): Promise<number> {
         totalInputCost: Number(row.totalInputCost),
         totalOutputCost: Number(row.totalOutputCost),
         totalCostSaved: Number(row.totalCostSaved),
+        totalCachedInputTokens: Number(row.totalCachedInputTokens),
+        totalCacheCostSaved: Number(row.totalCacheCostSaved),
       })),
     )
     .onConflictDoUpdate({
@@ -75,6 +81,8 @@ export async function runRollup(): Promise<number> {
         totalInputCost: sql`excluded.total_input_cost`,
         totalOutputCost: sql`excluded.total_output_cost`,
         totalCostSaved: sql`excluded.total_cost_saved`,
+        totalCachedInputTokens: sql`excluded.total_cached_input_tokens`,
+        totalCacheCostSaved: sql`excluded.total_cache_cost_saved`,
       },
     });
 

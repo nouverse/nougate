@@ -57,6 +57,7 @@ function logSample(overrides: Partial<Parameters<typeof tokenMetricsLogger.log>[
     inputCost: 0.0025,
     outputCost: 0.005,
     costSaved: 0.0005,
+    cacheCostSaved: 0,
     ...overrides,
   });
 }
@@ -650,5 +651,79 @@ describe('openai <-> anthropic mapping', () => {
     expect(body.choices[0].message.content).toBe('done');
     expect(body.choices[0].message.tool_calls[0].function.arguments).toBe('{"path":"."}');
     expect(body.usage).toEqual({ prompt_tokens: 12, completion_tokens: 34, total_tokens: 46 });
+  });
+});
+
+/**
+ * Prompt-cache accounting.
+ *
+ * The discount was already applied to the bill before this, so the spend was right and the *saving*
+ * was invisible: a deployment reading 77% of its input from the cache reported no benefit at all,
+ * because `costSaved` only ever meant compression. Two engines, two numbers, one total.
+ */
+describe('prompt cache savings', () => {
+  test('cached input is reported and priced as its own saving', async () => {
+    logSample({
+      clientId: 'cache-client',
+      inputTokens: 20_000,
+      cachedInputTokens: 16_000,
+      cacheCostSaved: 0.0144,
+      tokensSaved: 0,
+      costSaved: 0,
+    });
+    await tokenMetricsLogger.flush();
+
+    const summary = await getUsageSummary({
+      lookback: '24h',
+      clientId: 'cache-client',
+      provider: 'all',
+      apiKeyId: 'all',
+    });
+
+    expect(summary.cachedInputTokens).toBe(16_000);
+    expect(summary.cacheCostSaved).toBeCloseTo(0.0144, 6);
+    // The saving belongs in the counterfactual: what this would have cost with neither engine.
+    expect(summary.originalCost).toBeCloseTo(summary.totalCost + summary.cacheCostSaved, 6);
+    expect(summary.savingsPercent).toBeGreaterThan(0);
+  });
+
+  test('a window with no caching reports zero rather than nothing', async () => {
+    // A metric that reads blank when a feature is off is indistinguishable from one that is broken.
+    logSample({ clientId: 'plain-client', cachedInputTokens: 0, cacheCostSaved: 0 });
+    await tokenMetricsLogger.flush();
+
+    const summary = await getUsageSummary({
+      lookback: '24h',
+      clientId: 'plain-client',
+      provider: 'all',
+      apiKeyId: 'all',
+    });
+
+    expect(summary.cachedInputTokens).toBe(0);
+    expect(summary.cacheCostSaved).toBe(0);
+  });
+
+  test('the two engines stay separate', async () => {
+    // One blurred total answers "are we saving" and loses "how" — and the compression breakdown panel
+    // already exists to answer the second question.
+    logSample({
+      clientId: 'both-client',
+      cachedInputTokens: 5_000,
+      cacheCostSaved: 0.005,
+      tokensSaved: 1_000,
+      costSaved: 0.002,
+    });
+    await tokenMetricsLogger.flush();
+
+    const summary = await getUsageSummary({
+      lookback: '24h',
+      clientId: 'both-client',
+      provider: 'all',
+      apiKeyId: 'all',
+    });
+
+    expect(summary.costSaved).toBeCloseTo(0.002, 6);
+    expect(summary.cacheCostSaved).toBeCloseTo(0.005, 6);
+    expect(summary.originalCost).toBeCloseTo(summary.totalCost + 0.007, 6);
   });
 });

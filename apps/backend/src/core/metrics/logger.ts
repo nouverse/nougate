@@ -24,7 +24,10 @@ export interface TokenLogEntry {
   estimated: boolean;
   inputCost: number;
   outputCost: number;
+  /** What compression saved. */
   costSaved: number;
+  /** What the prompt cache saved — a separate engine, so a separate number. */
+  cacheCostSaved: number;
 }
 
 const BATCH_LIMIT = 50;
@@ -133,6 +136,7 @@ function toRow(entry: TokenLogEntry) {
     inputCost: entry.inputCost,
     outputCost: entry.outputCost,
     costSaved: entry.costSaved,
+    cacheCostSaved: entry.cacheCostSaved,
   };
 }
 

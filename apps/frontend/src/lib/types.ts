@@ -44,8 +44,14 @@ export interface UsageSummary {
   outputTokens: number;
   totalTokens: number;
   tokensSaved: number;
+  /** Input tokens read from the provider's prompt cache. Part of `inputTokens`, not extra to it. */
+  cachedInputTokens: number;
   totalCost: number;
+  /** What compression saved. */
   costSaved: number;
+  /** What the prompt cache saved. A second engine, so a second number. */
+  cacheCostSaved: number;
+  /** What the window would have cost with neither engine. */
   originalCost: number;
   savingsPercent: number;
   avgDurationMs: number;

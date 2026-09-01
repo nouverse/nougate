@@ -35,7 +35,8 @@ export const ddl = [
     estimated INTEGER NOT NULL DEFAULT 0,
     input_cost DOUBLE PRECISION NOT NULL DEFAULT 0,
     output_cost DOUBLE PRECISION NOT NULL DEFAULT 0,
-    cost_saved DOUBLE PRECISION NOT NULL DEFAULT 0
+    cost_saved DOUBLE PRECISION NOT NULL DEFAULT 0,
+    cache_cost_saved DOUBLE PRECISION NOT NULL DEFAULT 0
   )`,
   `CREATE INDEX IF NOT EXISTS idx_token_logs_timestamp ON token_usage_logs (timestamp)`,
   `CREATE INDEX IF NOT EXISTS idx_token_logs_model ON token_usage_logs (full_model_name)`,
@@ -57,6 +58,8 @@ export const ddl = [
     total_input_cost DOUBLE PRECISION NOT NULL DEFAULT 0,
     total_output_cost DOUBLE PRECISION NOT NULL DEFAULT 0,
     total_cost_saved DOUBLE PRECISION NOT NULL DEFAULT 0,
+    total_cached_input_tokens INTEGER NOT NULL DEFAULT 0,
+    total_cache_cost_saved DOUBLE PRECISION NOT NULL DEFAULT 0,
     PRIMARY KEY (date, full_model_name, client_id, api_key_id)
   )`,
   `CREATE INDEX IF NOT EXISTS idx_rollups_date ON token_usage_daily_rollups (date)`,

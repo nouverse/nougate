@@ -88,8 +88,20 @@ export interface UsageSummary {
   outputTokens: number;
   totalTokens: number;
   tokensSaved: number;
+  /**
+   * Input tokens that were read from the provider's prompt cache.
+   *
+   * Part of `inputTokens`, not additional to it — a cache read is still an input token, it just costs
+   * a tenth of one. Reported separately because the share of it is the number that says whether
+   * caching is working at all.
+   */
+  cachedInputTokens: number;
   totalCost: number;
+  /** What compression saved. */
   costSaved: number;
+  /** What the prompt cache saved. A second engine, so a second number. */
+  cacheCostSaved: number;
+  /** What this window would have cost with neither engine. */
   originalCost: number;
   savingsPercent: number;
   avgDurationMs: number;
@@ -480,8 +492,10 @@ export async function getUsageSummary(filters: UsageFilters): Promise<UsageSumma
           inputTokens: sql<number>`coalesce(sum(${rollups.totalInputTokens}), 0)`,
           outputTokens: sql<number>`coalesce(sum(${rollups.totalOutputTokens}), 0)`,
           tokensSaved: sql<number>`coalesce(sum(${rollups.totalTokensSaved}), 0)`,
+          cachedInputTokens: sql<number>`coalesce(sum(${rollups.totalCachedInputTokens}), 0)`,
           totalCost: sql<number>`coalesce(sum(${rollups.totalInputCost} + ${rollups.totalOutputCost}), 0)`,
           costSaved: sql<number>`coalesce(sum(${rollups.totalCostSaved}), 0)`,
+          cacheCostSaved: sql<number>`coalesce(sum(${rollups.totalCacheCostSaved}), 0)`,
           avgDurationMs: sql<number>`0`,
         })
         .from(rollups)
@@ -492,8 +506,10 @@ export async function getUsageSummary(filters: UsageFilters): Promise<UsageSumma
           inputTokens: sql<number>`coalesce(sum(${logs.inputTokens}), 0)`,
           outputTokens: sql<number>`coalesce(sum(${logs.outputTokens}), 0)`,
           tokensSaved: sql<number>`coalesce(sum(${logs.tokensSaved}), 0)`,
+          cachedInputTokens: sql<number>`coalesce(sum(${logs.cachedInputTokens}), 0)`,
           totalCost: sql<number>`coalesce(sum(${logs.inputCost} + ${logs.outputCost}), 0)`,
           costSaved: sql<number>`coalesce(sum(${logs.costSaved}), 0)`,
+          cacheCostSaved: sql<number>`coalesce(sum(${logs.cacheCostSaved}), 0)`,
           avgDurationMs: sql<number>`coalesce(avg(${logs.durationMs}), 0)`,
         })
         .from(logs)
@@ -503,7 +519,15 @@ export async function getUsageSummary(filters: UsageFilters): Promise<UsageSumma
   const outputTokens = num(row?.outputTokens);
   const totalCost = num(row?.totalCost);
   const costSaved = num(row?.costSaved);
-  const originalCost = totalCost + costSaved;
+  const cacheCostSaved = num(row?.cacheCostSaved);
+  /**
+   * What this window would have cost with neither engine running.
+   *
+   * The cache saving belongs in here for the same reason the compression saving does — both are money
+   * that was not spent — and leaving it out was why a deployment reading 77% of its input from cache
+   * reported no benefit at all.
+   */
+  const originalCost = totalCost + costSaved + cacheCostSaved;
 
   return {
     requests: num(row?.requests),
@@ -511,10 +535,12 @@ export async function getUsageSummary(filters: UsageFilters): Promise<UsageSumma
     outputTokens,
     totalTokens: inputTokens + outputTokens,
     tokensSaved: num(row?.tokensSaved),
+    cachedInputTokens: num(row?.cachedInputTokens),
     totalCost,
     costSaved,
+    cacheCostSaved,
     originalCost,
-    savingsPercent: originalCost > 0 ? (costSaved / originalCost) * 100 : 0,
+    savingsPercent: originalCost > 0 ? ((costSaved + cacheCostSaved) / originalCost) * 100 : 0,
     avgDurationMs: num(row?.avgDurationMs),
     pendingWrites: tokenMetricsLogger.pendingCount(),
   };

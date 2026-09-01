@@ -54,6 +54,8 @@ export const tokenUsageLogs = pgTable(
     inputCost: doublePrecision('input_cost').notNull().default(0),
     outputCost: doublePrecision('output_cost').notNull().default(0),
     costSaved: doublePrecision('cost_saved').notNull().default(0),
+    /** What the prompt cache saved. Separate from `costSaved`, which is compression. */
+    cacheCostSaved: doublePrecision('cache_cost_saved').notNull().default(0),
   },
   (table) => [
     index('idx_token_logs_timestamp').on(table.timestamp),
@@ -80,6 +82,8 @@ export const tokenUsageDailyRollups = pgTable(
     totalInputCost: doublePrecision('total_input_cost').notNull().default(0),
     totalOutputCost: doublePrecision('total_output_cost').notNull().default(0),
     totalCostSaved: doublePrecision('total_cost_saved').notNull().default(0),
+    totalCachedInputTokens: integer('total_cached_input_tokens').notNull().default(0),
+    totalCacheCostSaved: doublePrecision('total_cache_cost_saved').notNull().default(0),
   },
   (table) => [
     primaryKey({ columns: [table.date, table.fullModelName, table.clientId, table.apiKeyId] }),

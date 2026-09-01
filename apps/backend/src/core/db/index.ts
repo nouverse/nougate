@@ -171,6 +171,11 @@ export async function initDb(): Promise<void> {
  */
 const ADDED_COLUMNS: Array<{ table: string; column: string; type: string }> = [
   { table: 'token_usage_logs', column: 'compression_breakdown', type: 'TEXT' },
+  // Prompt-cache accounting. The discount was already reflected in the cost; these are what make the
+  // *saving* visible, and they have to reach a database that has been collecting usage for months.
+  { table: 'token_usage_logs', column: 'cache_cost_saved', type: 'REAL' },
+  { table: 'token_usage_daily_rollups', column: 'total_cached_input_tokens', type: 'INTEGER' },
+  { table: 'token_usage_daily_rollups', column: 'total_cache_cost_saved', type: 'REAL' },
   { table: 'custom_providers', column: 'jitter_enabled', type: 'INTEGER' },
   { table: 'custom_providers', column: 'jitter_min_ms', type: 'INTEGER' },
   { table: 'custom_providers', column: 'jitter_max_ms', type: 'INTEGER' },

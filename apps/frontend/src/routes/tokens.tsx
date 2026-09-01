@@ -15,7 +15,17 @@ import {
   formatTimestamp,
   formatTokens,
 } from '@/lib/format';
-import { DollarSign, Scissors, Zap, Activity, Download, Table2, LineChart, KeyRound } from 'lucide-react';
+import {
+  DollarSign,
+  Scissors,
+  DatabaseZap,
+  Zap,
+  Activity,
+  Download,
+  Table2,
+  LineChart,
+  KeyRound,
+} from 'lucide-react';
 
 /** The bucket each side uses for traffic that carried no gateway key. */
 const KEYLESS_CLIENT = 'unknown';
@@ -97,6 +107,15 @@ function TokensPage() {
   const clientsMirrorKeys = breakdownsMatch(clientStats, apiKeyStats);
   const savedTokenPricePer1M =
     summary.tokensSaved > 0 ? (summary.costSaved / summary.tokensSaved) * 1_000_000 : 0;
+  /**
+   * How much of what was sent came back from the cache.
+   *
+   * A share, not a total, because the total says nothing on its own: a quiet day and a well-cached day
+   * both have small numbers. Cached input is a *part* of `inputTokens`, not additional to it — a cache
+   * read is still an input token, it just costs a tenth as much.
+   */
+  const cacheHitPercent =
+    summary.inputTokens > 0 ? (summary.cachedInputTokens / summary.inputTokens) * 100 : 0;
   const exportUrl =
     `/api/metrics/export?lookback=${lookback}&clientId=${encodeURIComponent(clientId)}` +
     `&provider=${encodeURIComponent(provider)}&apiKeyId=${encodeURIComponent(apiKeyId)}`;
@@ -107,7 +126,7 @@ function TokensPage() {
         <div>
           <h1 className="text-xl font-extrabold tracking-tight">Token Usage &amp; Cost</h1>
           <p className="text-xs text-base-content/50 mt-0.5">
-            Estimated spend at upstream list prices, and what compression saved.
+            Estimated spend at upstream list prices, and what compression and the prompt cache saved.
           </p>
         </div>
 
@@ -192,8 +211,22 @@ function TokensPage() {
           label="Saved by compression"
           value={formatCost(summary.costSaved)}
           hint={`${formatTokens(summary.tokensSaved)} tokens removed`}
-          badge={formatPercent(summary.savingsPercent)}
           icon={<Scissors className="w-4 h-4" />}
+        />
+        {/*
+          The second engine, and the one that was invisible.
+
+          Its discount was already applied to the bill, so the spend was right and nothing said why —
+          a deployment reading 77% of its input from cache showed no benefit at all. The share is the
+          number that says whether caching is *working*: cost alone cannot tell a cheap month from a
+          cached one.
+        */}
+        <StatTile
+          label="Saved by prompt cache"
+          value={formatCost(summary.cacheCostSaved)}
+          hint={`${formatTokens(summary.cachedInputTokens)} of ${formatTokens(summary.inputTokens)} input tokens read from cache`}
+          badge={formatPercent(cacheHitPercent)}
+          icon={<DatabaseZap className="w-4 h-4" />}
         />
         <StatTile
           label="Tokens processed"
@@ -204,7 +237,7 @@ function TokensPage() {
         <StatTile
           label="Requests"
           value={formatCount(summary.requests)}
-          hint={`Avg latency ${formatDuration(summary.avgDurationMs)}`}
+          hint={`Avg latency ${formatDuration(summary.avgDurationMs)} · saved ${formatPercent(summary.savingsPercent)} overall`}
           icon={<Activity className="w-4 h-4" />}
         />
       </div>

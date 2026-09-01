@@ -36,6 +36,8 @@ export const tokenUsageLogs = sqliteTable(
     inputCost: real('input_cost').notNull().default(0),
     outputCost: real('output_cost').notNull().default(0),
     costSaved: real('cost_saved').notNull().default(0),
+    /** What the prompt cache saved. Separate from `costSaved`, which is compression. */
+    cacheCostSaved: real('cache_cost_saved').notNull().default(0),
   },
   (table) => [
     index('idx_token_logs_timestamp').on(table.timestamp),
@@ -62,6 +64,8 @@ export const tokenUsageDailyRollups = sqliteTable(
     totalInputCost: real('total_input_cost').notNull().default(0),
     totalOutputCost: real('total_output_cost').notNull().default(0),
     totalCostSaved: real('total_cost_saved').notNull().default(0),
+    totalCachedInputTokens: integer('total_cached_input_tokens').notNull().default(0),
+    totalCacheCostSaved: real('total_cache_cost_saved').notNull().default(0),
   },
   (table) => [
     primaryKey({ columns: [table.date, table.fullModelName, table.clientId, table.apiKeyId] }),

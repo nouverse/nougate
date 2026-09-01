@@ -203,6 +203,20 @@ function commit(totals: UsageTotals, meta: TrackingMeta, statusCode: number, str
   const tokensSaved = meta.compression?.tokensSaved ?? 0;
   const costSaved = costOf(tokensSaved, pricing.inputPricePer1M);
 
+  /**
+   * What the prompt cache saved, as its own number.
+   *
+   * The discount was already applied to `inputCost` above, so the bill was right and the *saving* was
+   * invisible: the dashboard's "saved" figure came only from compression, and a deployment reading 77%
+   * of its input from cache showed nothing for it. Kept separate from `costSaved` rather than added to
+   * it, because the two are different engines and the breakdown already tells people which one did
+   * what — one blurred total would answer "are we saving" and lose "how".
+   *
+   * The factor is the discount, not the price: a cache read still costs 10% of list, so 90% of what
+   * those tokens would have cost is what was not spent.
+   */
+  const cacheCostSaved = costOf(totals.cachedInputTokens, pricing.inputPricePer1M * 0.9);
+
   tokenMetricsLogger.log({
     timestamp: Date.now(),
     sessionId: meta.sessionId,
@@ -226,6 +240,7 @@ function commit(totals: UsageTotals, meta: TrackingMeta, statusCode: number, str
     inputCost,
     outputCost,
     costSaved,
+    cacheCostSaved,
   });
 }
 
