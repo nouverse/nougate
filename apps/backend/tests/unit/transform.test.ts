@@ -419,6 +419,41 @@ describe("Unit Tests: transformGoogleEventToOpenAI", () => {
     const result = transformGoogleEventToOpenAI(googleData, "model");
     expect(result).toBeNull();
   });
+
+  /**
+   * Gemini reports a prompt-cache hit as `cachedContentTokenCount`, counted inside
+   * `promptTokenCount`. This mapper copied the three totals and dropped it, so every cached token was
+   * billed downstream at full price — `metrics/tracker.ts` reads `prompt_tokens_details.cached_tokens`
+   * and reprices at 0.1x, and never once saw the field.
+   */
+  test("a cache hit reaches the client as prompt_tokens_details", () => {
+    const googleData = {
+      candidates: [{ content: { parts: [{ text: "hi" }] }, finishReason: "STOP" }],
+      usageMetadata: {
+        promptTokenCount: 20000,
+        candidatesTokenCount: 50,
+        totalTokenCount: 20050,
+        cachedContentTokenCount: 18000,
+      },
+    };
+
+    const result = transformGoogleEventToOpenAI(googleData, "gemini-1.5-pro");
+    expect(result.usage.prompt_tokens).toBe(20000);
+    expect(result.usage.prompt_tokens_details.cached_tokens).toBe(18000);
+  });
+
+  test("and an upstream that says nothing about caching leaves the key off", () => {
+    // Absent and zero are different facts. Only zero means the cache had no hits; absent means nobody
+    // reported, which is what this proxy looked like before the field was mapped.
+    const googleData = {
+      candidates: [{ content: { parts: [{ text: "hi" }] }, finishReason: "STOP" }],
+      usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 2, totalTokenCount: 12 },
+    };
+
+    const result = transformGoogleEventToOpenAI(googleData, "gemini-1.5-pro");
+    expect(result.usage.prompt_tokens).toBe(10);
+    expect(result.usage).not.toHaveProperty("prompt_tokens_details");
+  });
 });
 
 describe("Unit Tests: OpenAIProtocolHandler", () => {

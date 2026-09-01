@@ -5,8 +5,18 @@
  * but the client called the OpenAI-compatible route.
  */
 import { getCavemanPrompt } from '@/core/caveman';
+import { cacheReadTokens, openAiCacheUsage } from "@/core/usage-cache";
 
 const DEFAULT_MAX_TOKENS = 8192;
+
+/**
+ * How much system prompt earns a cache breakpoint.
+ *
+ * ~4k characters is roughly Anthropic's 1024-token minimum for its larger models, which is the point
+ * below which a breakpoint is ignored anyway. Characters rather than a token estimate on purpose: this
+ * runs on every request, and a tokenizer here would cost more than the branch is worth.
+ */
+const CACHE_BREAKPOINT_MIN_CHARS = 4000;
 
 /**
  * Anthropic requires tool results to be user-turn blocks, and consecutive
@@ -144,7 +154,26 @@ export function mapOpenAIToAnthropic(
   };
 
   if (systemParts.length > 0) {
-    anthropicBody.system = systemParts.join('\n\n');
+    const systemText = systemParts.join('\n\n');
+    /**
+     * A cache breakpoint on the system block, once there is enough of it to be worth one.
+     *
+     * An OpenAI-shaped client has no way to ask for this — there is no `cache_control` in that
+     * dialect — so on the way to a real Anthropic upstream the request would arrive uncacheable no
+     * matter how stable its system prompt was. Anthropic's cache prefix is ordered
+     * `tools → system → messages`, so marking the *system* block caches the tool schemas with it,
+     * which on an agent client is usually the larger half.
+     *
+     * Only for a system prompt over `CACHE_BREAKPOINT_MIN_CHARS`, and not because a shorter one would
+     * error — Anthropic ignores a breakpoint below its minimum cacheable length. The reason is the
+     * wire shape: a string is what every Anthropic-style upstream has always accepted, and a
+     * dashboard-defined custom provider may be stricter than the real API about content blocks. Small
+     * requests keep the old form and lose nothing; large ones get the win.
+     */
+    anthropicBody.system =
+      systemText.length >= CACHE_BREAKPOINT_MIN_CHARS
+        ? [{ type: 'text', text: systemText, cache_control: { type: 'ephemeral' } }]
+        : systemText;
   }
   if (typeof openaiBody.temperature === 'number') {
     anthropicBody.temperature = openaiBody.temperature;
@@ -256,6 +285,9 @@ export async function finalizeAnthropicToOpenAIResponse(
       prompt_tokens: data.usage?.input_tokens ?? 0,
       completion_tokens: data.usage?.output_tokens ?? 0,
       total_tokens: (data.usage?.input_tokens ?? 0) + (data.usage?.output_tokens ?? 0),
+      // The other half of the breakpoint above: an upstream that honoured it says so as
+      // `cache_read_input_tokens`, and an OpenAI client only understands `prompt_tokens_details`.
+      ...openAiCacheUsage(cacheReadTokens(data.usage)),
     },
   };
 
@@ -283,6 +315,8 @@ export function createAnthropicToOpenAIStreamTransformer(requestedModelId: strin
   let finished = false;
   let inputTokens = 0;
   let outputTokens = 0;
+  /** Cache-read tokens, absent until the upstream mentions them. See `core/usage-cache.ts`. */
+  let cachedTokens: number | undefined;
 
   /** Anthropic block index → OpenAI tool_calls array index. */
   const toolCallIndexByBlock = new Map<number, number>();
@@ -317,6 +351,7 @@ export function createAnthropicToOpenAIStreamTransformer(requestedModelId: strin
         prompt_tokens: inputTokens,
         completion_tokens: outputTokens,
         total_tokens: inputTokens + outputTokens,
+        ...openAiCacheUsage(cachedTokens),
       },
     });
     controller.enqueue(encoder.encode('data: [DONE]\n\n'));
@@ -327,6 +362,8 @@ export function createAnthropicToOpenAIStreamTransformer(requestedModelId: strin
       case 'message_start': {
         inputTokens = event.message?.usage?.input_tokens ?? 0;
         outputTokens = event.message?.usage?.output_tokens ?? 0;
+        // `message_start` is the only event that carries the cache counts.
+        cachedTokens = cacheReadTokens(event.message?.usage) ?? cachedTokens;
         if (!sentRole) {
           sentRole = true;
           emit(controller, chunk({ role: 'assistant', content: '' }));

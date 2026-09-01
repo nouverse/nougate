@@ -162,9 +162,15 @@ describe('usage figures say when they were guessed', () => {
   test('the Anthropic mapper reports input tokens on both exit paths', () => {
     // The [DONE] path always did; the flush path did not, so any upstream that
     // ended without a [DONE] line looked like it consumed no input.
+    //
+    // Matched on the field rather than on the whole one-line literal it used to be. The usage block
+    // now also spreads a cache-read count (`core/usage-cache.ts`), which moved it onto several lines
+    // and broke a regex that was only ever standing in for "input_tokens is emitted here".
     const text = src('core/mappers/anthropic-to-openai.ts');
-    const deltas = text.match(/usage: \{ input_tokens: inputTokens, output_tokens: outputTokens \}/g) ?? [];
+    const deltas = text.match(/input_tokens: inputTokens/g) ?? [];
     expect(deltas.length).toBeGreaterThanOrEqual(1);
     expect(text).not.toContain('usage: { output_tokens: outputTokens },');
+    // And still only one place emits it, so the two exit paths cannot drift apart again.
+    expect(text.match(/const finalize = /g)?.length).toBe(1);
   });
 });

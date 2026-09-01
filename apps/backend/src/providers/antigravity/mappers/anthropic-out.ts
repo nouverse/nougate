@@ -1,4 +1,5 @@
 import { cacheSignature, cacheSignatureByCallId, cacheSessionSignature, cacheThinkingFamily, cacheSessionReasoning } from "@/providers/antigravity/utils/signature-cache";
+import { anthropicCacheUsage, cacheReadTokens } from "@/core/usage-cache";
 import { getFamilyName } from "@/providers/antigravity/auth/manager";
 
 /**
@@ -148,6 +149,7 @@ export function createAnthropicStreamTransformer(model: string, messageId: strin
               usage: {
                 input_tokens: usage?.promptTokenCount ?? 0,
                 output_tokens: usage?.candidatesTokenCount ?? 0,
+                ...anthropicCacheUsage(cacheReadTokens(usage)),
               },
             })));
           }
@@ -267,6 +269,7 @@ export function createAnthropicStreamTransformer(model: string, messageId: strin
                 usage: {
                   input_tokens: usage?.promptTokenCount ?? 0,
                   output_tokens: usage?.candidatesTokenCount ?? 0,
+                  ...anthropicCacheUsage(cacheReadTokens(usage)),
                 },
               })));
             }
@@ -303,6 +306,13 @@ export async function aggregateAnthropicResponse(
   let stopReason = "end_turn";
   let inputTokens = 0;
   let outputTokens = 0;
+  /**
+   * Cache-read tokens, `undefined` until the upstream mentions them.
+   *
+   * Not initialised to 0: a zero here would tell the client the upstream reported "no cache hits"
+   * when in fact it reported nothing, and those are different facts — see `core/usage-cache.ts`.
+   */
+  let cachedTokens: number | undefined;
   let activeSignature = "";
 
   const reader = googleRes.body!.getReader();
@@ -358,6 +368,7 @@ export async function aggregateAnthropicResponse(
           if (data.usageMetadata) {
             inputTokens = data.usageMetadata.promptTokenCount ?? 0;
             outputTokens = data.usageMetadata.candidatesTokenCount ?? 0;
+            cachedTokens = cacheReadTokens(data.usageMetadata) ?? cachedTokens;
           }
         } catch (e) { /* ignore */ }
       }
@@ -391,6 +402,10 @@ export async function aggregateAnthropicResponse(
     content,
     stop_reason: toolUses.length > 0 ? "tool_use" : stopReason,
     stop_sequence: null,
-    usage: { input_tokens: inputTokens, output_tokens: outputTokens },
+    usage: {
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      ...anthropicCacheUsage(cachedTokens),
+    },
   };
 }

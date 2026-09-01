@@ -7,6 +7,7 @@ import {
 } from "@/providers/antigravity/utils/signature-cache";
 import { getFamilyName } from "@/providers/antigravity/auth/manager";
 import { getOriginalToolName } from "@/providers/antigravity/mappers/openai-in";
+import { cacheReadTokens, openAiCacheUsage } from "@/core/usage-cache";
 
 /**
  * Transform a single Google SSE event into the OpenAI chunk format.
@@ -25,6 +26,10 @@ export function transformGoogleEventToOpenAI(
         prompt_tokens: data.usageMetadata.promptTokenCount || 0,
         completion_tokens: data.usageMetadata.candidatesTokenCount || 0,
         total_tokens: data.usageMetadata.totalTokenCount || 0,
+        // Gemini reports a cache hit as `cachedContentTokenCount`, counted *inside*
+        // `promptTokenCount`. Dropping it here was what made every cached token bill at full price
+        // downstream — `metrics/tracker.ts` reads this field and reprices it at 0.1x.
+        ...openAiCacheUsage(cacheReadTokens(data.usageMetadata)),
       }
     : undefined;
 
