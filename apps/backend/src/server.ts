@@ -13,7 +13,7 @@ import { initUsers } from "@/auth/users";
 import { initCustomProviders } from "@/providers/custom/manager";
 import { startMetricsMaintenance } from "@/core/metrics/maintenance";
 import { initCalibration } from "@/core/metrics/calibrator";
-import { projectPath } from "@/core/paths";
+import { NOUGATE_VERSION } from "@/core/version";
 
 await loadProxyConfig();
 setupLogCapture();
@@ -37,8 +37,6 @@ startMetricsMaintenance();
 registerOpenAIProtocol();
 registerAnthropicProtocol();
 
-const pkg = await Bun.file(projectPath("package.json")).json();
-
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 Bun.serve({
@@ -49,5 +47,5 @@ Bun.serve({
 });
 
 console.log(
-  `Nougate v${pkg.version || "0.0.0"} running on port ${PORT}`,
+  `Nougate v${NOUGATE_VERSION} running on port ${PORT}`,
 );

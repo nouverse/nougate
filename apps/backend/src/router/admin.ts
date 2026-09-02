@@ -1,4 +1,4 @@
-import { join } from "path";
+import { dirname, join } from "path";
 import { existsSync } from "fs";
 import { getProxyConfig, updateProxyConfig } from "@/config/manager";
 import { adminEventBus } from "@/core/events";
@@ -17,9 +17,9 @@ import { handleUsersRoute } from "@/router/users";
 import { CustomProvider } from "@/providers/custom";
 import { resolvePricing } from "@/core/metrics/pricing";
 import { projectPath } from "@/core/paths";
+import { NOUGATE_VERSION } from "@/core/version";
 
-const pkg = await Bun.file(projectPath("package.json")).json();
-const APP_VERSION = pkg.version || "0.0.0";
+const APP_VERSION = NOUGATE_VERSION;
 
 /**
  * Build a JSON response with the shared admin payload format.
@@ -124,10 +124,19 @@ function serveFrontendAsset(pathname: string): Response {
   const lastSegment = relativePath.split("/").pop() || "";
   const isFile = lastSegment.includes(".");
 
+  /**
+   * Where the built dashboard is, checked in order and remembered by nobody — this runs per request,
+   * and `existsSync` on four paths is cheaper than the file read that follows it.
+   *
+   * The last entry is the compiled-binary layout: `bun build --compile` leaves `import.meta.dir`
+   * pointing into a virtual filesystem, so the first three resolve to paths that are not on disk.
+   * A release stages the dashboard as a sibling of the executable, the same way `nouride` does.
+   */
   const distDir = [
     join(import.meta.dir, "../../../frontend/dist"),
     projectPath("apps/frontend/dist"),
     projectPath("frontend/dist"),
+    join(dirname(process.execPath), "frontend"),
   ].find((dir) => existsSync(dir)) || join(import.meta.dir, "../../../frontend/dist");
 
   if (!isFile) {

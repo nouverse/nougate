@@ -11,9 +11,36 @@ import { dirname, join } from 'path';
  * anything saved under one launch method is invisible under the other.
  *
  * Everything here is resolved from this module's own location instead.
+ *
+ * ## And that stopped being enough once this had to compile
+ *
+ * `bun build --compile` puts the source in a virtual filesystem, so `import.meta.dir` becomes a path
+ * under `/$bunfs/` that exists only to Bun's own resolver. The walk-up below then finds nothing real
+ * — and worse, it cannot *tell* that it found nothing, because `existsSync()` answers true for paths
+ * inside that virtual filesystem. It would either fall through to `process.cwd()`, scattering state
+ * wherever the binary happened to be started from, or match a `package.json` that is not on disk.
+ *
+ * So there are now three answers, most explicit first: an operator's `NOUGATE_HOME`, the directory
+ * the executable sits in when this is a compiled binary, and the walk-up for a checkout. The middle
+ * one is the layout `nouride` uses for the same problem — state and assets as siblings of the
+ * binary — so an install of either looks the same on disk.
  */
 
 const MAX_WALK_UP = 10;
+
+/**
+ * Bun's virtual filesystem root inside a `--compile` binary.
+ *
+ * Detected by prefix rather than by asking whether the path exists, because it *does*: `existsSync()`
+ * cannot distinguish a bundled file from one on disk, so an existence check sees no difference
+ * between a compiled binary and a checkout.
+ */
+const BUNFS_PREFIX = '/$bunfs/';
+
+/** True when running from a `bun build --compile` executable rather than from source. */
+export function isCompiledBinary(): boolean {
+  return import.meta.dir.startsWith(BUNFS_PREFIX);
+}
 
 let cachedRoot: string | null = null;
 
@@ -39,6 +66,29 @@ function declaresWorkspaces(packageJsonPath: string): boolean {
  */
 export function getProjectRoot(): string {
   if (cachedRoot) {
+    return cachedRoot;
+  }
+
+  /**
+   * An operator saying where the install lives, which beats every guess below.
+   *
+   * The escape hatch for anything the two rules after it get wrong: a binary on a read-only path, a
+   * container that mounts state elsewhere, two installs on one host.
+   */
+  const home = process.env.NOUGATE_HOME?.trim();
+  if (home) {
+    cachedRoot = home;
+    return cachedRoot;
+  }
+
+  /**
+   * A compiled binary has no repository to walk up through, so its own directory is the root.
+   *
+   * `process.execPath` is the real file on disk even when `import.meta.dir` is virtual, which is
+   * what makes this the one reliable anchor inside a standalone build.
+   */
+  if (isCompiledBinary()) {
+    cachedRoot = dirname(process.execPath);
     return cachedRoot;
   }
 
