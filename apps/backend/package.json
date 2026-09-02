@@ -1,6 +1,6 @@
 {
   "name": "@nouverse/nougate-backend",
-  "description": "Nougate backend — modular LLM router with multi-provider auth isolation and multi-protocol support.",
+  "description": "Nougate backend \u2014 modular LLM router with multi-provider auth isolation and multi-protocol support.",
   "version": "0.7.0",
   "private": true,
   "module": "src/server.ts",
@@ -23,5 +23,8 @@
     "@types/bun": "latest",
     "bun": "1.4.0",
     "typescript": "^5.9.3"
+  },
+  "exports": {
+    ".": "./src/boot.ts"
   }
 }
