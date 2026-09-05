@@ -151,7 +151,7 @@ describe('refreshTokens', () => {
       requests++;
       await Bun.sleep(10);
       return json({ access_token: 'sk-ant-oat01-new', refresh_token: 'next', expires_in: 3600 });
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     const [first, second] = await Promise.all([
       refreshTokens('current-refresh-token'),
@@ -164,7 +164,7 @@ describe('refreshTokens', () => {
   });
 
   test('a rejected grant throws a permanent TokenRefreshError', async () => {
-    globalThis.fetch = (async () => json({ error: 'invalid_grant' }, 400)) as typeof fetch;
+    globalThis.fetch = (async () => json({ error: 'invalid_grant' }, 400)) as unknown as typeof fetch;
 
     const error = await refreshTokens('dead-token').catch((e) => e);
     expect(error).toBeInstanceOf(TokenRefreshError);
@@ -172,7 +172,7 @@ describe('refreshTokens', () => {
   });
 
   test('a 500 throws, but not permanently — the account must survive it', async () => {
-    globalThis.fetch = (async () => new Response('gateway timeout', { status: 504 })) as typeof fetch;
+    globalThis.fetch = (async () => new Response('gateway timeout', { status: 504 })) as unknown as typeof fetch;
 
     const error = await refreshTokens('good-token').catch((e) => e);
     expect(error).toBeInstanceOf(TokenRefreshError);
@@ -182,7 +182,7 @@ describe('refreshTokens', () => {
   test('a 200 carrying no access_token is a failure, not a credential of undefined', async () => {
     // Letting this through writes `undefined` onto the account, which 401s every later request and
     // gets diagnosed as an expiry — chasing entirely the wrong thing.
-    globalThis.fetch = (async () => json({ token_type: 'Bearer' })) as typeof fetch;
+    globalThis.fetch = (async () => json({ token_type: 'Bearer' })) as unknown as typeof fetch;
 
     const error = await refreshTokens('odd-token').catch((e) => e);
     expect(error).toBeInstanceOf(TokenRefreshError);
@@ -194,7 +194,7 @@ describe('refreshTokens', () => {
     globalThis.fetch = (async (_url: any, init: any) => {
       sent = { headers: init.headers, body: JSON.parse(init.body) };
       return json({ access_token: 'sk-ant-oat01-new' });
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     await refreshTokens('a-refresh-token');
 

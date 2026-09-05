@@ -42,6 +42,7 @@ import { claudeCodeModelRegistry } from './config/model-specs';
 import { getClaudeCodeConfig, loadClaudeCodeConfig } from './config/provider-config';
 import { ClaudeCodeExecutor } from './upstream/executor';
 import { sanitizeAnthropicBody } from './mappers/anthropic';
+import { cloakToolNames, decloakResponse, type ToolNameMap } from './mappers/tool-names';
 import {
   createAnthropicToOpenAIStreamTransformer,
   finalizeAnthropicToOpenAIResponse,
@@ -116,33 +117,47 @@ export class ClaudeCodeProvider implements IProvider {
     const executor = new ClaudeCodeExecutor();
 
     if (protocol === 'anthropic') {
-      // Nothing to translate. The response is handed back untouched — including the streamed one,
-      // which means `cache_control`, thinking blocks and any field this gateway has never heard of
-      // survive the trip in both directions.
+      // Nothing is translated — `cache_control`, thinking blocks and any field this gateway has never
+      // heard of survive the trip in both directions. The one exception is tool *names*, which are
+      // suffixed on the way up to avoid colliding with names the upstream already knows, and put back
+      // on the way down so the client never learns it happened. See `mappers/tool-names.ts`.
+      const { body: upstreamBody, toolNameMap } = this.cloak(
+        sanitizeAnthropicBody(body, upstreamModelId),
+      );
+
       const result = await executor.execute({
-        body: sanitizeAnthropicBody(body, upstreamModelId),
+        body: upstreamBody,
         modelSpec,
         clientId: ctx.clientId,
       });
-      return result.response;
+
+      return await decloakResponse(result.response, toolNameMap, isStreaming);
     }
 
     if (protocol === 'openai') {
+      const { body: upstreamBody, toolNameMap } = this.cloak(
+        mapOpenAIToAnthropic(body, upstreamModelId, modelSpec.maxOutputTokens),
+      );
+
       const result = await executor.execute({
-        body: mapOpenAIToAnthropic(body, upstreamModelId, modelSpec.maxOutputTokens),
+        body: upstreamBody,
         modelSpec,
         clientId: ctx.clientId,
       });
 
+      // Decloaking runs *before* the protocol translation, not after: it is an Anthropic-shaped
+      // rewrite, and doing it here means the OpenAI mappers never need to know this mechanic exists.
+      const decloaked = await decloakResponse(result.response, toolNameMap, isStreaming);
+
       if (isStreaming) {
-        if (!result.response.body) throw new Error('No response body from upstream Anthropic');
+        if (!decloaked.body) throw new Error('No response body from upstream Anthropic');
         return new Response(
-          result.response.body.pipeThrough(createAnthropicToOpenAIStreamTransformer(responseModelId)),
+          decloaked.body.pipeThrough(createAnthropicToOpenAIStreamTransformer(responseModelId)),
           { status: 200, headers: { ...STREAM_HEADERS, 'X-Claude-Code-Attempts': String(result.attempts) } },
         );
       }
 
-      return await finalizeAnthropicToOpenAIResponse(result.response, responseModelId);
+      return await finalizeAnthropicToOpenAIResponse(decloaked, responseModelId);
     }
 
     throw new Error(`Unsupported protocol: ${protocol}`);
@@ -282,6 +297,19 @@ export class ClaudeCodeProvider implements IProvider {
     // `redirectUrl`, not `authUrl`: the dashboard's OAuth tab already speaks this shape for
     // Antigravity, and matching it is what lets one component serve both providers.
     return { redirectUrl: started.url, state: started.state };
+  }
+
+  /**
+   * Suffix client tool names, when the operator has left that on.
+   *
+   * A thin wrapper so the two protocol paths cannot drift on the config read — an `if` in one branch
+   * and not the other is exactly the kind of asymmetry that shows up as "tools work on the OpenAI
+   * endpoint but not the Anthropic one".
+   */
+  private cloak(body: unknown): { body: unknown; toolNameMap: ToolNameMap | null } {
+    const config = getClaudeCodeConfig();
+    if (!config.cloakToolNames) return { body, toolNameMap: null };
+    return cloakToolNames(body, config.toolNameSuffix);
   }
 
   async removeAccount(accountId: string): Promise<void> {

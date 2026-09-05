@@ -16,7 +16,7 @@
 import type { IModelSpec } from '@/core/interfaces';
 import { classifyUpstreamError, ModelUnavailableError } from '@/core/upstream-errors';
 import { getProxyConfig } from '@/config/manager';
-import { authHeaders } from '../auth/credential';
+import { buildRequestHeaders } from './headers';
 import {
   cooldownScope,
   getBestAccount,
@@ -139,7 +139,7 @@ export class ClaudeCodeExecutor {
 
         const response = await fetch(url, {
           method: 'POST',
-          headers: { 'content-type': 'application/json', ...authHeaders(account.credential) },
+          headers: buildRequestHeaders(account.credential),
           body: JSON.stringify(body),
           signal: controller.signal,
         });

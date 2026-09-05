@@ -33,12 +33,40 @@ export interface ClaudeCodeConfig {
    * reaches this string — it is read from this file and nowhere else.
    */
   refreshCommand: string;
+  /**
+   * The `anthropic-beta` gates every request asks for.
+   *
+   * Empty means "use `DEFAULT_BETA_FEATURES`", not "send none" — an empty list here is what a config
+   * file written before this field existed looks like, and reading that as "disable every capability"
+   * would silently downgrade an upgraded gateway. To genuinely send none, set a list with one empty
+   * string, which is filtered out.
+   *
+   * Replaces the default wholesale rather than merging, because the reason to touch this is usually a
+   * gate that has graduated and is now *rejected* as unknown — a merge could not remove one.
+   */
+  betaFeatures: string[];
+  /**
+   * Whether client tool names are suffixed on the way up. See `mappers/tool-names.ts`.
+   *
+   * On by default because the collision it avoids is silent: an unsuffixed client tool sharing a name
+   * with one the upstream already knows produces a call the client cannot execute, with no error to
+   * point at. Off is for diagnosing whether a tool problem is this mechanic's fault.
+   */
+  cloakToolNames: boolean;
+  /**
+   * The suffix itself. Configurable because it has to not collide with a real client tool name, and
+   * only the operator knows what their clients declare.
+   */
+  toolNameSuffix: string;
 }
 
 const DEFAULTS: ClaudeCodeConfig = {
   baseUrl: 'https://api.anthropic.com',
   features: DEFAULT_JITTER_CONFIG,
   refreshCommand: '',
+  betaFeatures: [],
+  cloakToolNames: true,
+  toolNameSuffix: '_ide',
 };
 
 let current: ClaudeCodeConfig = { ...DEFAULTS };
