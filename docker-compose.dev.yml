@@ -20,8 +20,14 @@ services:
 
         # Install frontend deps & initial build
         cd /app/apps/frontend && bun install --frozen-lockfile 2>/dev/null || bun install
-        bun run build
-        echo "✅ Frontend built → /app/apps/frontend/dist"
+        # Not `&& echo ✅`: vite builds with emptyOutDir, so a build that fails partway leaves dist
+        # in place and empty. Claiming success there sends whoever meets the resulting 503 looking
+        # for a mount problem instead of at the twenty lines of build output just above.
+        if bun run build; then
+          echo "✅ Frontend built → /app/apps/frontend/dist"
+        else
+          echo "❌ Frontend build FAILED — the dashboard will answer 503 until this is fixed"
+        fi
 
         # Start frontend watcher in background
         (
@@ -33,8 +39,18 @@ services:
               /app/apps/frontend/src /app/apps/frontend/index.html 2>/dev/null
             echo ""
             echo "🔄 Frontend change detected, rebuilding..."
-            cd /app/apps/frontend && bun run build 2>&1 | tail -5
-            echo "✅ Frontend rebuilt at $$(date '+%H:%M:%S')"
+            cd /app/apps/frontend
+            # Captured rather than piped to `tail`: a pipeline's status is the *last* command's, so
+            # `bun run build | tail -5` succeeds even when the build does not — which is how a failed
+            # rebuild used to print a tick. On failure the whole output is shown, because the five
+            # lines a tail keeps are the summary, not the error.
+            if build_output=$$(bun run build 2>&1); then
+              echo "$$build_output" | tail -5
+              echo "✅ Frontend rebuilt at $$(date '+%H:%M:%S')"
+            else
+              echo "$$build_output"
+              echo "❌ Frontend rebuild FAILED at $$(date '+%H:%M:%S') — dist is now empty, dashboard will 503"
+            fi
           done
         ) &
 

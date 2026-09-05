@@ -131,13 +131,42 @@ function serveFrontendAsset(pathname: string): Response {
    * The last entry is the compiled-binary layout: `bun build --compile` leaves `import.meta.dir`
    * pointing into a virtual filesystem, so the first three resolve to paths that are not on disk.
    * A release stages the dashboard as a sibling of the executable, the same way `nouride` does.
+   *
+   * ## The candidate is the entry document, not the directory
+   *
+   * It used to be `existsSync(dir)`, and an **empty** `dist` satisfies that. Vite builds with
+   * `emptyOutDir: true`, so it clears the directory before it writes — a build that fails partway
+   * leaves the directory in place with nothing in it. The check passed, the read did not, and the
+   * dashboard answered `ENOENT: … /dist/index.html` with a 500.
+   *
+   * Testing for `index.html` makes an empty directory fall through to the next candidate, which in
+   * a container is often a perfectly good copy at another path.
    */
-  const distDir = [
+  const candidates = [
     join(import.meta.dir, "../../../frontend/dist"),
     projectPath("apps/frontend/dist"),
     projectPath("frontend/dist"),
     join(dirname(process.execPath), "frontend"),
-  ].find((dir) => existsSync(dir)) || join(import.meta.dir, "../../../frontend/dist");
+  ];
+  const distDir = candidates.find((dir) => existsSync(join(dir, "index.html")));
+
+  /**
+   * No dashboard anywhere — said out loud, with where it looked.
+   *
+   * The alternative is what this used to do: hand back a `Bun.file` for a path that does not exist
+   * and let the read fail, which surfaces as a bare ENOENT naming *one* of four candidates. That
+   * error sent more than one person looking for a Docker `COPY` bug when the real answer was a
+   * frontend build that had failed thirty seconds earlier.
+   */
+  if (!distDir) {
+    return new Response(
+      `The dashboard bundle is not built.\n\n` +
+        `Looked in:\n${candidates.map((dir) => `  ${dir}`).join("\n")}\n\n` +
+        `Run \`bun run build\` in apps/frontend, or check that the frontend build step succeeded — ` +
+        `vite clears dist before it writes, so a failed build leaves the directory empty.\n`,
+      { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } },
+    );
+  }
 
   if (!isFile) {
     return new Response(Bun.file(join(distDir, "index.html")), {
