@@ -106,7 +106,20 @@ export interface IProviderQuota {
  * id, so every provider that was not Copilot got Antigravity's Google OAuth
  * dialog — including custom providers, which only ever wanted an API key.
  */
-export type AccountFlow = 'oauth-redirect' | 'device-code' | 'api-key';
+export type AccountFlow = 'oauth-redirect' | 'device-code' | 'api-key' | 'oauth-token';
+
+/**
+ * `oauth-token` is the paste-a-token flow, and it is not the same thing as `api-key`.
+ *
+ * Both render one field, which is why it was tempting to reuse `api-key` — and why doing so was
+ * wrong. The form is the only thing an operator sees, so a provider whose entire reason to exist is
+ * subscription-backed OAuth, labelled "ADD AN API KEY" with an `sk-…` placeholder, describes itself
+ * as the one thing it is not. A custom provider already covers API keys; if that is all this looked
+ * like, it should not exist.
+ *
+ * The distinction is real on the wire too: an API key goes on `x-api-key`, an OAuth token on
+ * `Authorization: Bearer` plus a beta header, and sending either on the other's header is a 401.
+ */
 
 /**
  * Registry contract for provider-scoped model lookup.

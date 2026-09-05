@@ -253,7 +253,7 @@ export interface Account {
 }
 
 /** Which credential flow a provider offers, so the dashboard renders the right form. */
-export type AccountFlow = 'oauth-redirect' | 'device-code' | 'api-key';
+export type AccountFlow = 'oauth-redirect' | 'device-code' | 'api-key' | 'oauth-token';
 
 /**
  * One upstream usage limit, already normalised by the provider that owns it —

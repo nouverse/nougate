@@ -8,12 +8,74 @@ import { AccountsTable } from './AccountsTable';
 import { AccountCard } from './AccountCard';
 import { Plus, Shield } from 'lucide-react';
 
+/**
+ * What the sign-in modal says, per provider.
+ *
+ * The mechanics are identical — open an authorize URL, come back with a code, exchange it — so the
+ * component is shared. The *words* are not, and hardcoding them is a bug that has now been made
+ * twice in this directory: a Claude Code provider whose OAuth pointed correctly at
+ * `claude.ai/oauth/authorize` while the modal above it said "Add Google Account" and told the
+ * operator to wait for a failed `localhost:3000` redirect that was never going to happen.
+ *
+ * Keyed by provider id, which is the one place that is legitimate: this is presentation copy, not
+ * behaviour. Everything the component *does* still comes from the provider's declared `accountFlow`.
+ */
+const COPY: Record<string, {
+  title: string;
+  intro: string;
+  button: string;
+  consent: string;
+  pasteLabel: string;
+  pastePlaceholder: string;
+}> = {
+  antigravity: {
+    title: 'Add Google Account',
+    intro: 'Google OAuth requires a local port redirect. Follow these manual steps to authenticate.',
+    button: 'Sign In with Google',
+    consent:
+      'Log in to your Google Account. Once finished, your browser will attempt to load a failed local URL (e.g. `http://localhost:3000/oauth-callback?code=...`).',
+    pasteLabel: 'Paste Redirect URL',
+    pastePlaceholder: 'Paste the entire redirected localhost URL here...',
+  },
+  'claude-code': {
+    title: 'Add Claude Account',
+    intro:
+      'Signs in with your Claude subscription. Anthropic shows the code on screen rather than redirecting, so it is copied back by hand.',
+    button: 'Sign In with Claude',
+    consent:
+      'Approve the request on claude.ai. Anthropic then shows an authorization code — copy it. It may look like `abc123#xyz`; paste the whole thing, the state after the `#` is part of it.',
+    pasteLabel: 'Paste Authorization Code',
+    pastePlaceholder: 'Paste the code from claude.ai here...',
+  },
+};
+
+/** A provider with no entry gets neutral wording rather than another vendor's. */
+const FALLBACK_COPY = {
+  title: 'Add Account',
+  intro: 'Sign in with the provider, then bring the authorization code back here.',
+  button: 'Sign In',
+  consent: 'Complete the sign-in. The provider will give you an authorization code.',
+  pasteLabel: 'Paste Authorization Code',
+  pastePlaceholder: 'Paste the code or the full redirect URL here...',
+};
+
 interface Props {
+  /**
+   * Which provider this is acting on.
+   *
+   * Passed in rather than named in here: this component serves any provider that declares
+   * `accountFlow: 'oauth-redirect'` — Antigravity and Claude Code today — and the codebase has
+   * already been burned once by UI that guessed a provider from its id.
+   */
+  providerId: string;
   accounts: Account[];
   refreshQueries: () => void;
 }
 
-export function AntigravityAccountsTab({ accounts, refreshQueries }: Props) {
+export function OAuthAccountsTab({ providerId, accounts, refreshQueries }: Props) {
+  const copy = COPY[providerId] ?? FALLBACK_COPY;
+  // A Google concept. Antigravity has a cloudaicompanion project to look up; nothing else here does.
+  const supportsRediscover = providerId === 'antigravity';
   const [toast, setToast] = useState<string | null>(null);
   const [deleteEmail, setDeleteEmail] = useState<string | null>(null);
 
@@ -29,7 +91,7 @@ export function AntigravityAccountsTab({ accounts, refreshQueries }: Props) {
 
   const handleOpenAuthModal = async () => {
     try {
-      const res = await api.post<{ redirectUrl: string }>(`/api/providers/antigravity/accounts/add`);
+      const res = await api.post<{ redirectUrl: string }>(`/api/providers/${providerId}/accounts/add`);
       if (res?.redirectUrl) {
         setAuthUrl(res.redirectUrl);
         setPastedUrl('');
@@ -58,7 +120,7 @@ export function AntigravityAccountsTab({ accounts, refreshQueries }: Props) {
 
     try {
       const res = await api.post<{ success: boolean; email?: string; error?: string }>(
-        `/api/providers/antigravity/accounts/add`,
+        `/api/providers/${providerId}/accounts/add`,
         { code }
       );
       if (res?.success) {
@@ -78,7 +140,7 @@ export function AntigravityAccountsTab({ accounts, refreshQueries }: Props) {
   };
 
   const cooldownMutation = useMutation({
-    mutationFn: (email: string) => api.post(`/api/providers/antigravity/accounts/${email}/action`, { action: 'cooldown', payload: { pool: 'cli' } }),
+    mutationFn: (email: string) => api.post(`/api/providers/${providerId}/accounts/${email}/action`, { action: 'cooldown', payload: { pool: 'cli' } }),
     onSuccess: () => {
       showToast('Cooldown triggered for account!');
       refreshQueries();
@@ -86,7 +148,7 @@ export function AntigravityAccountsTab({ accounts, refreshQueries }: Props) {
   });
 
   const rediscoverMutation = useMutation({
-    mutationFn: (email: string) => api.post(`/api/providers/antigravity/accounts/${email}/action`, { action: 'rediscover_project' }),
+    mutationFn: (email: string) => api.post(`/api/providers/${providerId}/accounts/${email}/action`, { action: 'rediscover_project' }),
     onSuccess: () => {
       showToast('Project rediscovered!');
       refreshQueries();
@@ -97,7 +159,7 @@ export function AntigravityAccountsTab({ accounts, refreshQueries }: Props) {
   });
 
   const resetMutation = useMutation({
-    mutationFn: (email: string) => api.post(`/api/providers/antigravity/accounts/${email}/action`, { action: 'reset' }),
+    mutationFn: (email: string) => api.post(`/api/providers/${providerId}/accounts/${email}/action`, { action: 'reset' }),
     onSuccess: () => {
       showToast('Account state reset successfully!');
       refreshQueries();
@@ -105,7 +167,7 @@ export function AntigravityAccountsTab({ accounts, refreshQueries }: Props) {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (email: string) => api.delete(`/api/providers/antigravity/accounts/${email}`),
+    mutationFn: (email: string) => api.delete(`/api/providers/${providerId}/accounts/${email}`),
     onSuccess: () => {
       showToast('Account deleted successfully!');
       setDeleteEmail(null);
@@ -144,7 +206,7 @@ export function AntigravityAccountsTab({ accounts, refreshQueries }: Props) {
             <AccountsTable
               accounts={accounts}
               onCooldown={(email) => cooldownMutation.mutate(email)}
-              onRediscover={(email) => rediscoverMutation.mutate(email)}
+              {...(supportsRediscover ? { onRediscover: (email: string) => rediscoverMutation.mutate(email) } : {})}
               onReset={(email) => resetMutation.mutate(email)}
               onDelete={(email) => setDeleteEmail(email)}
             />
@@ -156,7 +218,7 @@ export function AntigravityAccountsTab({ accounts, refreshQueries }: Props) {
                 key={acc.email}
                 account={acc}
                 onCooldown={(email) => cooldownMutation.mutate(email)}
-                onRediscover={(email) => rediscoverMutation.mutate(email)}
+                {...(supportsRediscover ? { onRediscover: (email: string) => rediscoverMutation.mutate(email) } : {})}
                 onReset={(email) => resetMutation.mutate(email)}
                 onDelete={(email) => setDeleteEmail(email)}
               />
@@ -180,10 +242,10 @@ export function AntigravityAccountsTab({ accounts, refreshQueries }: Props) {
         <div className="modal-box rounded-2xl border border-base-300 shadow-xl bg-base-100 max-w-md text-base-content">
           <h3 className="font-extrabold text-lg flex items-center gap-2">
             <Shield className="w-5 h-5 text-primary animate-pulse" />
-            Add Google Account
+            {copy.title}
           </h3>
           <p className="text-xs text-base-content/50 mt-1 font-sans">
-            Google OAuth requires a local port redirect. Follow these manual steps to authenticate.
+            {copy.intro}
           </p>
 
           <div className="mt-5 space-y-4 font-sans">
@@ -198,7 +260,7 @@ export function AntigravityAccountsTab({ accounts, refreshQueries }: Props) {
                   className="btn btn-sm btn-primary rounded-xl font-bold w-full gap-1.5 flex items-center justify-center shadow shadow-primary/20 hover:scale-[1.02] transition-transform"
                 >
                   <Plus className="w-4 h-4" />
-                  Sign In with Google
+                  {copy.button}
                 </a>
               </div>
             </div>
@@ -208,7 +270,7 @@ export function AntigravityAccountsTab({ accounts, refreshQueries }: Props) {
               <div className="flex-1">
                 <span className="text-xs font-bold block">Complete Consent</span>
                 <p className="text-[10px] text-base-content/40 mt-0.5 leading-relaxed">
-                  Log in to your Google Account. Once finished, your browser will attempt to load a failed local URL (e.g. `http://localhost:3000/oauth-callback?code=...`).
+                  {copy.consent}
                 </p>
               </div>
             </div>
@@ -216,10 +278,10 @@ export function AntigravityAccountsTab({ accounts, refreshQueries }: Props) {
             <div className="flex gap-3 items-start">
               <span className="badge badge-neutral bg-base-300 text-base-content/75 border-0 font-bold mt-0.5">3</span>
               <div className="flex-1">
-                <span className="text-xs font-bold block mb-1">Paste Redirect URL</span>
+                <span className="text-xs font-bold block mb-1">{copy.pasteLabel}</span>
                 <textarea
                   className="textarea textarea-bordered bg-base-300 font-mono text-xs w-full h-24 focus:outline-none placeholder-base-content/20 leading-relaxed border-base-300"
-                  placeholder="Paste the entire redirected localhost URL here..."
+                  placeholder={copy.pastePlaceholder}
                   value={pastedUrl}
                   onChange={(e) => setPastedUrl(e.target.value)}
                 />

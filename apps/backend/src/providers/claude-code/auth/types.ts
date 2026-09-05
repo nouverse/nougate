@@ -20,6 +20,16 @@ export interface ClaudeCodeAccount {
   healthScore: number;
   lastUsed: number;
   consecutiveFailures: number;
+  /**
+   * The refresh token, when this account came from the OAuth flow.
+   *
+   * Its presence is what separates an account that can heal itself from one that cannot: an API key
+   * and a pasted `setup-token` both sit in `credential` and simply expire, while an OAuth account
+   * renews `credential` in place and keeps working.
+   */
+  refreshToken?: string;
+  /** When `credential` stops working, epoch ms. Renewed ahead of this — see `CLAUDE_OAUTH.refreshLeadMs`. */
+  expiresAt?: number;
   /** Set when a 401 says the credential is finished, so selection stops offering it. */
   invalidatedAt?: number;
   /** Why it was invalidated, in words the dashboard can show. */

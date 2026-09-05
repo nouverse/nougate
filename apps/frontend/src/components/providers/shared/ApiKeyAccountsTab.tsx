@@ -11,7 +11,32 @@ interface Props {
   providerId: string;
   accounts: Account[];
   refreshQueries: () => void;
+  /** Which credential this provider actually wants. Decides the wording, not the mechanics. */
+  flow?: 'api-key' | 'oauth-token';
 }
+
+/**
+ * What the form says, per flow.
+ *
+ * The mechanics are identical — one secret, one label, rotate on failure — so the component is
+ * shared. The *words* are not interchangeable, and treating them as if they were is how a
+ * subscription-OAuth provider came to be labelled "ADD AN API KEY" with an `sk-…` placeholder, which
+ * made it look like a redundant copy of a custom provider.
+ */
+const COPY = {
+  'api-key': {
+    title: 'ADD AN API KEY',
+    hint: 'Keys rotate like accounts: the healthiest one wins, a 429 puts it in cooldown and the next key takes over.',
+    placeholder: 'sk-...',
+    button: 'Add key',
+  },
+  'oauth-token': {
+    title: 'ADD A SUBSCRIPTION TOKEN',
+    hint: 'Run `claude setup-token` and paste the token here — it draws on your Claude subscription rather than API credits. An API key works too, and is billed as credits. Tokens rotate like accounts: the healthiest wins, a 429 puts it in cooldown.',
+    placeholder: 'paste the token from `claude setup-token`',
+    button: 'Add token',
+  },
+} as const;
 
 /**
  * The accounts view for any provider whose accounts are API keys.
@@ -21,7 +46,13 @@ interface Props {
  * rotate exactly like OAuth accounts do — same health score, same cooldown — so
  * this renders the same columns as the other account tabs.
  */
-export function ApiKeyAccountsTab({ providerId, accounts, refreshQueries }: Props) {
+export function ApiKeyAccountsTab({
+  providerId,
+  accounts,
+  refreshQueries,
+  flow = 'api-key',
+}: Props) {
+  const copy = COPY[flow];
   const [draft, setDraft] = useState({ apiKey: '', label: '' });
   const [error, setError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Account | null>(null);
@@ -67,12 +98,9 @@ export function ApiKeyAccountsTab({ providerId, accounts, refreshQueries }: Prop
           <div className="min-w-0">
             <h3 className="card-title text-sm font-bold tracking-wide flex items-center gap-2">
               <KeyRound className="w-4 h-4 text-primary shrink-0" />
-              ADD AN API KEY
+              {copy.title}
             </h3>
-            <p className="text-xs text-base-content/50 mt-1">
-              Keys rotate like accounts: the healthiest one wins, a 429 puts it in cooldown and the
-              next key takes over.
-            </p>
+            <p className="text-xs text-base-content/50 mt-1">{copy.hint}</p>
           </div>
 
           <form
@@ -85,7 +113,7 @@ export function ApiKeyAccountsTab({ providerId, accounts, refreshQueries }: Prop
             <input
               type="password"
               required
-              placeholder="sk-..."
+              placeholder={copy.placeholder}
               className="input input-bordered input-sm flex-1 min-w-0 bg-base-100 font-mono"
               value={draft.apiKey}
               onChange={(event) => setDraft({ ...draft, apiKey: event.target.value })}
@@ -103,7 +131,7 @@ export function ApiKeyAccountsTab({ providerId, accounts, refreshQueries }: Prop
               disabled={addMutation.isPending}
             >
               <Plus className="w-3.5 h-3.5" />
-              Add key
+              {copy.button}
             </button>
           </form>
 

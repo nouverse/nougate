@@ -22,12 +22,39 @@ import {
   getBestAccount,
   invalidate,
   markCooldown,
+  needsRefresh,
   recordRateLimit,
   replaceCredential,
+  storeRefreshedTokens,
   updateAccountUsage,
 } from '../auth/manager';
+import { CLAUDE_OAUTH, refreshTokens } from '../auth/oauth';
+import type { ClaudeCodeAccount } from '../auth/types';
 import { getClaudeCodeConfig } from '../config/provider-config';
 import { refreshAccessToken } from './refresh';
+
+/**
+ * Renew a token that is about to expire, before it is spent on a request.
+ *
+ * Proactive because the reactive path costs a whole round trip: without this, every token simply
+ * runs out mid-conversation and the 401 handler below picks up the pieces. With it, the expiry is a
+ * background HTTP call nobody notices.
+ *
+ * Failure here is deliberately quiet — it returns and lets the request go out on the old token. The
+ * token may still have hours left (the lead is four of them), and refusing to try would turn a
+ * transient network blip into a failed turn.
+ */
+async function refreshIfExpiring(account: ClaudeCodeAccount): Promise<void> {
+  if (!needsRefresh(account, CLAUDE_OAUTH.refreshLeadMs)) return;
+  try {
+    const tokens = await refreshTokens(account.refreshToken!);
+    await storeRefreshedTokens(account.id, tokens);
+  } catch (error) {
+    console.warn(
+      `[claude-code] could not renew ${account.label} ahead of expiry: ${String(error).slice(0, 200)}`,
+    );
+  }
+}
 
 export interface ClaudeCodeExecuteOptions {
   body: unknown;
@@ -75,6 +102,8 @@ export class ClaudeCodeExecutor {
         refreshedThisAccount = false;
       }
 
+      await refreshIfExpiring(account);
+
       const body = { ...(options.body as Record<string, unknown>), model: upstreamModelId };
       const timeoutMs = modelSpec.timeoutMs ?? 600_000;
       const controller = new AbortController();
@@ -98,6 +127,31 @@ export class ClaudeCodeExecutor {
         if (response.status === 401) {
           if (account.kind === 'oauth' && !refreshedThisAccount) {
             refreshedThisAccount = true;
+
+            /**
+             * Two ways to heal a 401, in order of how much they know.
+             *
+             * An account from the OAuth flow holds a refresh token and can renew itself — no CLI on
+             * the host, no operator. A pasted `setup-token` cannot, and falls through to the
+             * configured refresh command, which is the only thing that can mint it a new one.
+             */
+            if (account.refreshToken) {
+              try {
+                const tokens = await refreshTokens(account.refreshToken);
+                await storeRefreshedTokens(account.id, tokens);
+                tried.splice(tried.indexOf(account.id), 1);
+                console.warn(`[claude-code] renewed ${account.label} after a 401`);
+                continue;
+              } catch (error) {
+                await invalidate(
+                  account.id,
+                  `refresh token rejected — sign in again (${String(error).slice(0, 120)})`,
+                );
+                await updateAccountUsage(account.id, false, { statusCode: 401 });
+                continue;
+              }
+            }
+
             const { token, error } = await refreshAccessToken();
             if (token) {
               await replaceCredential(account.id, token);

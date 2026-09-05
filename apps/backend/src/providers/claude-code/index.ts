@@ -7,8 +7,14 @@
  * a provider — the auth flow and the translation — and what is left is selection, rotation, and
  * knowing which header a credential belongs on.
  *
- * `accountFlow` is `api-key` because the dashboard's paste-a-credential form is exactly right for
- * both kinds it accepts. Which kind it *is* comes from the credential itself; see `auth/credential.ts`.
+ * `accountFlow` is `oauth-redirect`, the same flow Antigravity uses: the point of this provider is a
+ * **subscription** credential, not an API key. A custom provider already reaches `api.anthropic.com`
+ * with a key, so if that were all this offered it would be redundant.
+ *
+ * A pasted `claude setup-token` and an API key are both still accepted through the same
+ * `addAccount` entry point, because the header logic has to tell the kinds apart anyway. They are
+ * simply not what the button is for. Which kind a credential is comes from the credential itself;
+ * see `auth/credential.ts`.
  */
 
 import type {
@@ -21,11 +27,15 @@ import type {
 } from '@/core/interfaces';
 import { normalizeJitterConfig, type JitterConfig } from '@/core/jitter';
 import {
+  addAccount,
+  addOAuthAccount,
   getAccounts,
   getBestAccount,
   initManager,
+  removeAccount,
   updateAccountUsage,
 } from './auth/manager';
+import { beginAuthorization, exchangeCode } from './auth/oauth';
 import type { ClaudeCodeAccount } from './auth/types';
 import { claudeCodeModelRegistry } from './config/model-specs';
 import { getClaudeCodeConfig, loadClaudeCodeConfig } from './config/provider-config';
@@ -44,11 +54,24 @@ const STREAM_HEADERS = {
   'Access-Control-Allow-Origin': '*',
 };
 
+/**
+ * Where Claude sends the operator back after they approve.
+ *
+ * Claude's own console URL, matching the reference implementation — the authorize page shows the
+ * code on screen rather than only redirecting, which is what makes a paste-back flow work at all on
+ * a gateway that may not be reachable from the browser doing the sign-in.
+ */
+const DEFAULT_REDIRECT_URI = 'https://console.anthropic.com/oauth/code/callback';
+
 export class ClaudeCodeProvider implements IProvider {
   readonly id = 'claude-code';
   readonly displayName = 'Claude Code';
 
-  readonly accountFlow = 'api-key' as const;
+  readonly accountFlow = 'oauth-redirect' as const;
+
+  /** The in-flight authorization, if the operator has started one. See `addAccount`. */
+  private pending: { url: string; state: string; codeVerifier: string; redirectUri: string } | null =
+    null;
 
   async init(): Promise<void> {
     await loadClaudeCodeConfig();
@@ -152,6 +175,64 @@ export class ClaudeCodeProvider implements IProvider {
           ...(limit.resetsAt ? { resetIn: formatResetIn(limit.resetsAt) } : {}),
         };
       });
+  }
+
+  /**
+   * Both halves of adding an account, behind one entry point.
+   *
+   * The router exposes `addAccount(body)` generically and nothing else, which is the right shape: a
+   * provider that needed its own routes would be a provider the dashboard has to know the id of, and
+   * this codebase has already been burned by keying UI off provider ids.
+   *
+   * So the body decides which step this is:
+   *
+   *   - `{}`               — begin. Returns the URL to open and remembers the PKCE verifier.
+   *   - `{ code }`         — finish. Exchanges it and stores the tokens.
+   *   - `{ apiKey }`       — skip the flow entirely: a pasted key or `claude setup-token` token.
+   */
+  async addAccount(body: {
+    code?: string;
+    state?: string;
+    apiKey?: string;
+    label?: string;
+    redirectUri?: string;
+  }): Promise<unknown> {
+    if (body?.apiKey) {
+      const account = await addAccount(body.apiKey, body.label);
+      return { success: true, email: account.label };
+    }
+
+    if (body?.code) {
+      const pending = this.pending;
+      if (!pending) {
+        throw Object.assign(new Error('Start the sign-in again — no authorization is in progress.'), {
+          status: 409,
+        });
+      }
+      const tokens = await exchangeCode(body.code, pending.redirectUri, pending.codeVerifier, pending.state);
+      this.pending = null;
+
+      const account = await addOAuthAccount({
+        accessToken: tokens.access_token,
+        ...(tokens.refresh_token ? { refreshToken: tokens.refresh_token } : {}),
+        ...(tokens.expires_in ? { expiresInSeconds: tokens.expires_in } : {}),
+        ...(body.label ? { label: body.label } : {}),
+      });
+      return { success: true, email: account.label };
+    }
+
+    const redirectUri = body?.redirectUri || DEFAULT_REDIRECT_URI;
+    const started = beginAuthorization(redirectUri);
+    // Held in memory only: a half-finished sign-in that does not survive a restart is correct — the
+    // operator simply starts again, and a verifier on disk is a secret with no owner.
+    this.pending = { ...started, redirectUri };
+    // `redirectUrl`, not `authUrl`: the dashboard's OAuth tab already speaks this shape for
+    // Antigravity, and matching it is what lets one component serve both providers.
+    return { redirectUrl: started.url, state: started.state };
+  }
+
+  async removeAccount(accountId: string): Promise<void> {
+    await removeAccount(accountId);
   }
 
   /**

@@ -1,12 +1,17 @@
 import React, { useState } from 'react';
 import { Account } from '@/lib/types';
 import { HealthBadge } from '@/components/shared/HealthBadge';
-import { AccountDetail } from '@/components/providers/antigravity/AccountDetail';
+import { AccountDetail } from '@/components/providers/shared/AccountDetail';
 
 interface Props {
   account: Account;
   onCooldown: (email: string) => void;
-  onRediscover: (email: string) => void;
+  /**
+   * Re-run project discovery. Optional, because it is a Google concept: Antigravity has a
+   * cloudaicompanion project to look up and Claude Code has nothing of the kind, so the button is
+   * absent there rather than present and answering 400.
+   */
+  onRediscover?: (email: string) => void;
   onReset: (email: string) => void;
   onDelete: (email: string) => void;
 }
@@ -41,7 +46,7 @@ export function AccountCard({
               </button>
               <ul tabIndex={0} className="dropdown-content menu p-2 shadow-2xl bg-base-100 border border-base-300 rounded-box w-52 z-30 text-xs text-base-content">
                 <li>
-                  <button onClick={() => onRediscover(account.email)}>
+                  <button onClick={() => onRediscover?.(account.email)}>
                     🔄 Rediscover Project
                   </button>
                 </li>

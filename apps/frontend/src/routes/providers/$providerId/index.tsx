@@ -5,7 +5,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { QuotaGrid } from '@/components/providers/shared/QuotaGrid';
 import { ModelRegistryTable } from '@/components/providers/shared/ModelRegistryTable';
-import { AntigravityAccountsTab } from '@/components/providers/antigravity/AntigravityAccountsTab';
+import { OAuthAccountsTab } from '@/components/providers/shared/OAuthAccountsTab';
 import { CopilotAccountsTab } from '@/components/providers/copilot/CopilotAccountsTab';
 import { ApiKeyAccountsTab } from '@/components/providers/shared/ApiKeyAccountsTab';
 import { ProviderOverviewTab } from '@/components/providers/shared/ProviderOverviewTab';
@@ -147,16 +147,24 @@ function ProviderPage() {
             id — the old `id === 'copilot' ? … : Antigravity` fallback handed every
             custom provider a Google OAuth dialog it had no use for. */}
         {activeTab === 'accounts' && (
-          accountFlow === 'api-key' ? (
+          accountFlow === 'api-key' || accountFlow === 'oauth-token' ? (
+            // One form, two vocabularies. A pasted secret is a pasted secret; what it *is* — an API
+            // key billed as credits, or a subscription token from `claude setup-token` — is the only
+            // thing an operator can tell from this screen, so the words have to be right.
             <ApiKeyAccountsTab
               providerId={detail.id}
               accounts={detail.accounts}
               refreshQueries={refreshQueries}
+              flow={accountFlow}
             />
           ) : accountFlow === 'device-code' ? (
             <CopilotAccountsTab accounts={detail.accounts} refreshQueries={refreshQueries} />
           ) : accountFlow === 'oauth-redirect' ? (
-            <AntigravityAccountsTab accounts={detail.accounts} refreshQueries={refreshQueries} />
+            <OAuthAccountsTab
+              providerId={detail.id}
+              accounts={detail.accounts}
+              refreshQueries={refreshQueries}
+            />
           ) : (
             <EmptyState message="This provider does not support adding accounts from the dashboard." />
           )

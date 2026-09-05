@@ -75,6 +75,70 @@ export async function addAccount(credential: string, label?: string): Promise<Cl
   return account;
 }
 
+/**
+ * Store an account that came back from the OAuth flow.
+ *
+ * Separate from `addAccount` rather than a flag on it, because the two produce genuinely different
+ * accounts: this one carries a refresh token and an expiry, and can renew itself indefinitely. The
+ * pasted kind cannot, and conflating them would mean a `refreshToken` field that is undefined for
+ * half the callers and a refresh path that has to keep checking.
+ */
+export async function addOAuthAccount(input: {
+  accessToken: string;
+  refreshToken?: string;
+  expiresInSeconds?: number;
+  label?: string;
+}): Promise<ClaudeCodeAccount> {
+  const account: ClaudeCodeAccount = {
+    id: randomUUID(),
+    credential: input.accessToken,
+    kind: 'oauth',
+    label: input.label?.trim() || credentialHint(input.accessToken),
+    healthScore: 1,
+    lastUsed: 0,
+    consecutiveFailures: 0,
+    ...(input.refreshToken ? { refreshToken: input.refreshToken } : {}),
+    ...(input.expiresInSeconds ? { expiresAt: Date.now() + input.expiresInSeconds * 1000 } : {}),
+  };
+  accounts.push(account);
+  await persist(true);
+  return account;
+}
+
+/**
+ * Write a renewed token back onto an account.
+ *
+ * `refreshToken` is kept when the response omitted one — the server echoes it back only sometimes,
+ * and storing `undefined` there would spend the account's ability to ever refresh again on a single
+ * successful renewal.
+ */
+export async function storeRefreshedTokens(
+  id: string,
+  tokens: { access_token: string; refresh_token?: string; expires_in?: number },
+): Promise<void> {
+  const account = accounts.find((entry) => entry.id === id);
+  if (!account) return;
+
+  account.credential = tokens.access_token;
+  account.kind = 'oauth';
+  if (tokens.refresh_token) account.refreshToken = tokens.refresh_token;
+  if (tokens.expires_in) account.expiresAt = Date.now() + tokens.expires_in * 1000;
+  // A renewal is evidence the account is well, whatever the last request said.
+  delete account.invalidatedAt;
+  delete account.invalidReason;
+  account.consecutiveFailures = 0;
+  await persist(true);
+}
+
+/** Whether this token is close enough to expiry to renew before spending a request on it. */
+export function needsRefresh(account: ClaudeCodeAccount, leadMs: number): boolean {
+  return (
+    account.refreshToken !== undefined &&
+    account.expiresAt !== undefined &&
+    account.expiresAt - Date.now() < leadMs
+  );
+}
+
 export async function removeAccount(id: string): Promise<boolean> {
   const before = accounts.length;
   accounts = accounts.filter((account) => account.id !== id);
