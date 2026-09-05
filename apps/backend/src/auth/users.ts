@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { and, eq, ne, sql } from 'drizzle-orm';
 import { getDb, t } from '@/core/db';
 
@@ -305,70 +306,128 @@ function announce(title: string, lines: string[]): void {
 }
 
 /**
- * Create the bootstrap account from the environment, when the database has no
- * users yet.
+ * Get a first account onto a fresh install, without needing a shell.
  *
- * There is no fallback credential. A gateway that seeds a known username and
- * password is reachable by anyone who can read its README, and "you were meant
- * to change it" has never stopped that from being true. If
- * `INITIAL_ADMIN_USERNAME` and `INITIAL_ADMIN_PASSWORD` are not both set and
- * valid, no account is created and nobody can sign in — which is a loud,
- * recoverable failure, unlike a quiet default.
+ * ## What changed, and why the old rule was wrong for the wrong reason
  *
- * The password is taken exactly as given — no length rule, no character rule.
- * The policy in `assertValidPassword` exists to stop *users* picking something
- * weak through a form; this value is set by whoever runs the deployment, in a
- * file only they can write, and refusing it would just mean a gateway that
- * refuses to start. It is also not flagged for mandatory replacement: they chose
- * it deliberately, so forcing a change would be theatre.
+ * This used to create nothing at all unless `INITIAL_ADMIN_USERNAME` and `INITIAL_ADMIN_PASSWORD`
+ * were both set, on the argument that "a gateway that seeds a known username and password is
+ * reachable by anyone who can read its README".
  *
- * The username is still checked, because an unusable one is a different problem:
- * a name with a space cannot be typed back exactly, so the account it creates is
- * one nobody can sign in to.
+ * That argument is correct and it is about a **known** credential — a fixed default baked into the
+ * image. It says nothing about a *generated* one. Refusing to create anything did not make the
+ * deployment safer; it made it unreachable, and the failure mode was a locked-out operator with an
+ * empty user table and no way in that did not involve editing the database by hand.
  *
- * Runs only on an empty user table, so setting these variables on a deployment
- * that already has users does nothing — they are not a password reset.
+ * So: the operator may name the account through the environment, and if they have not, one is
+ * generated, printed **once**, and flagged for mandatory replacement. A generated credential the
+ * operator did not choose is a way in, not a password, and it should stop working the moment it has
+ * been used.
+ *
+ * ## Runs only on an empty user table
+ *
+ * Which means these variables are not a password reset, and a restart on a working deployment prints
+ * nothing. That silence is the point: a banner on every boot is a banner people stop reading, and it
+ * puts a credential in front of anyone who can see the logs long after it was needed.
+ *
+ * Deliberately not done: creating the account lazily from whoever reaches the port first. That is the
+ * seamless option, and it hands the instance to whoever finds it before its owner does.
  */
 export async function initUsers(): Promise<void> {
   if ((await countUsers()) > 0) {
     return;
   }
 
-  const username = normalizeUsername(process.env.INITIAL_ADMIN_USERNAME ?? '');
-  const password = process.env.INITIAL_ADMIN_PASSWORD ?? '';
+  const configuredName = normalizeUsername(process.env.INITIAL_ADMIN_USERNAME ?? '');
+  const configuredPassword = process.env.INITIAL_ADMIN_PASSWORD ?? '';
 
-  if (!username || !password) {
-    announce('⚠  NO DASHBOARD ACCOUNT — nobody can sign in', [
-      'The user table is empty and INITIAL_ADMIN_USERNAME / INITIAL_ADMIN_PASSWORD',
-      'are not both set, so no account was created. There is no default.',
-      '',
-      'Set both in .env and restart. They are read only while the table is empty.',
+  // Both or neither. A username with no password would otherwise fall through to a generated
+  // password under the name the operator chose, which reads in the log as though their setting was
+  // accepted — and they would spend the next hour typing a password that was never used.
+  if (configuredName && configuredPassword) {
+    try {
+      /**
+       * Inserted directly rather than through `createUser`, to skip `assertValidPassword`.
+       *
+       * That policy exists to stop *users* picking something weak through a form. This value is set
+       * by whoever runs the deployment, in a file only they can write, and refusing it would mean a
+       * gateway that will not start over a password its owner chose on purpose. The **username** is
+       * still checked, because an unusable one is a different problem: a name with a space cannot be
+       * typed back exactly, so the account it creates is one nobody can sign in to.
+       *
+       * Not flagged for mandatory replacement either — they chose it deliberately, so forcing a
+       * change would be theatre.
+       */
+      assertValidUsername(configuredName);
+      await getDb().insert(t.users).values({
+        id: crypto.randomUUID(),
+        username: configuredName,
+        passwordHash: await hashPassword(configuredPassword),
+        mustChangePassword: 0,
+        createdAt: Date.now(),
+      });
+      // The username, never the password: it came from the operator and does not need reading back
+      // to them out of a log file.
+      announce('✓  FIRST RUN — dashboard account created', [
+        `Sign in as  ${configuredName}  with the password from INITIAL_ADMIN_PASSWORD.`,
+      ]);
+      return;
+    } catch (error) {
+      // Refusing loudly and continuing to a generated account beats refusing to boot: the operator
+      // still gets in, and the log says why their setting was not used.
+      announce('⚠  INITIAL_ADMIN_* REJECTED — generating a password instead', [
+        (error as Error).message,
+      ]);
+    }
+  } else if (configuredName || configuredPassword) {
+    announce('⚠  INITIAL_ADMIN_USERNAME and INITIAL_ADMIN_PASSWORD must BOTH be set', [
+      configuredName
+        ? 'Only the username is set. It was kept; the password below was generated.'
+        : 'Only the password is set. It was ignored; the account below was generated.',
     ]);
-    return;
   }
 
-  try {
-    assertValidUsername(username);
-  } catch (error) {
-    announce('⚠  NO DASHBOARD ACCOUNT — INITIAL_ADMIN_USERNAME rejected', [
-      (error as Error).message,
-      '',
-      'Fix it in .env and restart.',
-    ]);
-    return;
+  const password = generatePassword();
+
+  /**
+   * The operator's username is kept when it is usable, even though their password was not.
+   *
+   * Keeping it is friendlier and not ambiguous: the banner prints the generated password right
+   * underneath, so there is no reading in which their own password looks accepted. But a name that
+   * cannot be typed back — a space in it, too short — would produce an account nobody can sign in to,
+   * which is the exact lockout this whole path exists to prevent. So that one falls back to `admin`.
+   */
+  let username = 'admin';
+  if (configuredName) {
+    try {
+      assertValidUsername(configuredName);
+      username = configuredName;
+    } catch (error) {
+      announce('⚠  INITIAL_ADMIN_USERNAME is unusable — falling back to "admin"', [
+        (error as Error).message,
+      ]);
+    }
   }
 
-  await getDb().insert(t.users).values({
-    id: crypto.randomUUID(),
-    username,
-    passwordHash: await hashPassword(password),
-    mustChangePassword: 0,
-    createdAt: Date.now(),
-  });
+  const user = await createUser(username, password, true);
 
-  // The username is printed, the password never is — it came from the operator
-  // and does not need reading back to them out of a log file.
   announce('✓  FIRST RUN — dashboard account created', [
-    `Sign in as  ${username}  with the password from INITIAL_ADMIN_PASSWORD.`,
+    `username  ${user.username}`,
+    `password  ${password}`,
+    '',
+    'Generated for the first login and must be changed straight away. Shown once,',
+    'and stored only as a hash — there is no way to print it again.',
+    'Set INITIAL_ADMIN_USERNAME and INITIAL_ADMIN_PASSWORD to choose your own.',
   ]);
+}
+
+/**
+ * A password that survives being copied out of a log by hand.
+ *
+ * Hex rather than a word list or full base64: `l`/`1` and `O`/`0` are the classic transcription
+ * failures, and someone reading this off a terminal and typing it into a browser is the expected
+ * path. Long enough that the alphabet being small does not matter.
+ */
+function generatePassword(): string {
+  return randomBytes(12).toString('hex');
 }
