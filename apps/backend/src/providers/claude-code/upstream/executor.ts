@@ -29,6 +29,7 @@ import {
   updateAccountUsage,
 } from '../auth/manager';
 import { CLAUDE_OAUTH, refreshTokens } from '../auth/oauth';
+import { isPermanentRefreshFailure, type TokenRefreshError } from '../auth/refresh-errors';
 import type { ClaudeCodeAccount } from '../auth/types';
 import { getClaudeCodeConfig } from '../config/provider-config';
 import { refreshAccessToken } from './refresh';
@@ -50,6 +51,20 @@ async function refreshIfExpiring(account: ClaudeCodeAccount): Promise<void> {
     const tokens = await refreshTokens(account.refreshToken!);
     await storeRefreshedTokens(account.id, tokens);
   } catch (error) {
+    /**
+     * Still quiet, but not equally quiet.
+     *
+     * A stated rejection here means the grant is gone and the operator has to sign in again — that is
+     * worth an error line, because the access token this request is about to use has hours left and
+     * the account will look healthy right up until it stops. The account is *not* invalidated: the
+     * credential in hand still works, and retiring it now would throw away those hours.
+     */
+    if (isPermanentRefreshFailure(error)) {
+      console.error(
+        `[claude-code] ${account.label} can no longer renew itself — sign in again (${(error as TokenRefreshError).failure.code || 'no reason given'})`,
+      );
+      return;
+    }
     console.warn(
       `[claude-code] could not renew ${account.label} ahead of expiry: ${String(error).slice(0, 200)}`,
     );
@@ -70,6 +85,15 @@ export interface ClaudeCodeExecuteResult {
 
 /** A 429 with no `retry-after` still has to wait for something. A minute, as Copilot uses. */
 const DEFAULT_COOLDOWN_MS = 60_000;
+
+/**
+ * How long a credential sits out after a refresh failed for a reason the server did not state.
+ *
+ * Short on purpose. It is not a punishment — it is long enough that a burst of requests does not
+ * re-attempt a refresh that is failing, and short enough that a passing network problem costs one
+ * cooling window rather than an operator's attention.
+ */
+const REFRESH_RETRY_COOLDOWN_MS = 30_000;
 
 export class ClaudeCodeExecutor {
   async execute(options: ClaudeCodeExecuteOptions): Promise<ClaudeCodeExecuteResult> {
@@ -143,10 +167,26 @@ export class ClaudeCodeExecutor {
                 console.warn(`[claude-code] renewed ${account.label} after a 401`);
                 continue;
               } catch (error) {
-                await invalidate(
-                  account.id,
-                  `refresh token rejected — sign in again (${String(error).slice(0, 120)})`,
-                );
+                /**
+                 * Only a reason the server actually stated retires the account.
+                 *
+                 * `invalidate` is permanent and nothing but an operator brings an account back, so
+                 * spending it on a refresh that failed for an unstated reason — a 500, a DNS blip, a
+                 * proxy returning HTML — retires a working subscription over a dropped packet. The
+                 * transient case cools the credential briefly instead: other credentials answer in
+                 * the meantime, and this one is offered again once the window passes.
+                 */
+                if (isPermanentRefreshFailure(error)) {
+                  await invalidate(
+                    account.id,
+                    `refresh token rejected — sign in again (${(error as TokenRefreshError).failure.code || 'no reason given'})`,
+                  );
+                } else {
+                  await markCooldown(account.id, scope, REFRESH_RETRY_COOLDOWN_MS);
+                  console.warn(
+                    `[claude-code] could not renew ${account.label}, cooling ${REFRESH_RETRY_COOLDOWN_MS}ms: ${String(error).slice(0, 200)}`,
+                  );
+                }
                 await updateAccountUsage(account.id, false, { statusCode: 401 });
                 continue;
               }

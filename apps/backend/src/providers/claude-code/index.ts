@@ -36,6 +36,7 @@ import {
   updateAccountUsage,
 } from './auth/manager';
 import { beginAuthorization, exchangeCode } from './auth/oauth';
+import { getUsage } from './api/usage';
 import type { ClaudeCodeAccount } from './auth/types';
 import { claudeCodeModelRegistry } from './config/model-specs';
 import { getClaudeCodeConfig, loadClaudeCodeConfig } from './config/provider-config';
@@ -148,15 +149,67 @@ export class ClaudeCodeProvider implements IProvider {
   }
 
   /**
-   * Headroom, from the rate-limit headers the last response already carried.
+   * Headroom, asked for where it can be asked for and inferred where it cannot.
    *
-   * Reported per credential rather than merged into one figure: two credentials on different plans
-   * have genuinely different ceilings, and an average would describe neither. A credential that has
-   * not been used yet has no snapshot and is left out — a bar drawn at 100% for something never
-   * measured is a claim, not a reading.
+   * Two sources, in that order of preference:
+   *
+   *   1. **`/api/oauth/usage`** — the plan's own five-hour and weekly windows, per model. This is the
+   *      number the operator is actually looking for, and the only one that can say "83% of the
+   *      session window is gone" before a request starts failing.
+   *   2. **The rate-limit headers on the last response** — free, but on a consumer subscription they
+   *      usually carry a status and no figures, which reads as "unlimited" for a plan that has a
+   *      very real cap.
+   *
+   * Reported per credential rather than merged: two credentials on different plans have genuinely
+   * different ceilings, and an average would describe neither. A credential with neither source is
+   * left out entirely — a full bar for something never measured is a claim, not a reading.
+   *
+   * Never throws. A quota panel is supplementary, and a `getQuotas` that rejects takes down a
+   * dashboard over an endpoint that has no bearing on serving traffic.
    */
   async getQuotas(): Promise<IProviderQuota[]> {
-    return getAccounts()
+    const accounts = getAccounts().filter((account) => !account.invalidatedAt);
+
+    const reported = await Promise.all(
+      accounts.map(async (account) => {
+        try {
+          const usage = await getUsage(account.credential);
+          if (!usage || usage.windows.length === 0) return [];
+
+          return usage.windows.map<IProviderQuota>((window) => ({
+            // Scoped by account: two credentials both report a "session (5h)" window, and a shared id
+            // would collapse them into one row in the dashboard's list.
+            id: `${account.id}:${window.label}`,
+            label: `${account.label} — ${window.label}`,
+            remainingFraction: window.remainingFraction,
+            used: `${Math.round(window.utilizationPercent)}%`,
+            limit: '100%',
+            unit: 'of window used',
+            ...(window.resetsAt ? { resetIn: formatResetIn(window.resetsAt) } : {}),
+          }));
+        } catch (error) {
+          console.warn(
+            `[claude-code] usage lookup failed for ${account.label}: ${String(error).slice(0, 200)}`,
+          );
+          return [];
+        }
+      }),
+    );
+
+    const quotas = reported.flat();
+    const covered = new Set(quotas.map((quota) => quota.id.split(':')[0]));
+
+    // Header-derived rows only for the credentials the usage endpoint could not describe. Emitting
+    // both would show one account twice with two different numbers and no way to tell which is real.
+    return [
+      ...quotas,
+      ...this.headerQuotas(accounts.filter((account) => !covered.has(account.id))),
+    ];
+  }
+
+  /** The fallback reading, from what the last response's headers happened to carry. */
+  private headerQuotas(accounts: ClaudeCodeAccount[]): IProviderQuota[] {
+    return accounts
       .filter((account) => account.rateLimit)
       .map((account) => {
         const limit = account.rateLimit!;

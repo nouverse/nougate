@@ -18,6 +18,9 @@
 
 import { createHash, randomBytes } from 'node:crypto';
 
+import { classifyRefreshError, TokenRefreshError } from './refresh-errors';
+import { createSingleFlight } from './single-flight';
+
 export const CLAUDE_OAUTH = {
   clientId: '9d1c250a-e61b-44d9-88ed-5944d1962f5e',
   authorizeUrl: 'https://claude.ai/oauth/authorize',
@@ -110,22 +113,72 @@ export async function exchangeCode(
 }
 
 /**
+ * How long a completed refresh answers for the token it consumed.
+ *
+ * Ten seconds, matching the reference. It is not a cache lifetime — it is the width of the window in
+ * which a second caller can still be holding the pre-refresh copy of an account. See
+ * `single-flight.ts` for why that window is the dangerous one.
+ */
+const REFRESH_DEDUP_TTL_MS = 10_000;
+
+/**
+ * Keyed by the *old* refresh token rather than by account id.
+ *
+ * The token is what the server rotates and what it revokes a family over, so it is the thing that
+ * must not be presented twice. An account id would also miss the case where two accounts were added
+ * from the same sign-in and share a grant.
+ */
+const refreshFlight = createSingleFlight<ClaudeTokenResponse>(REFRESH_DEDUP_TTL_MS);
+
+/** Test seam: drop the memory of in-flight and recent refreshes. */
+export function resetRefreshDedup(): void {
+  refreshFlight.clear();
+}
+
+/**
  * Renew an access token.
  *
  * `refresh_token` is echoed back only sometimes; when it is absent the existing one stays valid, so
  * the caller keeps it rather than storing `undefined` and losing the ability to refresh again.
+ *
+ * Two things wrap the bare HTTP call, and both are load-bearing:
+ *
+ *   - **Single-flight.** Anthropic rotates refresh tokens, so two concurrent renewals of the same
+ *     credential make the second one present a spent token — which revokes the whole grant family
+ *     rather than merely failing. Concurrent callers share one refresh instead.
+ *   - **Classified failures.** A `TokenRefreshError` carries whether the server actually said the
+ *     grant is gone. Without it the executor cannot tell a revoked token from a network blip, and
+ *     retires the account for either.
  */
 export async function refreshTokens(refreshToken: string): Promise<ClaudeTokenResponse> {
-  const res = await fetch(CLAUDE_OAUTH.tokenUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({
-      grant_type: 'refresh_token',
-      refresh_token: refreshToken,
-      client_id: CLAUDE_OAUTH.clientId,
-    }),
-  });
+  return refreshFlight.run(refreshToken, async () => {
+    const res = await fetch(CLAUDE_OAUTH.tokenUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+        client_id: CLAUDE_OAUTH.clientId,
+      }),
+    });
 
-  if (!res.ok) throw new Error(`Token refresh failed: ${(await res.text()).slice(0, 300)}`);
-  return (await res.json()) as ClaudeTokenResponse;
+    if (!res.ok) throw new TokenRefreshError(classifyRefreshError(await res.text(), res.status));
+
+    const tokens = (await res.json()) as ClaudeTokenResponse;
+    // A 200 carrying no access token is not a success. Letting it through writes an `undefined`
+    // credential onto the account, which fails every later request as a 401 and gets diagnosed as an
+    // expiry — chasing the wrong thing entirely.
+    if (!tokens?.access_token) {
+      throw new TokenRefreshError({
+        status: res.status,
+        code: 'no_access_token',
+        description: 'the token endpoint returned success but no access_token',
+        permanent: false,
+      });
+    }
+    return tokens;
+  });
 }
+
+export { TokenRefreshError, isPermanentRefreshFailure } from './refresh-errors';
+export type { RefreshFailure } from './refresh-errors';
