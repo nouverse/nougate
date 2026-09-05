@@ -202,23 +202,52 @@ export function createToolNameDecloakStream(
 }
 
 /**
+ * Headers that describe how the *original* bytes were framed, and are lies about the new ones.
+ *
+ * `fetch` has already decompressed the body by the time this code sees it, but the upstream's
+ * `content-encoding: gzip` is still sitting on the header list. Copying it onto a re-emitted body
+ * tells the client to gunzip plain JSON, which fails for every single request rather than degrading —
+ * and on a stream it corrupts the whole thing before the first event arrives.
+ *
+ * `content-length` is the same class of mistake with a quieter symptom: the re-serialised JSON is
+ * almost never the same length as what arrived, so the client reads the wrong number of bytes and
+ * either truncates the response or waits for bytes that never come.
+ *
+ * `transfer-encoding` is hop-by-hop and belongs to the connection this process is not making.
+ */
+const REFRAMED_HEADERS = ['content-encoding', 'content-length', 'transfer-encoding'];
+
+/**
+ * The upstream's headers, minus the ones that no longer describe the body being sent.
+ *
+ * A copy: `response.headers` is immutable on some runtimes and shared on others, so mutating it in
+ * place is either a throw or an action at a distance.
+ */
+function reframedHeaders(response: Response): Headers {
+  const headers = new Headers(response.headers);
+  for (const name of REFRAMED_HEADERS) headers.delete(name);
+  return headers;
+}
+
+/**
  * One response, with the client's tool names restored, whichever shape it arrived in.
  *
- * Status and headers are carried across unchanged — this rewrites a field, it does not get an opinion
- * about the HTTP response.
+ * Status is carried across unchanged. Headers are carried across *minus* the framing ones — see
+ * `REFRAMED_HEADERS`, which is the difference between this working and every tool request failing.
  */
 export async function decloakResponse(
   response: Response,
   toolNameMap: ToolNameMap | null,
   isStreaming: boolean,
 ): Promise<Response> {
+  // Nothing to rewrite means the original object, untouched — no rebuild, no reframing, no risk.
   if (!toolNameMap?.size || !response.body) return response;
 
   if (isStreaming) {
     return new Response(response.body.pipeThrough(createToolNameDecloakStream(toolNameMap)), {
       status: response.status,
       statusText: response.statusText,
-      headers: response.headers,
+      headers: reframedHeaders(response),
     });
   }
 
@@ -228,14 +257,14 @@ export async function decloakResponse(
     return new Response(JSON.stringify(body), {
       status: response.status,
       statusText: response.statusText,
-      headers: response.headers,
+      headers: reframedHeaders(response),
     });
   } catch {
     // Not JSON. Hand back exactly what arrived rather than an error of this file's own invention.
     return new Response(text, {
       status: response.status,
       statusText: response.statusText,
-      headers: response.headers,
+      headers: reframedHeaders(response),
     });
   }
 }

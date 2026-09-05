@@ -103,7 +103,10 @@ export class ClaudeCodeExecutor {
     const modelId = modelSpec.modelId;
     const upstreamModelId = modelSpec.upstreamModelId || modelId;
     const scope = cooldownScope(modelId);
-    const url = `${getClaudeCodeConfig().baseUrl.replace(/\/$/, '')}/v1/messages`;
+    // `?beta=true` matches the reference transport. It is what opts the request into the beta surface
+    // the `anthropic-beta` gates then select from; without it several of those gates are accepted and
+    // then quietly ignored, which is the same silent-downgrade failure the header list exists to avoid.
+    const url = `${getClaudeCodeConfig().baseUrl.replace(/\/$/, '')}/v1/messages?beta=true`;
 
     const tried: string[] = [];
     let attempts = 0;

@@ -35,10 +35,12 @@ import { getClaudeCodeConfig } from '../config/provider-config';
 /**
  * The gates this provider asks for when the operator has not said otherwise.
  *
- * Checked against Anthropic's published betas on 2026-09-06. They drift; when you change one, put the
- * date you checked in the commit message rather than in a comment that will rot.
+ * This is the reference implementation's list, in its order — it is the combination known to work
+ * against a live OAuth credential, so it is the one to start from rather than a curated subset.
+ * They drift; when you change one, put the date you checked in the commit message.
  */
 export const DEFAULT_BETA_FEATURES = [
+  'claude-code-20250219',
   'interleaved-thinking-2025-05-14',
   'context-management-2025-06-27',
   'prompt-caching-scope-2026-01-05',

@@ -258,4 +258,49 @@ describe('decloakResponse', () => {
     const upstream = new Response('{}');
     expect(await decloakResponse(upstream, null, false)).toBe(upstream);
   });
+
+  test('content-encoding is not re-asserted on a body fetch already decoded', async () => {
+    // The bug this exists to prevent broke every tool-carrying request: `fetch` decompresses the body
+    // but leaves `content-encoding: gzip` on the header list, and copying it onto the rewritten body
+    // tells the client to gunzip plain JSON. It fails outright rather than degrading.
+    const upstream = new Response(JSON.stringify({ content: [{ type: 'tool_use', name: 'Read_ide' }] }), {
+      headers: { 'content-type': 'application/json', 'content-encoding': 'gzip' },
+    });
+
+    const out = await decloakResponse(upstream, new Map([['Read_ide', 'Read']]), false);
+    expect(out.headers.get('content-encoding')).toBeNull();
+    expect(out.headers.get('content-type')).toBe('application/json');
+    expect((await out.json()).content[0].name).toBe('Read');
+  });
+
+  test('a stale content-length does not survive the rewrite', async () => {
+    // The rewritten JSON is almost never the length that arrived, so a copied header makes the client
+    // truncate the response or wait for bytes that never come.
+    const body = JSON.stringify({ content: [{ type: 'tool_use', name: 'Read_ide' }] });
+    const upstream = new Response(body, {
+      headers: { 'content-type': 'application/json', 'content-length': String(body.length) },
+    });
+
+    const out = await decloakResponse(upstream, new Map([['Read_ide', 'Read']]), false);
+    const text = await out.text();
+    const declared = out.headers.get('content-length');
+    expect(declared === null || declared === String(new TextEncoder().encode(text).length)).toBe(true);
+  });
+
+  test('a stream is not framed as gzip either', async () => {
+    const encoder = new TextEncoder();
+    const upstream = new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode('event: ping\ndata: {"type":"ping"}\n\n'));
+          controller.close();
+        },
+      }),
+      { headers: { 'content-type': 'text/event-stream', 'content-encoding': 'gzip' } },
+    );
+
+    const out = await decloakResponse(upstream, new Map([['Read_ide', 'Read']]), true);
+    expect(out.headers.get('content-encoding')).toBeNull();
+    expect(await out.text()).toContain('event: ping');
+  });
 });
