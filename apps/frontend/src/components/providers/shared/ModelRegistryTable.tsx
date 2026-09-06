@@ -19,26 +19,36 @@ export function ModelRegistryTable({ models, providerId }: Props) {
     return true;
   });
 
-  const allIds = filtered.map((m) => `${providerId}:${m.modelId}`).join('\n');
+  const allPrefixed = filtered.map((m) => `${providerId}:${m.modelId}`).join('\n');
+  const allBare = filtered.map((m) => m.modelId).join('\n');
+  const countLabel = `${filtered.length} ID${filtered.length === 1 ? '' : 's'}`;
 
   return (
     <div className="space-y-4">
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-base-200 p-3 rounded-xl border border-base-300">
         <input
           type="text"
-          placeholder={`Search models... (call them as ${providerId}:model)`}
+          placeholder={`Search models... (${providerId}:model, or bare to let the gateway route)`}
           className="input input-sm input-bordered w-full sm:max-w-sm bg-base-100 text-base-content"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
 
         <div className="flex items-center gap-3 flex-wrap">
-          <CopyButton
-            value={allIds}
-            label={`Copy ${filtered.length} ID${filtered.length === 1 ? '' : 's'}`}
-            className="border border-base-300"
-            title="Copy every visible model ID, one per line"
-          />
+          <div className="join border border-base-300 rounded-lg">
+            <CopyButton
+              value={allBare}
+              label={`Copy ${countLabel} bare`}
+              className="join-item rounded-none"
+              title="Copy every visible model ID without a prefix, one per line — the gateway picks the provider for each"
+            />
+            <CopyButton
+              value={allPrefixed}
+              label="prefixed"
+              className="join-item rounded-none border-l border-base-300"
+              title={`Copy every visible model ID as ${providerId}:model, one per line — pinned to this provider`}
+            />
+          </div>
 
           <div className="flex items-center gap-2">
             <span className="text-xs text-base-content/50 font-medium">Pool:</span>
@@ -110,7 +120,7 @@ export function ModelRegistryTable({ models, providerId }: Props) {
         <table className="table table-sm w-full text-base-content">
           <thead>
             <tr className="border-b border-base-300 text-base-content/50">
-              <th>Model ID (send this as `model`)</th>
+              <th>Model ID — prefixed pins, bare routes</th>
               <th>Display Name</th>
               <th>Pool</th>
               <th>Max Output</th>
