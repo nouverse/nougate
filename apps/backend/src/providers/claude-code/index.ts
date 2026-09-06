@@ -42,10 +42,16 @@ import { beginAuthorization, exchangeCode } from './auth/oauth';
 import { getUsage } from './api/usage';
 import type { ClaudeCodeAccount } from './auth/types';
 import { claudeCodeModelRegistry } from './config/model-specs';
-import { getClaudeCodeConfig, loadClaudeCodeConfig } from './config/provider-config';
+import {
+  getClaudeCodeConfig,
+  loadClaudeCodeConfig,
+  updateClaudeCodeConfig,
+  type ClaudeCodeConfig,
+} from './config/provider-config';
 import { ClaudeCodeExecutor } from './upstream/executor';
 import { getBaseUrl } from '@/core/base-url';
 import { sanitizeAnthropicBody } from './mappers/anthropic';
+import { dropUnusableThinking } from './mappers/thinking';
 import { cloakToolNames, decloakResponse, type ToolNameMap } from './mappers/tool-names';
 import { applyCloaking } from './upstream/body-cloaking';
 import { credentialKind } from './auth/credential';
@@ -107,12 +113,13 @@ export class ClaudeCodeProvider implements IProvider {
     return account ? this.mapAccount(account) : null;
   }
 
-  async updateAccountUsage(
-    accountId: string,
-    success: boolean,
-    meta: { statusCode?: number },
-  ): Promise<void> {
-    await updateAccountUsage(accountId, success, meta);
+  /**
+   * `meta` is in the shared `IProvider` shape and carries nothing this provider acts on: health here
+   * moves on success or failure alone, and the status code is already logged by the executor that
+   * saw it. Accepted and dropped rather than threaded through to a parameter nobody reads.
+   */
+  async updateAccountUsage(accountId: string, success: boolean): Promise<void> {
+    await updateAccountUsage(accountId, success);
   }
 
   getAccounts(): IAccount[] {
@@ -135,8 +142,10 @@ export class ClaudeCodeProvider implements IProvider {
     const executor = new ClaudeCodeExecutor();
 
     if (protocol === 'anthropic') {
+      // `dropUnusableThinking` first: a replayed thinking block with a signature the upstream will
+      // not accept rejects the whole request, and the error names a block index rather than a cause.
       const { body: cloakedBody, toolNameMap } = this.cloak(
-        sanitizeAnthropicBody(body, upstreamModelId),
+        dropUnusableThinking(sanitizeAnthropicBody(body, upstreamModelId)),
       );
       // Body-level cloaking (billing header + fake user_id) runs after tool cloaking so the billing
       // hash covers the final payload shape. Gated on OAuth credential via the executor's account.
@@ -356,6 +365,20 @@ export class ClaudeCodeProvider implements IProvider {
     const config = getClaudeCodeConfig();
     if (!config.cloakToolNames) return { body, toolNameMap: null };
     return cloakToolNames(body, config.toolNameSuffix);
+  }
+
+  /**
+   * The provider settings, for the dashboard's Provider Config tab.
+   *
+   * Without these two the tab is not hidden — it renders an empty editor and reports a save that
+   * went nowhere, because `admin.ts` falls back to `{}` for a provider that implements neither.
+   */
+  getConfig(): ClaudeCodeConfig {
+    return getClaudeCodeConfig();
+  }
+
+  async updateConfig(updates: Partial<ClaudeCodeConfig>): Promise<ClaudeCodeConfig> {
+    return updateClaudeCodeConfig(updates);
   }
 
   async removeAccount(accountId: string): Promise<void> {

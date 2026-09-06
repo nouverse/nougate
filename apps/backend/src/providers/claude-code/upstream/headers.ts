@@ -29,7 +29,7 @@
  * `betaFeatures` in the provider config replaces it wholesale.
  */
 
-import { ANTHROPIC_VERSION, authHeaders, credentialKind, OAUTH_BETA } from '../auth/credential';
+import { ANTHROPIC_VERSION, authHeaders, credentialKind } from '../auth/credential';
 import { getClaudeCodeConfig } from '../config/provider-config';
 import { CLAUDE_CLI_SPOOF_HEADERS, selectAnthropicBeta } from './spoof-headers';
 
@@ -100,5 +100,3 @@ export function buildRequestHeaders(credential: string, model?: string): Record<
 
   return base;
 }
-
-export { ANTHROPIC_VERSION, OAUTH_BETA };

@@ -84,7 +84,7 @@ describe('choosing one', () => {
   test('a cooling credential is skipped, then offered again once it passes', async () => {
     const m = await freshManager();
     const a = await m.addAccount('token-a');
-    await m.addAccount('token-b');
+    const b = await m.addAccount('token-b');
 
     await m.markCooldown(a.id, m.cooldownScope('claude-opus-5'), 60_000);
     const during = await m.getBestAccount('claude-opus-5', []);
@@ -94,9 +94,11 @@ describe('choosing one', () => {
     const other = await m.getBestAccount('claude-sonnet-5', []);
     expect(other).not.toBeNull();
 
-    m.resetAllCooldowns();
-    const after = await m.getBestAccount('claude-opus-5', [/* nothing excluded */]);
-    expect(after).not.toBeNull();
+    // Excluding the other credential is what makes this assert the cooldown lifted, rather than
+    // asserting that *some* account was available — which was true while `a` was still benched.
+    await m.resetAccount(a.id);
+    const after = await m.getBestAccount('claude-opus-5', [b.id]);
+    expect(after?.id).toBe(a.id);
   });
 
   test('an invalidated credential is never offered but is still listed', async () => {
@@ -138,9 +140,9 @@ describe('what a result does to the score', () => {
     const m = await freshManager();
     const a = await m.addAccount('token-a');
 
-    await m.updateAccountUsage(a.id, false, { statusCode: 500 });
+    await m.updateAccountUsage(a.id, false);
     const afterFailure = m.getAccounts()[0]!.healthScore;
-    await m.updateAccountUsage(a.id, true, { statusCode: 200 });
+    await m.updateAccountUsage(a.id, true);
     const afterSuccess = m.getAccounts()[0]!.healthScore;
 
     expect(afterFailure).toBeCloseTo(80, 5);
@@ -151,7 +153,7 @@ describe('what a result does to the score', () => {
   test('the score never leaves 0–100 however many failures land', async () => {
     const m = await freshManager();
     const a = await m.addAccount('token-a');
-    for (let i = 0; i < 20; i++) await m.updateAccountUsage(a.id, false, { statusCode: 500 });
+    for (let i = 0; i < 20; i++) await m.updateAccountUsage(a.id, false);
 
     expect(m.getAccounts()[0]!.healthScore).toBe(0);
   });

@@ -14,7 +14,11 @@
  */
 
 import type { IModelSpec } from '@/core/interfaces';
-import { classifyUpstreamError, ModelUnavailableError } from '@/core/upstream-errors';
+import {
+  classifyUpstreamError,
+  ModelUnavailableError,
+  ProviderResponseError,
+} from '@/core/upstream-errors';
 import { getProxyConfig } from '@/config/manager';
 import { buildRequestHeaders } from './headers';
 import { reframeResponse } from './framing';
@@ -34,6 +38,25 @@ import { isPermanentRefreshFailure, type TokenRefreshError } from '../auth/refre
 import type { ClaudeCodeAccount } from '../auth/types';
 import { getClaudeCodeConfig } from '../config/provider-config';
 import { refreshAccessToken } from './refresh';
+
+/**
+ * The upstream's own words for a refusal, when it sent JSON.
+ *
+ * Anthropic answers `{"type":"error","error":{"type":..,"message":..}}`. Passing that envelope on as
+ * a message nests one error shape inside another, and the client renders the JSON as prose with the
+ * actual sentence buried in it. The raw text is the fallback, because a refusal from an edge proxy
+ * rather than from Anthropic is not JSON at all.
+ */
+function upstreamMessage(body: string, fallback: string): string {
+  try {
+    const parsed = JSON.parse(body);
+    const message = parsed?.error?.message ?? parsed?.message;
+    if (typeof message === 'string' && message.trim()) return message;
+  } catch {
+    // Not JSON; fall through to the text.
+  }
+  return body.trim() || fallback;
+}
 
 /**
  * Renew a token that is about to expire, before it is spent on a request.
@@ -191,7 +214,7 @@ export class ClaudeCodeExecutor {
                     `[claude-code] could not renew ${account.label}, cooling ${REFRESH_RETRY_COOLDOWN_MS}ms: ${String(error).slice(0, 200)}`,
                   );
                 }
-                await updateAccountUsage(account.id, false, { statusCode: 401 });
+                await updateAccountUsage(account.id, false);
                 continue;
               }
             }
@@ -214,7 +237,7 @@ export class ClaudeCodeExecutor {
                 : 'the API key was rejected',
             );
           }
-          await updateAccountUsage(account.id, false, { statusCode: 401 });
+          await updateAccountUsage(account.id, false);
           continue;
         }
 
@@ -224,7 +247,7 @@ export class ClaudeCodeExecutor {
             ? retryAfter * 1000
             : DEFAULT_COOLDOWN_MS;
           await markCooldown(account.id, scope, waitMs);
-          await updateAccountUsage(account.id, false, { statusCode: 429 });
+          await updateAccountUsage(account.id, false);
           console.warn(`[claude-code] ${account.label} rate limited on ${modelId}; cooling ${waitMs}ms`);
           continue;
         }
@@ -246,22 +269,37 @@ export class ClaudeCodeExecutor {
           console.error(
             `[claude-code] ${response.status} from upstream (${classification.kind}): ${text.slice(0, 300)}`,
           );
-          await updateAccountUsage(account.id, false, { statusCode: response.status });
+
+          // The classifier has already worked out whether a different credential could do better,
+          // and the common refusal here — a 400 over a malformed body — is one where it cannot. Every
+          // credential rejects that request identically, so rotating drops the health of the whole
+          // pool over one caller's mistake and answers "failed after N attempts", which names neither
+          // the request nor the reason. Anthropic's own message names both.
+          if (!classification.rotate) {
+            throw new ProviderResponseError(upstreamMessage(text, classification.message), {
+              status: response.status,
+              clientCode: classification.kind,
+            });
+          }
+
+          await updateAccountUsage(account.id, false);
           continue;
         }
 
-        await updateAccountUsage(account.id, true, { statusCode: 200 });
+        await updateAccountUsage(account.id, true);
         return { response: reframeResponse(response), accountId: account.id, attempts };
       } catch (error) {
         clearTimeout(timeoutId);
-        if (error instanceof ModelUnavailableError) throw error;
+        // Covers `ModelUnavailableError` too — both say "this request will not work on any
+        // credential", and retrying either is how a caller's mistake becomes the pool's problem.
+        if (error instanceof ProviderResponseError) throw error;
         const aborted = (error as { name?: string })?.name === 'AbortError';
         console.error(
           aborted
             ? `[claude-code] ${account.label} timed out after ${timeoutMs}ms`
             : `[claude-code] request failed on ${account.label}: ${String(error).slice(0, 200)}`,
         );
-        await updateAccountUsage(account.id, false, { statusCode: 500 });
+        await updateAccountUsage(account.id, false);
       }
     }
 

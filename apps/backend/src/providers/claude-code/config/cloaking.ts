@@ -49,6 +49,3 @@ export const CC_DECOY_TOOLS: ReadonlyArray<{
   { name: 'EnterPlanMode', description: 'This tool is currently unavailable.', input_schema: UNAVAILABLE_SCHEMA },
   { name: 'ExitPlanMode', description: 'This tool is currently unavailable.', input_schema: UNAVAILABLE_SCHEMA },
 ];
-
-/** The set of decoy tool names, for quick membership checks. */
-export const CC_DECOY_TOOL_NAMES = new Set(CC_DECOY_TOOLS.map((t) => t.name));

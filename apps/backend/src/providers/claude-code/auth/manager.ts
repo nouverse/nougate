@@ -80,15 +80,6 @@ export function getAccounts(): ClaudeCodeAccount[] {
   return accounts;
 }
 
-export function getStrategy(): SelectionStrategy {
-  return strategy;
-}
-
-export async function setStrategy(next: SelectionStrategy): Promise<void> {
-  strategy = next;
-  await persist(true);
-}
-
 export async function addAccount(credential: string, label?: string): Promise<ClaudeCodeAccount> {
   const value = credential.trim();
   if (!value) throw new Error('a credential is required');
@@ -250,11 +241,6 @@ export async function invalidate(id: string, reason: string): Promise<void> {
   await persist(true);
 }
 
-export function resetAllCooldowns(): void {
-  for (const account of accounts) delete account.cooldowns;
-  void persist(true);
-}
-
 function cooling(account: ClaudeCodeAccount, scope: string): boolean {
   const until = account.cooldowns?.[scope] ?? account.cooldowns?.['account'];
   return until !== undefined && until > Date.now();
@@ -295,19 +281,15 @@ export async function getBestAccount(
   );
 }
 
-export async function updateAccountUsage(
-  id: string,
-  success: boolean,
-  meta: { statusCode?: number } = {},
-): Promise<void> {
+export async function updateAccountUsage(id: string, success: boolean): Promise<void> {
   const account = findAccount(id);
   if (!account) return;
 
   account.lastUsed = Date.now();
   if (success) {
     account.consecutiveFailures = 0;
-    // Recovers gradually rather than snapping back to 1: one lucky call after a run of failures is
-    // not evidence the credential is well, and a score that jumps hides a flapping account.
+    // Recovers gradually rather than snapping back to full: one lucky call after a run of failures
+    // is not evidence the credential is well, and a score that jumps hides a flapping account.
     account.healthScore = Math.min(HEALTH_MAX, account.healthScore + HEALTH_RECOVERY);
   } else {
     account.consecutiveFailures += 1;
