@@ -104,6 +104,11 @@ the dashboard sidebar shows, so an operator can predict where a request goes.
 > `bypassModelValidation` answers `getSpec()` for *any* model id, so asking it that way
 > gets a yes every time and every bare request lands there regardless of what it serves.
 
+Custom providers need no wiring to take part: they are registry entries, so they are
+discovered like anything else, and because `initCustomProviders()` runs last they sort after
+the built-ins — a fallback rather than a replacement. Disabling one unregisters it, which
+removes it from routing without a restart.
+
 Failover then walks the list. Two rules make it safe:
 
 - **Only before the first byte.** While `executeWithFailover` runs, the handler still

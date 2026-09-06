@@ -72,6 +72,13 @@ curl … -d '{"model":"claude-sonnet-4-6", …}'
 - The dashboard's **API Playground** lists the routable ids under a *Smart Routing* filter,
   and every model row shows both forms with their own copy button.
 
+**Custom providers join in automatically.** Routing walks the provider registry, and a custom
+provider is a registry entry like any other — define one whose model id matches a built-in's
+and a bare call fans out across both, no configuration. They are tried *after* the built-ins,
+because `boot.ts` registers them last, so a custom provider is a fallback rather than a silent
+replacement. Disabling one drops it from routing immediately, and a provider holding no API
+keys is never a candidate.
+
 ### Observability
 - **Real-time Dashboard**: Monitor accounts, quotas, cooldowns, health scores via React + daisyUI web UI.
 - **Per-Provider Overview**: Traffic, spend, top models and account health for any provider, from the same metrics pipeline — plus a **Quota** tab for providers that report upstream limits.
