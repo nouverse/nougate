@@ -51,6 +51,7 @@ import {
 import { ClaudeCodeExecutor } from './upstream/executor';
 import { sanitizeAnthropicBody } from './mappers/anthropic';
 import { dropUnusableThinking } from './mappers/thinking';
+import { dropDeprecatedSampling } from './mappers/sampling';
 import { cloakToolNames, decloakResponse, type ToolNameMap } from './mappers/tool-names';
 import { applyCloaking } from './upstream/body-cloaking';
 import { credentialKind } from './auth/credential';
@@ -153,7 +154,10 @@ export class ClaudeCodeProvider implements IProvider {
       // `dropUnusableThinking` first: a replayed thinking block with a signature the upstream will
       // not accept rejects the whole request, and the error names a block index rather than a cause.
       const { body: cloakedBody, toolNameMap } = this.cloak(
-        dropUnusableThinking(sanitizeAnthropicBody(body, upstreamModelId)),
+        dropDeprecatedSampling(
+          dropUnusableThinking(sanitizeAnthropicBody(body, upstreamModelId)),
+          upstreamModelId,
+        ),
       );
       // Body-level cloaking (billing header + fake user_id) runs after tool cloaking so the billing
       // hash covers the final payload shape. Gated on OAuth credential via the executor's account.
@@ -170,7 +174,10 @@ export class ClaudeCodeProvider implements IProvider {
 
     if (protocol === 'openai') {
       const { body: cloakedBody, toolNameMap } = this.cloak(
-        mapOpenAIToAnthropic(body, upstreamModelId, modelSpec.maxOutputTokens),
+        dropDeprecatedSampling(
+          mapOpenAIToAnthropic(body, upstreamModelId, modelSpec.maxOutputTokens),
+          upstreamModelId,
+        ),
       );
       const upstreamBody = this.applyBodyCloaking(cloakedBody, ctx);
 

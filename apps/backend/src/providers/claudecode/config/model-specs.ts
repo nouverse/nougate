@@ -53,6 +53,33 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
   'claude-fable-5-1': spec('claude-fable-5-1', 'Claude Fable 5.1', 128_000, 10, 50),
 };
 
+/**
+ * Models that refuse `temperature`, `top_p` and `top_k`.
+ *
+ * Anthropic answers a 400 — "`temperature` is deprecated for this model" — rather than ignoring the
+ * field, so a client that sets one gets no answer at all. It is per model and not per family:
+ * `claude-sonnet-5` refuses, `claude-sonnet-4-6` accepts, and the same split runs through Opus. That
+ * is why this is a list and not a rule; there is no reliable way to read it off the name.
+ *
+ * Listed explicitly rather than defaulted, because both defaults are wrong in a different direction.
+ * Assume "accepts" and a new model 400s on every request that tunes sampling. Assume "refuses" and a
+ * model that honours temperature silently stops honouring it. An explicit list makes the question
+ * visible when a model is added, which is the only place it can honestly be answered.
+ *
+ * Checked against the live API on 2026-09-06.
+ */
+const SAMPLING_DEPRECATED = new Set([
+  'claude-opus-5',
+  'claude-opus-4-8',
+  'claude-sonnet-5',
+  'claude-fable-5-1',
+]);
+
+/** Whether this model rejects the sampling parameters outright. */
+export function deprecatesSamplingParams(modelId: string): boolean {
+  return SAMPLING_DEPRECATED.has(modelId);
+}
+
 export function getModelSpec(modelId: string): IModelSpec | null {
   return MODEL_REGISTRY[modelId] ?? null;
 }
