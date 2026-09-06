@@ -34,6 +34,16 @@ export interface UsagePoint {
   tokensSaved: number;
   totalCost: number;
   costSaved: number;
+  /**
+   * Input tokens that came from the prompt cache.
+   *
+   * A *part* of `inputTokens`, never additional to it — a cache read is an input token that was
+   * cheaper, not an extra one. Charting it as a separate line under "Tokens used" is fine; adding
+   * the two together double-counts every cached token.
+   */
+  cachedInputTokens: number;
+  /** What those cache reads saved. Separate from `costSaved`, which is the compression engine. */
+  cacheCostSaved: number;
 }
 
 export interface ModelStat {
@@ -196,6 +206,8 @@ export async function getUsageSeries(filters: UsageFilters): Promise<UsagePoint[
         tokensSaved: sql<number>`sum(${rollups.totalTokensSaved})`,
         totalCost: sql<number>`sum(${rollups.totalInputCost} + ${rollups.totalOutputCost})`,
         costSaved: sql<number>`sum(${rollups.totalCostSaved})`,
+        cachedInputTokens: sql<number>`sum(${rollups.totalCachedInputTokens})`,
+        cacheCostSaved: sql<number>`sum(${rollups.totalCacheCostSaved})`,
       })
       .from(rollups)
       .where(scopeRollups(filters))
@@ -211,6 +223,8 @@ export async function getUsageSeries(filters: UsageFilters): Promise<UsagePoint[
       tokensSaved: num(row.tokensSaved),
       totalCost: num(row.totalCost),
       costSaved: num(row.costSaved),
+      cachedInputTokens: num(row.cachedInputTokens),
+      cacheCostSaved: num(row.cacheCostSaved),
     }));
   }
 
@@ -227,6 +241,8 @@ export async function getUsageSeries(filters: UsageFilters): Promise<UsagePoint[
       tokensSaved: sql<number>`sum(${logs.tokensSaved})`,
       totalCost: sql<number>`sum(${logs.inputCost} + ${logs.outputCost})`,
       costSaved: sql<number>`sum(${logs.costSaved})`,
+      cachedInputTokens: sql<number>`sum(${logs.cachedInputTokens})`,
+      cacheCostSaved: sql<number>`sum(${logs.cacheCostSaved})`,
     })
     .from(logs)
     .where(scopeLogs(filters))
@@ -242,6 +258,8 @@ export async function getUsageSeries(filters: UsageFilters): Promise<UsagePoint[
     tokensSaved: num(row.tokensSaved),
     totalCost: num(row.totalCost),
     costSaved: num(row.costSaved),
+    cachedInputTokens: num(row.cachedInputTokens),
+    cacheCostSaved: num(row.cacheCostSaved),
   }));
 }
 

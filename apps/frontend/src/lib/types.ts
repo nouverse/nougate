@@ -26,6 +26,9 @@ export interface UsagePoint {
   tokensSaved: number;
   totalCost: number;
   costSaved: number;
+  /** Part of `inputTokens`, not additional to it — see the note on the chart series. */
+  cachedInputTokens: number;
+  cacheCostSaved: number;
 }
 
 export interface ModelStat {

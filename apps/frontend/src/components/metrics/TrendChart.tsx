@@ -48,8 +48,20 @@ interface Series {
   key: string;
   label: string;
   color: string;
-  /** Dashed stroke keeps the two series separable without relying on colour. */
-  dashed: boolean;
+  /**
+   * Stroke pattern, so the series stay separable without relying on colour.
+   *
+   * A distinct pattern each rather than a solid/dashed pair: three lines that differ only by hue are
+   * three lines a colour-blind reader cannot tell apart, and the palette is already chosen to avoid
+   * exactly that. `undefined` is solid.
+   */
+  dash?: string;
+  /**
+   * Whether to shade under the line. Off for the third series: three translucent fills stacked on
+   * one plot read as mud, and the cache line is a portion of another series rather than a magnitude
+   * meant to be compared by area.
+   */
+  area?: boolean;
   values: number[];
 }
 
@@ -69,15 +81,22 @@ export function TrendChart({ data, metric }: Props) {
           key: 'spend',
           label: 'Spend',
           color: 'var(--color-chart-1)',
-          dashed: false,
           values: data.map((point) => point.totalCost ?? 0),
         },
         {
           key: 'saved',
           label: 'Saved by compression',
           color: 'var(--color-chart-2)',
-          dashed: true,
+          dash: '4 3',
           values: data.map((point) => point.costSaved ?? 0),
+        },
+        {
+          key: 'cache-saved',
+          area: false,
+          label: 'Saved by cache',
+          color: 'var(--color-chart-3)',
+          dash: '1 3',
+          values: data.map((point) => point.cacheCostSaved ?? 0),
         },
       ];
     }
@@ -87,15 +106,24 @@ export function TrendChart({ data, metric }: Props) {
         key: 'used',
         label: 'Tokens used',
         color: 'var(--color-chart-1)',
-        dashed: false,
         values: data.map((point) => point.totalTokens ?? 0),
       },
       {
         key: 'saved',
         label: 'Tokens saved',
         color: 'var(--color-chart-2)',
-        dashed: true,
+        dash: '4 3',
         values: data.map((point) => point.tokensSaved ?? 0),
+      },
+      {
+        // Labelled "of which" on purpose: these are input tokens that were read from cache, already
+        // counted inside "Tokens used". A reader who adds the two lines together is double-counting.
+        key: 'cached',
+        area: false,
+        label: 'of which from cache',
+        color: 'var(--color-chart-3)',
+        dash: '1 3',
+        values: data.map((point) => point.cachedInputTokens ?? 0),
       },
     ];
   }, [data, metric]);
@@ -153,7 +181,7 @@ export function TrendChart({ data, metric }: Props) {
                 y2="5"
                 stroke={entry.color}
                 strokeWidth="2"
-                strokeDasharray={entry.dashed ? '4 3' : undefined}
+                strokeDasharray={entry.dash}
               />
             </svg>
             <span className="text-[11px] font-semibold text-base-content/70">{entry.label}</span>
@@ -211,7 +239,9 @@ export function TrendChart({ data, metric }: Props) {
 
           {series.map((entry) => (
             <g key={entry.key}>
-              <path d={areaPath(entry.values)} fill={`url(#grad-${entry.key})`} />
+              {entry.area !== false && (
+                <path d={areaPath(entry.values)} fill={`url(#grad-${entry.key})`} />
+              )}
               <path
                 d={linePath(entry.values)}
                 fill="none"
@@ -219,7 +249,7 @@ export function TrendChart({ data, metric }: Props) {
                 strokeWidth="2"
                 strokeLinejoin="round"
                 strokeLinecap="round"
-                strokeDasharray={entry.dashed ? '5 4' : undefined}
+                strokeDasharray={entry.dash}
               />
             </g>
           ))}

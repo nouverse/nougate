@@ -296,8 +296,12 @@ function TokensPage() {
                     <th className="text-right">Requests</th>
                     <th className="text-right">Tokens</th>
                     <th className="text-right">Saved</th>
+                    <th className="text-right" title="Input tokens read from the prompt cache — part of Tokens, not additional to it">
+                      Cached
+                    </th>
                     <th className="text-right">Cost</th>
-                    <th className="text-right">Cost saved</th>
+                    <th className="text-right">Saved by compression</th>
+                    <th className="text-right">Saved by cache</th>
                   </tr>
                 </thead>
                 <tbody className="font-mono">
@@ -307,8 +311,10 @@ function TokensPage() {
                       <td className="text-right">{formatCount(point.requests)}</td>
                       <td className="text-right">{formatTokens(point.totalTokens)}</td>
                       <td className="text-right">{formatTokens(point.tokensSaved)}</td>
+                      <td className="text-right">{formatTokens(point.cachedInputTokens)}</td>
                       <td className="text-right">{formatCost(point.totalCost)}</td>
                       <td className="text-right">{formatCost(point.costSaved)}</td>
+                      <td className="text-right">{formatCost(point.cacheCostSaved)}</td>
                     </tr>
                   ))}
                 </tbody>

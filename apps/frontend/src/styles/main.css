@@ -25,6 +25,7 @@
      --color-base-200. Never reuse status colours for a series. */
   --color-chart-1: oklch(62% 0.20 162);
   --color-chart-2: oklch(66% 0.20 269);
+  --color-chart-3: oklch(70% 0.18 330);
 }
 
 @plugin "daisyui/theme" {
@@ -44,6 +45,7 @@
   /* Light-mode series steps are chosen for this surface, not flipped from dark. */
   --color-chart-1: oklch(55% 0.20 162);
   --color-chart-2: oklch(50% 0.20 269);
+  --color-chart-3: oklch(52% 0.18 330);
 }
 
 @plugin "daisyui" {
