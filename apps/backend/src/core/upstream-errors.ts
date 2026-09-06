@@ -227,3 +227,23 @@ export class ModelUnavailableError extends ProviderResponseError {
     this.name = 'ModelUnavailableError';
   }
 }
+
+/**
+ * The upstream's own words for a refusal, when it sent JSON.
+ *
+ * Providers disagree about where the sentence lives — Anthropic uses `error.message`, Codex uses a
+ * bare `detail` — and passing the whole envelope on as a message nests one error shape inside
+ * another, so the client renders JSON as prose with the actual sentence buried in it. The raw text
+ * is the fallback, because a refusal from an edge proxy rather than from the API is not JSON at all.
+ */
+export function upstreamMessage(body: string, fallback: string): string {
+  try {
+    const parsed = JSON.parse(body);
+    for (const candidate of [parsed?.error?.message, parsed?.detail, parsed?.message]) {
+      if (typeof candidate === 'string' && candidate.trim()) return candidate;
+    }
+  } catch {
+    // Not JSON; fall through to the text.
+  }
+  return body.trim() || fallback;
+}

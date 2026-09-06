@@ -18,6 +18,7 @@ import {
   classifyUpstreamError,
   ModelUnavailableError,
   ProviderResponseError,
+  upstreamMessage,
 } from '@/core/upstream-errors';
 import { getProxyConfig } from '@/config/manager';
 import { buildRequestHeaders } from './headers';
@@ -38,25 +39,6 @@ import { isPermanentRefreshFailure, type TokenRefreshError } from '../auth/refre
 import type { ClaudeCodeAccount } from '../auth/types';
 import { getClaudeCodeConfig } from '../config/provider-config';
 import { refreshAccessToken } from './refresh';
-
-/**
- * The upstream's own words for a refusal, when it sent JSON.
- *
- * Anthropic answers `{"type":"error","error":{"type":..,"message":..}}`. Passing that envelope on as
- * a message nests one error shape inside another, and the client renders the JSON as prose with the
- * actual sentence buried in it. The raw text is the fallback, because a refusal from an edge proxy
- * rather than from Anthropic is not JSON at all.
- */
-function upstreamMessage(body: string, fallback: string): string {
-  try {
-    const parsed = JSON.parse(body);
-    const message = parsed?.error?.message ?? parsed?.message;
-    if (typeof message === 'string' && message.trim()) return message;
-  } catch {
-    // Not JSON; fall through to the text.
-  }
-  return body.trim() || fallback;
-}
 
 /**
  * Renew a token that is about to expire, before it is spent on a request.

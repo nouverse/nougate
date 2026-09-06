@@ -16,11 +16,27 @@ export interface CodexConfig {
   /** Where requests go. Defaults to the Codex Responses API endpoint. */
   baseUrl: string;
   features: Partial<JitterConfig>;
+  /**
+   * The Codex CLI version this gateway claims to be, sent as `version` and inside the User-Agent.
+   *
+   * Not cosmetic, and not a version pin: the upstream **gates models on it**. Claiming 0.136.0 gets
+   * `gpt-5.6-terra` and `gpt-5.6-luna` refused with "requires a newer version of Codex. Please
+   * upgrade to the latest app or CLI" — a message aimed at a person running the real CLI, which
+   * reads here like the model does not exist.
+   *
+   * Configurable because it goes stale on OpenAI's schedule, not on this gateway's: a model released
+   * next month will be gated behind a version released next month, and an operator should be able to
+   * follow that by editing one field rather than waiting for a release.
+   */
+  cliVersion: string;
 }
 
 const DEFAULTS: CodexConfig = {
   baseUrl: 'https://chatgpt.com/backend-api/codex/responses',
   features: DEFAULT_JITTER_CONFIG,
+  // Chosen by probing a live account, not read off a release page: 0.136.0 is refused for the newer
+  // models and this is not. Track the real CLI when you know its version — see `cliVersion`.
+  cliVersion: '0.190.0',
 };
 
 let current: CodexConfig = { ...DEFAULTS };

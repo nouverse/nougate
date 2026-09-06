@@ -7,7 +7,7 @@
 
 import { randomUUID } from 'node:crypto';
 import type { IModelSpec } from '@/core/interfaces';
-import { ProviderResponseError } from '@/core/upstream-errors';
+import { ProviderResponseError, upstreamMessage } from '@/core/upstream-errors';
 import { reframeResponse } from '@/core/response-framing';
 import {
   cooldownScope,
@@ -24,7 +24,6 @@ import { getCodexConfig } from '../config/provider-config';
 import { transformCodexRequest } from './request-transform';
 import { peekSseTransientError, MODEL_CAPACITY_MESSAGE } from './stream';
 
-const CODEX_USER_AGENT = 'codex_cli_rs/0.136.0';
 const CODEX_ORIGINATOR = 'codex_cli_rs';
 
 /** Default cooldown for 429s without retry-after. */
@@ -54,14 +53,18 @@ function codexSseErrorResponse(status: number, message: string): Response {
  * Build Codex-specific request headers.
  */
 function buildHeaders(account: CodexAccount): Record<string, string> {
+  // One read, used twice: the two must agree, and a User-Agent claiming one version beside a
+  // `version` header claiming another is a fingerprint no real CLI produces.
+  const cliVersion = getCodexConfig().cliVersion;
+
   const headers: Record<string, string> = {
     'accept': 'text/event-stream, application/json',
     'authorization': `Bearer ${account.accessToken}`,
     'content-type': 'application/json',
     'originator': CODEX_ORIGINATOR,
     'session_id': randomUUID(),
-    'user-agent': CODEX_USER_AGENT,
-    'version': '0.136.0',
+    'user-agent': `${CODEX_ORIGINATOR}/${cliVersion}`,
+    'version': cliVersion,
     'x-client-request-id': randomUUID(),
   };
 
@@ -223,15 +226,19 @@ export class CodexExecutor {
         if (!response.ok) {
           const text = await response.text();
           console.error(`[codex] ${response.status} from upstream: ${text.slice(0, 300)}`);
-          await updateAccountUsage(account.id, false);
 
-          // 400-level errors (except 401/429) are usually the request's fault, not the account's
+          // A 4xx that is not 401 or 429 is the request's fault, and every credential on the same
+          // plan refuses the same body identically. This used to charge the account before giving
+          // up on it: asking for six models a plan does not include took a healthy credential from
+          // 100 to 0 in six requests, and left a red badge describing a caller's typo.
           if (response.status >= 400 && response.status < 500) {
-            throw new ProviderResponseError(text.slice(0, 300), {
+            throw new ProviderResponseError(upstreamMessage(text, 'the upstream refused the request'), {
               status: response.status,
               clientCode: 'upstream_error',
             });
           }
+
+          await updateAccountUsage(account.id, false);
           continue;
         }
 
