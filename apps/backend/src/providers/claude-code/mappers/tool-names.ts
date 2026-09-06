@@ -35,6 +35,7 @@
  */
 
 import { CC_DECOY_TOOLS } from '../config/cloaking';
+import { reframedHeaders } from '../upstream/framing';
 
 /** Suffixed name → the name the client actually used. Built on the way up, spent on the way down. */
 export type ToolNameMap = Map<string, string>;
@@ -207,45 +208,18 @@ export function createToolNameDecloakStream(
 }
 
 /**
- * Headers that describe how the *original* bytes were framed, and are lies about the new ones.
- *
- * `fetch` has already decompressed the body by the time this code sees it, but the upstream's
- * `content-encoding: gzip` is still sitting on the header list. Copying it onto a re-emitted body
- * tells the client to gunzip plain JSON, which fails for every single request rather than degrading —
- * and on a stream it corrupts the whole thing before the first event arrives.
- *
- * `content-length` is the same class of mistake with a quieter symptom: the re-serialised JSON is
- * almost never the same length as what arrived, so the client reads the wrong number of bytes and
- * either truncates the response or waits for bytes that never come.
- *
- * `transfer-encoding` is hop-by-hop and belongs to the connection this process is not making.
- */
-const REFRAMED_HEADERS = ['content-encoding', 'content-length', 'transfer-encoding'];
-
-/**
- * The upstream's headers, minus the ones that no longer describe the body being sent.
- *
- * A copy: `response.headers` is immutable on some runtimes and shared on others, so mutating it in
- * place is either a throw or an action at a distance.
- */
-function reframedHeaders(response: Response): Headers {
-  const headers = new Headers(response.headers);
-  for (const name of REFRAMED_HEADERS) headers.delete(name);
-  return headers;
-}
-
-/**
  * One response, with the client's tool names restored, whichever shape it arrived in.
  *
  * Status is carried across unchanged. Headers are carried across *minus* the framing ones — see
- * `REFRAMED_HEADERS`, which is the difference between this working and every tool request failing.
+ * `upstream/framing`, which is the difference between this working and every tool request failing.
  */
 export async function decloakResponse(
   response: Response,
   toolNameMap: ToolNameMap | null,
   isStreaming: boolean,
 ): Promise<Response> {
-  // Nothing to rewrite means the original object, untouched — no rebuild, no reframing, no risk.
+  // Nothing to rewrite means the original object, untouched — no rebuild, no risk. Its framing
+  // headers are already honest: the executor reframes every response before it reaches this file.
   if (!toolNameMap?.size || !response.body) return response;
 
   if (isStreaming) {

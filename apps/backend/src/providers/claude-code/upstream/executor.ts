@@ -17,6 +17,7 @@ import type { IModelSpec } from '@/core/interfaces';
 import { classifyUpstreamError, ModelUnavailableError } from '@/core/upstream-errors';
 import { getProxyConfig } from '@/config/manager';
 import { buildRequestHeaders } from './headers';
+import { reframeResponse } from './framing';
 import {
   cooldownScope,
   getBestAccount,
@@ -250,7 +251,7 @@ export class ClaudeCodeExecutor {
         }
 
         await updateAccountUsage(account.id, true, { statusCode: 200 });
-        return { response, accountId: account.id, attempts };
+        return { response: reframeResponse(response), accountId: account.id, attempts };
       } catch (error) {
         clearTimeout(timeoutId);
         if (error instanceof ModelUnavailableError) throw error;
