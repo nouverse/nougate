@@ -16,7 +16,7 @@ export interface ClaudeCodeAccount {
   kind: CredentialKind;
   /** Operator-facing name. Falls back to the fingerprint when they do not give one. */
   label: string;
-  /** 0–1. Dropped on failure, recovered on success — the same currency every provider reports. */
+  /** 0–100. Dropped on failure, recovered on success — the same currency every provider reports. */
   healthScore: number;
   lastUsed: number;
   consecutiveFailures: number;

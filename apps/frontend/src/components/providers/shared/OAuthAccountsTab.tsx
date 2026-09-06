@@ -173,6 +173,9 @@ export function OAuthAccountsTab({ providerId, accounts, refreshQueries }: Props
       showToast('Cooldown triggered for account!');
       refreshQueries();
     },
+    onError: (err: any) => {
+      showToast(`Cooldown failed: ${err.message}`);
+    },
   });
 
   const rediscoverMutation = useMutation({
@@ -191,6 +194,9 @@ export function OAuthAccountsTab({ providerId, accounts, refreshQueries }: Props
     onSuccess: () => {
       showToast('Account state reset successfully!');
       refreshQueries();
+    },
+    onError: (err: any) => {
+      showToast(`Reset failed: ${err.message}`);
     },
   });
 

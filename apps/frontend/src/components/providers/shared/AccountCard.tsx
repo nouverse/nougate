@@ -45,11 +45,13 @@ export function AccountCard({
                 ⋮
               </button>
               <ul tabIndex={0} className="dropdown-content menu p-2 shadow-2xl bg-base-100 border border-base-300 rounded-box w-52 z-30 text-xs text-base-content">
-                <li>
-                  <button onClick={() => onRediscover?.(account.email)}>
-                    🔄 Rediscover Project
-                  </button>
-                </li>
+                {onRediscover && (
+                  <li>
+                    <button onClick={() => onRediscover(account.email)}>
+                      🔄 Rediscover Project
+                    </button>
+                  </li>
+                )}
                 <li>
                   <button onClick={() => onCooldown(account.email)}>
                     ❄️ Trigger Cooldown (1h)

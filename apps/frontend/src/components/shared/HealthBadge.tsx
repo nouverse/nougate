@@ -6,16 +6,18 @@ interface Props {
 }
 
 export function HealthBadge({ score, className = '' }: Props) {
+  const percent = Math.round(score);
+
   let badgeClass = 'badge-success';
-  if (score < 40) {
+  if (percent < 40) {
     badgeClass = 'badge-error';
-  } else if (score < 80) {
+  } else if (percent < 80) {
     badgeClass = 'badge-warning';
   }
 
   return (
     <span className={`badge ${badgeClass} badge-sm font-semibold tracking-wide ${className}`}>
-      {score}%
+      {percent}%
     </span>
   );
 }

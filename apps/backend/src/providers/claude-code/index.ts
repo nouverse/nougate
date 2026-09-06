@@ -29,10 +29,13 @@ import { normalizeJitterConfig, type JitterConfig } from '@/core/jitter';
 import {
   addAccount,
   addOAuthAccount,
+  cooldownScope,
   getAccounts,
   getBestAccount,
   initManager,
+  markCooldown,
   removeAccount,
+  resetAccount,
   updateAccountUsage,
 } from './auth/manager';
 import { beginAuthorization, exchangeCode } from './auth/oauth';
@@ -51,6 +54,9 @@ import {
   finalizeAnthropicToOpenAIResponse,
   mapOpenAIToAnthropic,
 } from './mappers/openai';
+
+/** The default manual cooldown, matching the dashboard's "Trigger Cooldown (1h)" label. */
+const HOUR_MS = 3_600_000;
 
 const STREAM_HEADERS = {
   'Content-Type': 'text/event-stream',
@@ -353,7 +359,53 @@ export class ClaudeCodeProvider implements IProvider {
   }
 
   async removeAccount(accountId: string): Promise<void> {
-    await removeAccount(accountId);
+    const removed = await removeAccount(accountId);
+    if (!removed) throw new Error(`no account matches "${accountId}"`);
+  }
+
+  /**
+   * Forget what the gateway concluded about a credential.
+   *
+   * Throws when nothing matched rather than returning quietly: the dashboard reports whatever comes
+   * back as success, so a silent miss here is an operator watching a benched account stay benched
+   * after pressing a button that told them it worked.
+   */
+  async resetAccount(accountId: string): Promise<void> {
+    const reset = await resetAccount(accountId);
+    if (!reset) throw new Error(`no account matches "${accountId}"`);
+  }
+
+  /**
+   * Bench a credential by hand.
+   *
+   * Account-wide rather than per model — an operator reaching for Cooldown is taking the credential
+   * out of rotation entirely, not steering one model away from it. `pool` is in the signature every
+   * provider shares and ignored here: Antigravity splits its quota between a cli and a sandbox pool,
+   * Anthropic has nothing of the kind.
+   */
+  async markAccountCooldown(accountId: string, _pool: string, duration?: string): Promise<void> {
+    const marked = await markCooldown(accountId, cooldownScope(), parseDurationMs(duration) ?? HOUR_MS);
+    if (!marked) throw new Error(`no account matches "${accountId}"`);
+  }
+
+  /**
+   * The dashboard's per-account buttons.
+   *
+   * Only the two this provider can honour. `rediscover_project` is deliberately absent: a
+   * cloudaicompanion project is a Google concept, and answering it here would mean inventing state
+   * Anthropic does not have.
+   */
+  async handleAccountAction(accountId: string, action: string, payload?: any): Promise<any> {
+    switch (action) {
+      case 'reset':
+        await this.resetAccount(accountId);
+        return { ok: true };
+      case 'cooldown':
+        await this.markAccountCooldown(accountId, payload?.pool ?? 'account', payload?.duration);
+        return { ok: true };
+      default:
+        throw new Error(`Action "${action}" is not supported by the Claude Code provider`);
+    }
   }
 
   /**
@@ -374,6 +426,22 @@ export class ClaudeCodeProvider implements IProvider {
       ...(account.cooldowns ? { cooldowns: account.cooldowns } : {}),
     };
   }
+}
+
+/**
+ * Read the dashboard's `"3600s"` style duration.
+ *
+ * Returns undefined rather than a fallback when the string is missing or malformed, so the caller
+ * decides the default in one place instead of two disagreeing ones.
+ */
+function parseDurationMs(duration?: string): number | undefined {
+  if (!duration) return undefined;
+  const match = /^(\d+)(ms|s|m|h)?$/.exec(duration.trim());
+  if (!match) return undefined;
+  const value = Number(match[1]);
+  const unit = match[2] ?? 's';
+  const scale = unit === 'ms' ? 1 : unit === 's' ? 1_000 : unit === 'm' ? 60_000 : HOUR_MS;
+  return value * scale;
 }
 
 function formatResetIn(at: number): string {

@@ -70,13 +70,15 @@ export function AccountsTable({
                   </td>
                   <td className="text-right">
                     <div className="flex justify-end gap-1.5">
-                      <button
-                        title="Rediscover Project"
-                        className="btn btn-ghost btn-xs text-primary"
-                        onClick={() => onRediscover?.(acc.email)}
-                      >
-                        🔄 Rediscover
-                      </button>
+                      {onRediscover && (
+                        <button
+                          title="Rediscover Project"
+                          className="btn btn-ghost btn-xs text-primary"
+                          onClick={() => onRediscover(acc.email)}
+                        >
+                          🔄 Rediscover
+                        </button>
+                      )}
                       <button
                         title="Trigger 1h Cooldown"
                         className="btn btn-ghost btn-xs text-warning"

@@ -134,7 +134,7 @@ describe('choosing one', () => {
 describe('what a result does to the score', () => {
   test('failure drops it faster than success recovers it', async () => {
     // One lucky call after a run of failures is not evidence the credential is well. A score that
-    // snapped back to 1 would hide a flapping account entirely.
+    // snapped back to 100 would hide a flapping account entirely.
     const m = await freshManager();
     const a = await m.addAccount('token-a');
 
@@ -143,12 +143,12 @@ describe('what a result does to the score', () => {
     await m.updateAccountUsage(a.id, true, { statusCode: 200 });
     const afterSuccess = m.getAccounts()[0]!.healthScore;
 
-    expect(afterFailure).toBeCloseTo(0.8, 5);
-    expect(afterSuccess - afterFailure).toBeLessThan(1 - afterFailure);
+    expect(afterFailure).toBeCloseTo(80, 5);
+    expect(afterSuccess - afterFailure).toBeLessThan(100 - afterFailure);
     expect(m.getAccounts()[0]!.consecutiveFailures).toBe(0);
   });
 
-  test('the score never leaves 0–1 however many failures land', async () => {
+  test('the score never leaves 0–100 however many failures land', async () => {
     const m = await freshManager();
     const a = await m.addAccount('token-a');
     for (let i = 0; i < 20; i++) await m.updateAccountUsage(a.id, false, { statusCode: 500 });

@@ -25,6 +25,17 @@ let strategy: SelectionStrategy = 'healthiest';
 let cursor = 0;
 
 /**
+ * Health moves on the 0-100 scale every other provider reports.
+ *
+ * A success recovers less than a failure costs on purpose: one call getting through after a run of
+ * failures is not evidence the credential is well, and a score that snapped back to full would hide
+ * an account that is flapping.
+ */
+const HEALTH_MAX = 100;
+const HEALTH_RECOVERY = 10;
+const HEALTH_PENALTY = 20;
+
+/**
  * Load the credentials from disk, replacing whatever is in memory.
  *
  * Replaces rather than merges, and that is what makes it safe to call twice: this module holds its
@@ -32,12 +43,38 @@ let cursor = 0;
  */
 export async function initManager(): Promise<void> {
   const config = await loadConfig();
-  accounts = config.accounts ?? [];
+  accounts = (config.accounts ?? []).map(normalizeHealth);
   strategy = config.strategy ?? 'healthiest';
   cursor = 0;
 }
 
 const persist = (immediate = false) => saveConfig({ accounts, strategy }, { immediate });
+
+/**
+ * Bring a stored account onto the 0-100 health scale.
+ *
+ * Earlier builds kept this provider's health as a 0-1 fraction while every other provider reported
+ * 0-100, so a fully healthy credential reached the dashboard as "1%" in an alarm colour. Anything at
+ * or below 1 is read as the old fraction and scaled up; anything above is already current.
+ */
+function normalizeHealth(account: ClaudeCodeAccount): ClaudeCodeAccount {
+  if (account.healthScore > 1) return account;
+  return { ...account, healthScore: Math.round(account.healthScore * HEALTH_MAX) };
+}
+
+/**
+ * The account behind an operator-facing identifier.
+ *
+ * Matches the id first and the label second, because the dashboard addresses accounts by the field
+ * it shows — which for this provider is the label, not the uuid. Looking at the id alone is what
+ * left Reset, Cooldown and Delete reporting success while matching nothing.
+ */
+function findAccount(idOrLabel: string): ClaudeCodeAccount | undefined {
+  return (
+    accounts.find((account) => account.id === idOrLabel) ??
+    accounts.find((account) => account.label === idOrLabel)
+  );
+}
 
 export function getAccounts(): ClaudeCodeAccount[] {
   return accounts;
@@ -66,7 +103,7 @@ export async function addAccount(credential: string, label?: string): Promise<Cl
     credential: value,
     kind: credentialKind(value),
     label: label?.trim() || credentialHint(value),
-    healthScore: 1,
+    healthScore: HEALTH_MAX,
     lastUsed: 0,
     consecutiveFailures: 0,
   };
@@ -94,7 +131,7 @@ export async function addOAuthAccount(input: {
     credential: input.accessToken,
     kind: 'oauth',
     label: input.label?.trim() || credentialHint(input.accessToken),
-    healthScore: 1,
+    healthScore: HEALTH_MAX,
     lastUsed: 0,
     consecutiveFailures: 0,
     ...(input.refreshToken ? { refreshToken: input.refreshToken } : {}),
@@ -116,7 +153,7 @@ export async function storeRefreshedTokens(
   id: string,
   tokens: { access_token: string; refresh_token?: string; expires_in?: number },
 ): Promise<void> {
-  const account = accounts.find((entry) => entry.id === id);
+  const account = findAccount(id);
   if (!account) return;
 
   account.credential = tokens.access_token;
@@ -140,9 +177,9 @@ export function needsRefresh(account: ClaudeCodeAccount, leadMs: number): boolea
 }
 
 export async function removeAccount(id: string): Promise<boolean> {
-  const before = accounts.length;
-  accounts = accounts.filter((account) => account.id !== id);
-  if (accounts.length === before) return false;
+  const account = findAccount(id);
+  if (!account) return false;
+  accounts = accounts.filter((entry) => entry !== account);
   await persist(true);
   return true;
 }
@@ -155,7 +192,7 @@ export async function removeAccount(id: string): Promise<boolean> {
  * watching a working key sit idle with no explanation.
  */
 export async function replaceCredential(id: string, credential: string): Promise<boolean> {
-  const account = accounts.find((entry) => entry.id === id);
+  const account = findAccount(id);
   if (!account) return false;
 
   const value = credential.trim();
@@ -163,7 +200,7 @@ export async function replaceCredential(id: string, credential: string): Promise
 
   account.credential = value;
   account.kind = credentialKind(value);
-  account.healthScore = 1;
+  account.healthScore = HEALTH_MAX;
   account.consecutiveFailures = 0;
   delete account.invalidatedAt;
   delete account.invalidReason;
@@ -177,15 +214,35 @@ export function cooldownScope(modelId?: string): string {
   return modelId ?? 'account';
 }
 
-export async function markCooldown(id: string, scope: string, ms: number): Promise<void> {
-  const account = accounts.find((entry) => entry.id === id);
-  if (!account) return;
+export async function markCooldown(id: string, scope: string, ms: number): Promise<boolean> {
+  const account = findAccount(id);
+  if (!account) return false;
   account.cooldowns = { ...account.cooldowns, [scope]: Date.now() + ms };
-  await persist();
+  await persist(true);
+  return true;
+}
+
+/**
+ * Forget everything the gateway has learned about a credential.
+ *
+ * Health, failures, cooldowns and the invalid mark clear together, because an operator reaching for
+ * Reset is saying "whatever you concluded about this key, drop it" — leaving any one of the four
+ * behind keeps the account benched with nothing on screen to explain why.
+ */
+export async function resetAccount(id: string): Promise<boolean> {
+  const account = findAccount(id);
+  if (!account) return false;
+  account.healthScore = HEALTH_MAX;
+  account.consecutiveFailures = 0;
+  delete account.cooldowns;
+  delete account.invalidatedAt;
+  delete account.invalidReason;
+  await persist(true);
+  return true;
 }
 
 export async function invalidate(id: string, reason: string): Promise<void> {
-  const account = accounts.find((entry) => entry.id === id);
+  const account = findAccount(id);
   if (!account || account.invalidatedAt) return;
   account.invalidatedAt = Date.now();
   account.invalidReason = reason;
@@ -243,7 +300,7 @@ export async function updateAccountUsage(
   success: boolean,
   meta: { statusCode?: number } = {},
 ): Promise<void> {
-  const account = accounts.find((entry) => entry.id === id);
+  const account = findAccount(id);
   if (!account) return;
 
   account.lastUsed = Date.now();
@@ -251,10 +308,10 @@ export async function updateAccountUsage(
     account.consecutiveFailures = 0;
     // Recovers gradually rather than snapping back to 1: one lucky call after a run of failures is
     // not evidence the credential is well, and a score that jumps hides a flapping account.
-    account.healthScore = Math.min(1, account.healthScore + 0.1);
+    account.healthScore = Math.min(HEALTH_MAX, account.healthScore + HEALTH_RECOVERY);
   } else {
     account.consecutiveFailures += 1;
-    account.healthScore = Math.max(0, account.healthScore - 0.2);
+    account.healthScore = Math.max(0, account.healthScore - HEALTH_PENALTY);
   }
   await persist();
 }
@@ -266,7 +323,7 @@ export async function updateAccountUsage(
  * that lets the Quota tab show headroom without spending a request to ask.
  */
 export async function recordRateLimit(id: string, headers: Headers): Promise<void> {
-  const account = accounts.find((entry) => entry.id === id);
+  const account = findAccount(id);
   if (!account) return;
 
   const status = headers.get('anthropic-ratelimit-unified-status') ?? undefined;
