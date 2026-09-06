@@ -29,8 +29,9 @@
  * `betaFeatures` in the provider config replaces it wholesale.
  */
 
-import { ANTHROPIC_VERSION, authHeaders, OAUTH_BETA } from '../auth/credential';
+import { ANTHROPIC_VERSION, authHeaders, credentialKind, OAUTH_BETA } from '../auth/credential';
 import { getClaudeCodeConfig } from '../config/provider-config';
+import { CLAUDE_CLI_SPOOF_HEADERS, selectAnthropicBeta } from './spoof-headers';
 
 /**
  * The gates this provider asks for when the operator has not said otherwise.
@@ -59,10 +60,18 @@ export const DEFAULT_BETA_FEATURES = [
  * `oauth-2025-04-20` there for an OAuth credential, and sending a gate twice is a 400. A `Set`
  * preserves first-seen order while making the duplicate impossible.
  */
-export function buildRequestHeaders(credential: string): Record<string, string> {
+export function buildRequestHeaders(credential: string, model?: string): Record<string, string> {
   const auth = authHeaders(credential);
+  const isOAuth = credentialKind(credential) === 'oauth';
   const configured = getClaudeCodeConfig().betaFeatures;
-  const features = configured.length > 0 ? configured : [...DEFAULT_BETA_FEATURES];
+
+  // For OAuth credentials, use the model-aware beta builder from the spoof-headers module.
+  // For API keys, fall back to the static default list (or operator override).
+  const features = configured.length > 0
+    ? configured
+    : isOAuth && model
+      ? selectAnthropicBeta(model).split(',')
+      : [...DEFAULT_BETA_FEATURES];
 
   const betas = new Set<string>();
   // Whatever the credential already required comes first — `oauth-2025-04-20` is not optional and
@@ -76,12 +85,20 @@ export function buildRequestHeaders(credential: string): Record<string, string> 
     if (value) betas.add(value);
   }
 
-  return {
+  const base: Record<string, string> = {
     'content-type': 'application/json',
     ...auth,
     'anthropic-version': ANTHROPIC_VERSION,
     ...(betas.size > 0 ? { 'anthropic-beta': [...betas].join(',') } : {}),
   };
+
+  // OAuth credentials get the full Claude CLI spoof headers (User-Agent, X-Stainless-*, etc.).
+  // API key users should not impersonate the CLI — they are already paying per token.
+  if (isOAuth) {
+    return { ...CLAUDE_CLI_SPOOF_HEADERS, ...base };
+  }
+
+  return base;
 }
 
 export { ANTHROPIC_VERSION, OAUTH_BETA };

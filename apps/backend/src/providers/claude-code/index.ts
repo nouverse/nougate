@@ -43,6 +43,8 @@ import { getClaudeCodeConfig, loadClaudeCodeConfig } from './config/provider-con
 import { ClaudeCodeExecutor } from './upstream/executor';
 import { sanitizeAnthropicBody } from './mappers/anthropic';
 import { cloakToolNames, decloakResponse, type ToolNameMap } from './mappers/tool-names';
+import { applyCloaking } from './upstream/body-cloaking';
+import { credentialKind } from './auth/credential';
 import {
   createAnthropicToOpenAIStreamTransformer,
   finalizeAnthropicToOpenAIResponse,
@@ -117,13 +119,12 @@ export class ClaudeCodeProvider implements IProvider {
     const executor = new ClaudeCodeExecutor();
 
     if (protocol === 'anthropic') {
-      // Nothing is translated — `cache_control`, thinking blocks and any field this gateway has never
-      // heard of survive the trip in both directions. The one exception is tool *names*, which are
-      // suffixed on the way up to avoid colliding with names the upstream already knows, and put back
-      // on the way down so the client never learns it happened. See `mappers/tool-names.ts`.
-      const { body: upstreamBody, toolNameMap } = this.cloak(
+      const { body: cloakedBody, toolNameMap } = this.cloak(
         sanitizeAnthropicBody(body, upstreamModelId),
       );
+      // Body-level cloaking (billing header + fake user_id) runs after tool cloaking so the billing
+      // hash covers the final payload shape. Gated on OAuth credential via the executor's account.
+      const upstreamBody = this.applyBodyCloaking(cloakedBody, ctx);
 
       const result = await executor.execute({
         body: upstreamBody,
@@ -135,9 +136,10 @@ export class ClaudeCodeProvider implements IProvider {
     }
 
     if (protocol === 'openai') {
-      const { body: upstreamBody, toolNameMap } = this.cloak(
+      const { body: cloakedBody, toolNameMap } = this.cloak(
         mapOpenAIToAnthropic(body, upstreamModelId, modelSpec.maxOutputTokens),
       );
+      const upstreamBody = this.applyBodyCloaking(cloakedBody, ctx);
 
       const result = await executor.execute({
         body: upstreamBody,
@@ -161,6 +163,25 @@ export class ClaudeCodeProvider implements IProvider {
     }
 
     throw new Error(`Unsupported protocol: ${protocol}`);
+  }
+
+  /**
+   * Apply body-level cloaking: billing header as system[0] + fake metadata.user_id.
+   *
+   * Always runs (the function itself gates on OAuth), so both protocol paths get it without drift.
+   * The credential for the "is this OAuth?" check comes from the best account in the pool — the same
+   * one the executor will pick. When no accounts exist, cloaking is skipped (there is nothing to
+   * impersonate with).
+   */
+  private applyBodyCloaking(body: unknown, ctx: { clientId?: string; sessionId?: string }): unknown {
+    const accounts = getAccounts();
+    if (accounts.length === 0) return body;
+    // Use the first healthy account's credential to determine kind. The executor will pick the best
+    // one, but the OAuth check only needs to know whether the pool is OAuth-backed.
+    const bestAccount = accounts.find((a) => !a.invalidatedAt);
+    if (!bestAccount) return body;
+    const isOAuth = credentialKind(bestAccount.credential) === 'oauth';
+    return applyCloaking(body, isOAuth, ctx.sessionId, bestAccount.credential);
   }
 
   /**

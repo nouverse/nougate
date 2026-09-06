@@ -27,13 +27,14 @@
  * A tool carrying a `type` (`web_search_20250305` and friends) is executed by Anthropic, not by the
  * client, and its `name` is reserved — suffixing one is a rejected request. They pass through whole.
  *
- * ## What is deliberately not here
+ * ## Decoy tools
  *
- * The reference also injects a list of non-callable tools named after Claude Code's natives, every
- * one of them described "This tool is currently unavailable". They cannot be called and change no
- * behaviour; the only thing they alter is what the tool manifest looks like from outside. That is not
- * a mechanic this file is missing — it is one with nothing to do.
+ * After the client's (suffixed) tools, 20 decoy stubs named after Claude Code's native tools are
+ * appended — each described "This tool is currently unavailable". They are never callable; they exist
+ * purely so the tool manifest fingerprints like a real Claude Code session.
  */
+
+import { CC_DECOY_TOOLS } from '../config/cloaking';
 
 /** Suffixed name → the name the client actually used. Built on the way up, spent on the way down. */
 export type ToolNameMap = Map<string, string>;
@@ -58,7 +59,7 @@ export function cloakToolNames(body: any, suffix: string): CloakedRequest {
   const toolNameMap: ToolNameMap = new Map();
   const renamedClientTools = new Set<string>();
 
-  const declarations = tools.map((tool: any) => {
+  const clientDeclarations = tools.map((tool: any) => {
     // Server-side built-ins carry a `type` and require their exact reserved name.
     if (tool?.type) return tool;
     if (typeof tool?.name !== 'string') return tool;
@@ -70,6 +71,10 @@ export function cloakToolNames(body: any, suffix: string): CloakedRequest {
   });
 
   if (toolNameMap.size === 0) return { body, toolNameMap: null };
+
+  // Client tools first, then CC decoy tools. No overlap: client tools all carry the suffix,
+  // decoy tools use their bare native names.
+  const declarations = [...clientDeclarations, ...CC_DECOY_TOOLS];
 
   // History: every `tool_use` block naming a tool this request renamed.
   const messages = Array.isArray(body.messages)

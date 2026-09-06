@@ -15,6 +15,7 @@ import {
   decloakStreamEvent,
   decloakToolNames,
 } from '@/providers/claude-code/mappers/tool-names';
+import { CC_DECOY_TOOLS } from '@/providers/claude-code/config/cloaking';
 
 const SUFFIX = '_ide';
 
@@ -131,6 +132,63 @@ describe('renaming on the way up', () => {
   test('the suffix is configurable, because it must not collide with a real client tool', () => {
     const { body } = cloakToolNames({ tools: [{ name: 'Read' }] }, '_gw');
     expect(body.tools[0].name).toBe('Read_gw');
+  });
+});
+
+describe('decoy tool injection', () => {
+  test('cloakToolNames appends all 20 CC decoy tools after client tools', () => {
+    const { body } = cloakToolNames(
+      { tools: [{ name: 'MyTool', input_schema: { type: 'object' } }] },
+      SUFFIX,
+    );
+
+    // 1 client tool (suffixed) + 20 decoys = 21 total
+    expect(body.tools.length).toBe(1 + CC_DECOY_TOOLS.length);
+    expect(body.tools[0].name).toBe('MyTool_ide');
+    expect(body.tools[1].name).toBe('Task');
+    expect(body.tools[body.tools.length - 1].name).toBe('ExitPlanMode');
+  });
+
+  test('decoy tools all have "currently unavailable" description', () => {
+    const { body } = cloakToolNames(
+      { tools: [{ name: 'MyTool' }] },
+      SUFFIX,
+    );
+
+    const decoys = body.tools.slice(1);
+    for (const decoy of decoys) {
+      expect(decoy.description).toBe('This tool is currently unavailable.');
+      expect(decoy.input_schema).toEqual({ type: 'object', properties: {} });
+    }
+  });
+
+  test('server-side built-ins are preserved before decoys', () => {
+    const { body } = cloakToolNames(
+      {
+        tools: [
+          { type: 'web_search_20250305', name: 'web_search' },
+          { name: 'Read', input_schema: { type: 'object' } },
+        ],
+      },
+      SUFFIX,
+    );
+
+    // built-in + suffixed client tool + 20 decoys = 22
+    expect(body.tools.length).toBe(22);
+    expect(body.tools[0].name).toBe('web_search');
+    expect(body.tools[1].name).toBe('Read_ide');
+    expect(body.tools[2].name).toBe('Task');
+  });
+
+  test('decoy tools are not included in the toolNameMap', () => {
+    const { toolNameMap } = cloakToolNames(
+      { tools: [{ name: 'MyTool' }] },
+      SUFFIX,
+    );
+
+    expect(toolNameMap!.has('Task')).toBe(false);
+    expect(toolNameMap!.has('Bash')).toBe(false);
+    expect(toolNameMap!.has('MyTool_ide')).toBe(true);
   });
 });
 

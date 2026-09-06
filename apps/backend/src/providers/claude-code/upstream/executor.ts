@@ -142,7 +142,7 @@ export class ClaudeCodeExecutor {
 
         const response = await fetch(url, {
           method: 'POST',
-          headers: buildRequestHeaders(account.credential),
+          headers: buildRequestHeaders(account.credential, upstreamModelId),
           body: JSON.stringify(body),
           signal: controller.signal,
         });
