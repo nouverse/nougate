@@ -26,10 +26,6 @@ export async function loadConfig(): Promise<StorageFormat> {
 }
 
 // Kept for backward compatibility but deprecated
-export async function loadAccounts(): Promise<AntigravityAccount[]> {
-  return (await loadConfig()).accounts;
-}
-
 const writer = createStateFileWriter<StorageFormat>(ACCOUNTS_FILE, {
   label: 'antigravity accounts',
 });

@@ -1,5 +1,5 @@
-import { and, lt, sql } from 'drizzle-orm';
-import { dialect, getDb, t, timeBucket } from '@/core/db';
+import { lt, sql } from 'drizzle-orm';
+import { getDb, t, timeBucket } from '@/core/db';
 import { tokenMetricsLogger } from '@/core/metrics/logger';
 import { retentionDays } from '@/core/metrics/retention';
 

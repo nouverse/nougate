@@ -16,7 +16,6 @@ import {
   getStrategy,
   setStrategy,
   resetAllCooldowns,
-  saveAccounts,
   removeAccount,
   resetAccount,
   markCooldown,

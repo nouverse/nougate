@@ -1,5 +1,3 @@
-import { existsSync } from 'fs';
-import { join } from 'path';
 import type { IModelRegistry, IModelSpec } from '@/core/interfaces';
 import { getProxyConfig } from '@/config/manager';
 import { dataPath } from '@/core/paths';

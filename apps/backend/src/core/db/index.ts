@@ -121,15 +121,6 @@ export function getDb(): Db {
  * The raw bun:sqlite handle, for the few places that need SQLite directly.
  * Null when Postgres is the backend.
  */
-export function getSqliteHandle(): Database | null {
-  getDb();
-  return sqliteHandle;
-}
-
-export function getDbTarget(): string {
-  return target;
-}
-
 /**
  * Create any missing tables and indexes.
  *

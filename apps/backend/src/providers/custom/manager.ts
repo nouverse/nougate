@@ -52,10 +52,6 @@ export async function refreshCustomProvider(id: string): Promise<void> {
   await instances.get(id)?.refresh();
 }
 
-export function getCustomProviderInstance(id: string): CustomProvider | undefined {
-  return instances.get(id);
-}
-
 /**
  * Load every stored custom provider during startup.
  */

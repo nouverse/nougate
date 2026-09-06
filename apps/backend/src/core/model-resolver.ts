@@ -1,6 +1,5 @@
 import type { ResolvedModel } from '@/core/interfaces';
 
-const DEFAULT_PROVIDER = 'antigravity';
 
 /**
  * Parse a client model string into provider and provider-local model ID parts.
@@ -29,17 +28,6 @@ export function requireProviderPrefix(resolved: ResolvedModel): void {
   }
 }
 
-/**
- * Resolve the effective provider ID for already-validated internal lookups.
- *
- * @deprecated Prefer `requireProviderPrefix()` in request handlers.
- */
-export function getEffectiveProvider(
-  resolved: ResolvedModel,
-  defaultProvider = DEFAULT_PROVIDER,
-): string {
-  return resolved.providerId ?? defaultProvider;
-}
 
 /**
  * Format a provider-local model ID into its public provider-prefixed form.

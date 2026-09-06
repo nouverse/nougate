@@ -90,10 +90,3 @@ export function findHandler(
     );
   });
 }
-
-/**
- * Return all registered protocol handlers.
- */
-export function getAllHandlers(): IProtocolHandler[] {
-  return [...handlers];
-}

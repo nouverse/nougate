@@ -13,7 +13,6 @@ export function createAnthropicStreamTransformer(model: string, messageId: strin
   let buffer = "";
   let blockIndex = 0;
   let currentBlockType: "text" | "thinking" | "tool_use" | null = null;
-  let started = false;
 
   let activeSignature: string | undefined;
   let activeThought = "";
@@ -37,7 +36,6 @@ export function createAnthropicStreamTransformer(model: string, messageId: strin
         },
       };
       controller.enqueue(encoder.encode(sseEvent("message_start", msgStart)));
-      started = true;
     },
 
     transform(chunk, controller) {

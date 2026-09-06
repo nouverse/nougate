@@ -1,5 +1,5 @@
 import { join } from "path";
-import { existsSync, mkdirSync } from "fs";
+import { existsSync } from "fs";
 import { getDataDir } from '@/core/paths';
 import { createStateFileWriter } from '@/core/state-file';
 

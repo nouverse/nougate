@@ -1,6 +1,5 @@
 import type { UpstreamExecuteOptions, UpstreamResult } from "@/core/interfaces";
 import { getProxyConfig } from "@/config/manager";
-import { getAntigravityConfig } from "@/providers/antigravity/provider-config";
 import {
   emitAccountFlash,
   ensureFingerprint,
@@ -253,7 +252,6 @@ export class AntigravityExecutor {
    */
   async execute(options: AntigravityExecuteOptions): Promise<UpstreamResult> {
     const proxyConfig = getProxyConfig();
-    const providerConfig = getAntigravityConfig();
     const maxAttempts = Math.max(proxyConfig.retry.maxAttempts, getAccounts().length);
     const modelId = options.modelSpec.modelId;
     const isClaudeModel =

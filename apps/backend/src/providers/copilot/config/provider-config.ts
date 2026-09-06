@@ -1,6 +1,5 @@
-import { existsSync } from 'fs';
 import { mkdir } from 'fs/promises';
-import { dirname, join } from 'path';
+import { dirname } from 'path';
 import { dataPath } from '@/core/paths';
 import { writeJsonAtomic } from '@/core/state-file';
 import type { JitterConfig } from '@/core/jitter';

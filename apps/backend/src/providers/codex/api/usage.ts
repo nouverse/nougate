@@ -1,16 +1,12 @@
 /**
  * Codex usage and quota reporting — wham API.
  *
- * Ported from 9router's `services/usage/codex.js`.
- * Handles: usage fetch, rate-limit reset credits (GET + consume POST),
- * review quota, spark quota, primary/secondary windows.
+ * Handles: usage fetch, review quota, spark quota, primary/secondary windows.
  */
 
 import type { IProviderQuota } from '@/core/interfaces';
 
 const CODEX_USAGE_URL = 'https://chatgpt.com/backend-api/wham/usage';
-const CODEX_RESET_CREDITS_URL = 'https://chatgpt.com/backend-api/wham/rate-limit-reset-credits';
-const CODEX_RESET_CREDITS_CONSUME_URL = 'https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume';
 
 const USAGE_TIMEOUT_MS = 10_000;
 
@@ -36,14 +32,6 @@ function parseResetTime(value: any): number | undefined {
   return undefined;
 }
 
-function toIsoDate(value: any): string | null {
-  if (!value) return null;
-  const date = value instanceof Date
-    ? value
-    : new Date(typeof value === 'number' && value < 1e12 ? value * 1000 : value);
-  const time = date.getTime();
-  return Number.isFinite(time) ? date.toISOString() : null;
-}
 
 interface QuotaWindow {
   used: number;
@@ -216,81 +204,4 @@ function formatResetIn(at: number): string {
   const minutes = Math.floor(ms / 60_000);
   const hours = Math.floor(minutes / 60);
   return hours > 0 ? `${hours}h ${minutes % 60}m` : `${minutes}m`;
-}
-
-/**
- * Get rate-limit reset credits info.
- */
-export async function getResetCredits(
-  accessToken: string,
-  chatgptAccountId?: string,
-): Promise<{ availableCount: number; credits: any[] }> {
-  const headers: Record<string, string> = {
-    'Authorization': `Bearer ${accessToken}`,
-    'Accept': 'application/json',
-    'OpenAI-Beta': 'codex-1',
-    'originator': 'codex_cli_rs',
-  };
-  if (chatgptAccountId) headers['ChatGPT-Account-ID'] = chatgptAccountId;
-
-  const response = await fetchWithTimeout(CODEX_RESET_CREDITS_URL, headers);
-
-  let data: any = null;
-  try { data = await response.json(); } catch { data = null; }
-
-  if (!response.ok) {
-    const message = data?.message || data?.error || data?.detail || `Reset credits API unavailable (${response.status}).`;
-    throw new Error(typeof message === 'string' ? message : JSON.stringify(message));
-  }
-
-  const credits = Array.isArray(data?.credits) ? data.credits : [];
-  return {
-    availableCount: Math.max(0, toFiniteNumber(data?.available_count ?? data?.availableCount, 0)),
-    credits: credits.map((credit: any) => ({
-      status: String(credit?.status || 'unknown'),
-      grantedAt: toIsoDate(credit?.granted_at ?? credit?.grantedAt),
-      expiresAt: toIsoDate(credit?.expires_at ?? credit?.expiresAt),
-    })),
-  };
-}
-
-/**
- * Consume one rate-limit reset credit (irreversible).
- */
-export async function consumeResetCredit(
-  accessToken: string,
-  redeemRequestId: string,
-): Promise<{ ok: boolean; code: string | null; windowsReset: number; message: string | null }> {
-  if (!redeemRequestId || typeof redeemRequestId !== 'string') {
-    throw new Error('A redeem request id is required to consume a Codex reset credit.');
-  }
-
-  const response = await fetch(CODEX_RESET_CREDITS_CONSUME_URL, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'Accept': 'application/json',
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ redeem_request_id: redeemRequestId }),
-  });
-
-  let data: any = null;
-  try {
-    const text = await response.text();
-    data = text ? JSON.parse(text) : null;
-  } catch {
-    // ignore
-  }
-
-  const code = data?.code || null;
-  const windowsReset = toFiniteNumber(data?.windows_reset, 0);
-  const success = response.ok && (code === 'reset' || windowsReset > 0);
-
-  return {
-    ok: success,
-    code,
-    windowsReset,
-    message: data?.message || null,
-  };
 }

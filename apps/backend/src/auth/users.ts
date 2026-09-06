@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { and, eq, ne, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { getDb, t } from '@/core/db';
 
 export interface User {
