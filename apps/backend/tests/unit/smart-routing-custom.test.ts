@@ -19,7 +19,13 @@ import { tmpdir } from 'os';
 import type { IAccount, IProvider } from '@/core/interfaces';
 
 const STATE_DIR = mkdtempSync(join(tmpdir(), 'nougate-routing-custom-'));
+
+// Both are read when their module is first imported, so they must be set before those imports.
+// `CONFIG_FILE` is not optional here: this file toggles `bypassModelValidation`, and without the
+// override `updateProxyConfig` writes to the real `data/config.json` — a unit test silently changing
+// the running gateway's settings, which is exactly what it did before this line existed.
 process.env.NOUGATE_DB_PATH = join(STATE_DIR, 'routing-custom.db');
+process.env.CONFIG_FILE = join(STATE_DIR, 'config.json');
 
 const { loadProxyConfig, updateProxyConfig, getProxyConfig } = await import('@/config/manager');
 const { initDb, closeDb } = await import('@/core/db');

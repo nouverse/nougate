@@ -76,6 +76,33 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
     maxOutputTokens: 65536,
     timeoutMs: 60000,
   },
+  // ── Gemini 3.8 Flash (tiered thinking budget) ─────────────────────────────
+  // Same shape as 3.7: both entries hit `gemini-3.8-flash-tiered` upstream and
+  // differ only in the thinking budget they send. The bare `gemini-3.8-flash`
+  // is *not* an upstream id — it 404s — so the mapping is what makes the
+  // familiar name callable.
+  'gemini-3.8-flash-high': {
+    modelId: 'gemini-3.8-flash-high',
+    displayName: 'Gemini 3.8 Flash High',
+    pool: 'sandbox',
+    upstreamModelId: 'gemini-3.8-flash-tiered',
+    isThinking: true,
+    thinkingMode: 'budget',
+    thinkingBudget: 24576,
+    maxOutputTokens: 65536,
+    timeoutMs: 60000,
+  },
+  'gemini-3.8-flash': {
+    modelId: 'gemini-3.8-flash',
+    displayName: 'Gemini 3.8 Flash',
+    pool: 'sandbox',
+    upstreamModelId: 'gemini-3.8-flash-tiered',
+    isThinking: true,
+    thinkingMode: 'budget',
+    thinkingBudget: 8192,
+    maxOutputTokens: 65536,
+    timeoutMs: 60000,
+  },
   'claude-sonnet-4-6': {
     modelId: 'claude-sonnet-4-6',
     displayName: 'Claude Sonnet 4.6 Thinking',
