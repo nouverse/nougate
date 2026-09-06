@@ -1,10 +1,13 @@
 /**
  * Claude's OAuth, authorization-code with PKCE.
  *
- * Endpoints, client id and scopes are the public constants from 9router (MIT), which is where the
- * shape of this flow was taken from. A public OAuth client id is not a secret — PKCE exists precisely
- * because a desktop or CLI client cannot keep one — so the value below is an identifier, not a
- * credential.
+ * Endpoints, client id and scopes come from 9router (MIT). A public OAuth client id is not a
+ * secret — PKCE exists precisely because a desktop or CLI client cannot keep one — so the value
+ * below is an identifier, not a credential.
+ *
+ * 9router uses `claude.ai/oauth/authorize` with `code=true` and three scopes. The `code=true`
+ * param is specific to Claude's OAuth and must be present — without it the authorize page rejects
+ * the request.
  *
  * ## How this differs from `antigravity/auth/oauth.ts`, which it otherwise mirrors
  *
@@ -23,9 +26,16 @@ import { createSingleFlight } from './single-flight';
 
 export const CLAUDE_OAUTH = {
   clientId: '9d1c250a-e61b-44d9-88ed-5944d1962f5e',
+  /** 9router authorize endpoint — `claude.ai`, not `platform.claude.com`. */
   authorizeUrl: 'https://claude.ai/oauth/authorize',
+  /** Token exchange — `api.anthropic.com`, NOT `claude.ai`. */
   tokenUrl: 'https://api.anthropic.com/v1/oauth/token',
-  scopes: ['org:create_api_key', 'user:profile', 'user:inference'],
+  /** Three scopes, matching 9router exactly. */
+  scopes: [
+    'org:create_api_key',
+    'user:profile',
+    'user:inference',
+  ],
   /**
    * How long before expiry a token is renewed.
    *
@@ -62,11 +72,9 @@ export interface PendingAuthorization {
 export function beginAuthorization(redirectUri: string): PendingAuthorization {
   const codeVerifier = base64url(randomBytes(32));
   const codeChallenge = base64url(createHash('sha256').update(codeVerifier).digest());
-  const state = base64url(randomBytes(16));
+  const state = base64url(randomBytes(32));
 
   const params = new URLSearchParams({
-    // Not a typo and not documented anywhere — the reference sends it, and the authorize page
-    // returns the code in the page rather than only via redirect without it.
     code: 'true',
     client_id: CLAUDE_OAUTH.clientId,
     response_type: 'code',
@@ -95,20 +103,32 @@ export async function exchangeCode(
 ): Promise<ClaudeTokenResponse> {
   const [rawCode, embeddedState] = code.trim().split('#');
 
+  const exchangeBody = {
+    code: rawCode,
+    state: embeddedState || state,
+    grant_type: 'authorization_code',
+    client_id: CLAUDE_OAUTH.clientId,
+    redirect_uri: redirectUri,
+    code_verifier: codeVerifier,
+  };
+
+  console.log(`[claude-code] token exchange POST ${CLAUDE_OAUTH.tokenUrl}`, {
+    ...exchangeBody,
+    code: exchangeBody.code.slice(0, 8) + '…',
+    code_verifier: exchangeBody.code_verifier.slice(0, 8) + '…',
+  });
+
   const res = await fetch(CLAUDE_OAUTH.tokenUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({
-      code: rawCode,
-      state: embeddedState || state,
-      grant_type: 'authorization_code',
-      client_id: CLAUDE_OAUTH.clientId,
-      redirect_uri: redirectUri,
-      code_verifier: codeVerifier,
-    }),
+    body: JSON.stringify(exchangeBody),
   });
 
-  if (!res.ok) throw new Error(`Token exchange failed: ${(await res.text()).slice(0, 300)}`);
+  if (!res.ok) {
+    const body = (await res.text()).slice(0, 500);
+    console.error(`[claude-code] token exchange ${res.status}: ${body}`);
+    throw new Error(`Token exchange failed (${res.status}): ${body}`);
+  }
   return (await res.json()) as ClaudeTokenResponse;
 }
 

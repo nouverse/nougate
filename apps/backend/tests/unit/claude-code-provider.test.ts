@@ -38,8 +38,12 @@ describe('what the dashboard is told to render', () => {
     // Antigravity sends a fixed `plain` challenge, which is not a challenge. Claude requires a real
     // one, and a verifier reused across sign-ins would defeat the point of PKCE entirely.
     expect(url.searchParams.get('code_challenge')).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    // state must also be 43 chars (randomBytes(32) base64url), matching 9router.
+    expect(url.searchParams.get('state')).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(url.searchParams.get('state')).toBe(started.state);
     expect(url.searchParams.get('scope')).toContain('user:inference');
+    // `code=true` is required by `claude.ai/oauth/authorize` — it is Claude-specific, not standard.
+    expect(url.searchParams.get('code')).toBe('true');
   });
 
   test('two sign-ins never share a challenge or a state', async () => {
@@ -49,6 +53,16 @@ describe('what the dashboard is told to render', () => {
 
     expect(second.searchParams.get('code_challenge')).not.toBe(first.searchParams.get('code_challenge'));
     expect(second.searchParams.get('state')).not.toBe(first.searchParams.get('state'));
+  });
+
+  test('the redirect_uri points to the gateway\'s own callback endpoint', async () => {
+    const provider = new ClaudeCodeProvider();
+    const started = (await provider.addAccount({})) as { redirectUrl: string };
+    const authorizeUrl = new URL(started.redirectUrl);
+    const redirectUri = new URL(authorizeUrl.searchParams.get('redirect_uri')!);
+
+    // Must be exactly `/callback` — Claude Code CLI's client_id only allows this path.
+    expect(redirectUri.pathname).toBe('/callback');
   });
 
   test('finishing a sign-in that was never started is refused, not crashed', async () => {

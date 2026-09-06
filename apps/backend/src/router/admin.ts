@@ -185,6 +185,63 @@ function serveFrontendAsset(pathname: string): Response {
 }
 
 /**
+ * Server-side OAuth callback for Claude Code.
+ *
+ * Anthropic redirects the browser here after the operator approves. The code is exchanged for
+ * tokens, the account is stored, and the browser is redirected to the dashboard. This is the
+ * same pattern Antigravity uses with `/oauth-callback`, but scoped under the provider path.
+ */
+async function handleClaudeCodeOAuthCallback(url: URL): Promise<Response> {
+  const code = url.searchParams.get('code');
+  const state = url.searchParams.get('state');
+
+  if (!code) {
+    return new Response('Missing authorization code', { status: 400 });
+  }
+
+  try {
+    const provider = getProvider('claude-code');
+    if (!provider?.addAccount) {
+      return new Response('Claude Code provider not available', { status: 500 });
+    }
+
+    const result = await provider.addAccount({ code, state }) as { success?: boolean; email?: string };
+
+    // Redirect to dashboard on success — the operator sees the new account in the list.
+    // A simple HTML page that also posts a message to the opener handles both the popup and
+    // the full-tab case.
+    const email = result?.email || 'Claude account';
+    return new Response(
+      `<!DOCTYPE html>
+<html><head><title>Authorized</title></head>
+<body style="font-family:system-ui;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#1d232a;color:#a6adbb">
+<div style="text-align:center">
+  <h2>✓ ${email} added</h2>
+  <p>You can close this tab.</p>
+  <script>
+    if (window.opener) {
+      window.opener.postMessage({ type: 'claude-code-oauth-done' }, '*');
+      setTimeout(() => window.close(), 1500);
+    } else {
+      setTimeout(() => { window.location.href = '/frontend/'; }, 1500);
+    }
+  </script>
+</div>
+</body></html>`,
+      { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } },
+    );
+  } catch (error: any) {
+    if (error instanceof AccountLimitError) {
+      return new Response(error.message, {
+        status: error.status,
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      });
+    }
+    return new Response(`OAuth error: ${error?.message || error}`, { status: 500 });
+  }
+}
+
+/**
  * Handle provider OAuth callback and persist the authenticated account.
  */
 async function handleOAuthCallback(url: URL): Promise<Response> {
@@ -267,6 +324,12 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
 
   if (url.pathname === "/oauth-callback") {
     return handleOAuthCallback(url);
+  }
+
+  // Claude Code OAuth callback — path must be exactly `/callback` because the CLI's client_id
+  // only allows `http://localhost:{port}/callback` as a registered redirect URI.
+  if (url.pathname === '/callback') {
+    return handleClaudeCodeOAuthCallback(url);
   }
 
   if (url.pathname === "/api/sse") {

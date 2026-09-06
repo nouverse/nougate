@@ -40,12 +40,12 @@ const COPY: Record<string, {
   'claude-code': {
     title: 'Add Claude Account',
     intro:
-      'Signs in with your Claude subscription. Anthropic shows the code on screen rather than redirecting, so it is copied back by hand.',
+      'Signs in with your Claude subscription. A popup opens for authorization — once approved, the account is added automatically.',
     button: 'Sign In with Claude',
     consent:
-      'Approve the request on claude.ai. Anthropic then shows an authorization code — copy it. It may look like `abc123#xyz`; paste the whole thing, the state after the `#` is part of it.',
-    pasteLabel: 'Paste Authorization Code',
-    pastePlaceholder: 'Paste the code from claude.ai here...',
+      'Click the button above to open the Claude authorization page. After you approve, the popup closes and the account appears here.',
+    pasteLabel: 'Or Paste Code Manually',
+    pastePlaceholder: 'If the popup didn\'t work, paste the code or redirect URL here...',
   },
 };
 
@@ -96,6 +96,32 @@ export function OAuthAccountsTab({ providerId, accounts, refreshQueries }: Props
         setAuthUrl(res.redirectUrl);
         setPastedUrl('');
         setShowAuthModal(true);
+
+        // For providers with a server-side callback (like claude-code), open a popup window.
+        // The callback page posts a message back when done, so the modal auto-closes.
+        if (providerId === 'claude-code') {
+          const popup = window.open(res.redirectUrl, 'claude-oauth', 'width=600,height=700,popup=yes');
+
+          const onMessage = (event: MessageEvent) => {
+            if (event.data?.type === 'claude-code-oauth-done') {
+              window.removeEventListener('message', onMessage);
+              setShowAuthModal(false);
+              showToast('Account added successfully!');
+              refreshQueries();
+            }
+          };
+          window.addEventListener('message', onMessage);
+
+          // Poll in case the popup closes without posting (e.g. user closes it manually)
+          const pollTimer = setInterval(() => {
+            if (popup && popup.closed) {
+              clearInterval(pollTimer);
+              window.removeEventListener('message', onMessage);
+              // Refresh in case the callback succeeded before the popup was detected as closed
+              refreshQueries();
+            }
+          }, 1000);
+        }
       } else {
         showToast('OAuth flow initialization failed.');
       }
@@ -109,9 +135,11 @@ export function OAuthAccountsTab({ providerId, accounts, refreshQueries }: Props
     setIsAuthenticating(true);
 
     let code = pastedUrl.trim();
+    let state: string | undefined;
     try {
       if (code.startsWith('http') || code.includes('?')) {
         const urlObj = new URL(code);
+        state = urlObj.searchParams.get('state') || undefined;
         code = urlObj.searchParams.get('code') || code;
       }
     } catch {
@@ -121,7 +149,7 @@ export function OAuthAccountsTab({ providerId, accounts, refreshQueries }: Props
     try {
       const res = await api.post<{ success: boolean; email?: string; error?: string }>(
         `/api/providers/${providerId}/accounts/add`,
-        { code }
+        { code, ...(state ? { state } : {}) }
       );
       if (res?.success) {
         showToast(`Account ${res.email || ''} authenticated successfully!`);

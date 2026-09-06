@@ -41,6 +41,7 @@ import type { ClaudeCodeAccount } from './auth/types';
 import { claudeCodeModelRegistry } from './config/model-specs';
 import { getClaudeCodeConfig, loadClaudeCodeConfig } from './config/provider-config';
 import { ClaudeCodeExecutor } from './upstream/executor';
+import { getBaseUrl } from '@/core/base-url';
 import { sanitizeAnthropicBody } from './mappers/anthropic';
 import { cloakToolNames, decloakResponse, type ToolNameMap } from './mappers/tool-names';
 import { applyCloaking } from './upstream/body-cloaking';
@@ -61,11 +62,20 @@ const STREAM_HEADERS = {
 /**
  * Where Claude sends the operator back after they approve.
  *
- * Claude's own console URL, matching the reference implementation — the authorize page shows the
- * code on screen rather than only redirecting, which is what makes a paste-back flow work at all on
- * a gateway that may not be reachable from the browser doing the sign-in.
+ * Points to this gateway's own callback endpoint, not to Anthropic's page. The 9router proves
+ * that Anthropic's OAuth server accepts arbitrary `redirect_uri` values for this public PKCE
+ * client — it is a native/CLI client that cannot pre-register URIs.
  */
-const DEFAULT_REDIRECT_URI = 'https://console.anthropic.com/oauth/code/callback';
+/**
+ * The redirect URI for Claude's OAuth.
+ *
+ * Claude Code CLI's client_id only accepts `http://localhost:{port}/callback` — any port is fine
+ * (RFC 8252 loopback redirect), but the path **must** be `/callback`. 9router uses port 20127;
+ * we use whatever port the gateway is already listening on.
+ */
+function getClaudeCallbackUri(): string {
+  return `${getBaseUrl()}/callback`;
+}
 
 export class ClaudeCodeProvider implements IProvider {
   readonly id = 'claude-code';
@@ -275,8 +285,9 @@ export class ClaudeCodeProvider implements IProvider {
    *
    * So the body decides which step this is:
    *
-   *   - `{}`               — begin. Returns the URL to open and remembers the PKCE verifier.
-   *   - `{ code }`         — finish. Exchanges it and stores the tokens.
+   *   - `{}`               — begin. Returns the URL to open; the redirect lands on the gateway's own
+   *                           `/api/providers/claude-code/oauth-callback` endpoint.
+   *   - `{ code, state }`  — finish (called by the callback route). Exchanges and stores the tokens.
    *   - `{ apiKey }`       — skip the flow entirely: a pasted key or `claude setup-token` token.
    */
   async addAccount(body: {
@@ -294,23 +305,31 @@ export class ClaudeCodeProvider implements IProvider {
     if (body?.code) {
       const pending = this.pending;
       if (!pending) {
+        console.error('[claude-code] addAccount({ code }) called but no pending authorization exists');
         throw Object.assign(new Error('Start the sign-in again — no authorization is in progress.'), {
           status: 409,
         });
       }
-      const tokens = await exchangeCode(body.code, pending.redirectUri, pending.codeVerifier, pending.state);
-      this.pending = null;
+      console.log(`[claude-code] exchanging code (${body.code.slice(0, 8)}…) with redirect_uri=${pending.redirectUri}`);
+      try {
+        const tokens = await exchangeCode(body.code, pending.redirectUri, pending.codeVerifier, pending.state);
+        this.pending = null;
 
-      const account = await addOAuthAccount({
-        accessToken: tokens.access_token,
-        ...(tokens.refresh_token ? { refreshToken: tokens.refresh_token } : {}),
-        ...(tokens.expires_in ? { expiresInSeconds: tokens.expires_in } : {}),
-        ...(body.label ? { label: body.label } : {}),
-      });
-      return { success: true, email: account.label };
+        const account = await addOAuthAccount({
+          accessToken: tokens.access_token,
+          ...(tokens.refresh_token ? { refreshToken: tokens.refresh_token } : {}),
+          ...(tokens.expires_in ? { expiresInSeconds: tokens.expires_in } : {}),
+          ...(body.label ? { label: body.label } : {}),
+        });
+        console.log(`[claude-code] account added: ${account.label}`);
+        return { success: true, email: account.label };
+      } catch (err: any) {
+        console.error(`[claude-code] token exchange failed:`, err?.message || err);
+        throw err;
+      }
     }
 
-    const redirectUri = body?.redirectUri || DEFAULT_REDIRECT_URI;
+    const redirectUri = body?.redirectUri || getClaudeCallbackUri();
     const started = beginAuthorization(redirectUri);
     // Held in memory only: a half-finished sign-in that does not survive a restart is correct — the
     // operator simply starts again, and a verifier on disk is a secret with no owner.
