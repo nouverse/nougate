@@ -122,16 +122,17 @@ export function explainNoCandidate(resolved: ResolvedModel): string {
 }
 
 /**
- * Bare model ids more than one provider could answer, each with those providers in routing order.
+ * Every bare model id the gateway will route, each with its providers in the order they are tried.
  *
  * The dashboard's model picker uses this to offer a "Smart Routing" list. Derived from
  * `routeCandidates` rather than recomputed, so the list can only ever show what routing would
  * actually do — a picker built from its own idea of the rules is a picker that drifts, and it drifts
  * silently, because both sides look right in isolation.
  *
- * Cut at two providers on purpose. A bare id served by exactly one provider still routes, it just
- * behaves identically to the prefixed form — listing it would pad the menu with entries that make
- * "smart routing" mean nothing.
+ * One provider is enough to qualify. Routing accepts a bare id with a single candidate — it simply
+ * has nowhere to fail over to — and a list that hid those would say "unroutable" about models that
+ * route perfectly well. A model no provider can currently serve is absent, because that is the one
+ * case where sending it bare really does fail.
  */
 export function smartRoutableModels(): Map<string, string[]> {
   const byModel = new Map<string, string[]>();
@@ -148,7 +149,7 @@ export function smartRoutableModels(): Map<string, string[]> {
       const providerIds = routeCandidates({ providerId: null, modelId, raw: modelId }).map(
         (candidate) => candidate.provider.id,
       );
-      if (providerIds.length > 1) byModel.set(modelId, providerIds);
+      if (providerIds.length > 0) byModel.set(modelId, providerIds);
     }
   }
 

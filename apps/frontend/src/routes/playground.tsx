@@ -7,13 +7,21 @@ import { Play, Square, Terminal, Zap, AlertTriangle, Search, Shuffle } from 'luc
 import type { CatalogModel } from '@/lib/types';
 
 /**
- * The pseudo-provider the picker uses for "let the gateway choose".
+ * The pseudo-provider id carried by rows that are sent without a prefix.
  *
- * Not a provider id the backend knows: selecting it sends the model with **no** prefix, which is the
- * signal that starts routing. Kept distinct from any real id so a provider called "smart" could
- * never collide with it.
+ * Not an id the backend knows: it marks the rows whose `id` is a bare model, which is the string that
+ * makes the gateway choose a provider. Kept deliberately unlike any real id so a provider called
+ * "smart" could never collide with it.
+ *
+ * Two filters produce these rows — "All providers", which lists every model bare, and "Smart
+ * Routing", which narrows to the ones with somewhere to fail over to. Picking a single provider
+ * instead switches back to `provider:model`, because naming a provider is an instruction and routing
+ * must not quietly override it.
  */
-const SMART_ROUTING = '__smart__';
+const BARE = '__bare__';
+
+/** The filter value for the "Smart Routing" entry. A filter, not a provider — see `BARE`. */
+const SMART_FILTER = '__smart__';
 
 export const Route = createFileRoute('/playground')({
   component: PlaygroundPage,
@@ -132,24 +140,30 @@ function PlaygroundPage() {
   }, [usableKeys, apiKeyId]);
 
   /**
-   * Models the gateway will route on its own, one row each.
+   * Every model the gateway can serve, once each, addressed without a prefix.
    *
-   * The catalogue carries one entry per provider/model pair, so a smart-routed model appears in it
-   * several times — once per provider that serves it. Here it collapses to a single row whose `id` is
-   * the **bare** model, because that is exactly the string that makes the gateway choose: send
-   * `claude-sonnet-4-6` and routing picks, send `antigravity:claude-sonnet-4-6` and it does not.
+   * The catalogue carries one entry per provider/model pair, so a model two providers share appears
+   * twice — as `antigravity:claude-sonnet-4-6` and `claudecode:claude-sonnet-4-6`. Listing those
+   * bare without collapsing them would put the same option in the menu twice, both sending the
+   * identical string.
    *
-   * Which models qualify is decided on the backend by the routing code itself and arrives as
-   * `smartRoutedBy`; nothing here re-derives it.
+   * Which providers stand behind each row is decided on the backend by the routing code itself and
+   * arrives as `smartRoutedBy`; nothing here re-derives it.
    */
-  const smartModels = useMemo(() => {
+  const bareModels = useMemo(() => {
     const rows = new Map<string, CatalogModel>();
     for (const entry of catalog ?? []) {
-      if ((entry.smartRoutedBy?.length ?? 0) < 2 || rows.has(entry.modelId)) continue;
-      rows.set(entry.modelId, { ...entry, id: entry.modelId, providerId: SMART_ROUTING });
+      if ((entry.smartRoutedBy?.length ?? 0) === 0 || rows.has(entry.modelId)) continue;
+      rows.set(entry.modelId, { ...entry, id: entry.modelId, providerId: BARE });
     }
     return Array.from(rows.values()).sort((a, b) => a.id.localeCompare(b.id));
   }, [catalog]);
+
+  /** The bare models that have somewhere to fail over to — more than one provider serves them. */
+  const smartModels = useMemo(
+    () => bareModels.filter((entry) => (entry.smartRoutedBy?.length ?? 0) > 1),
+    [bareModels],
+  );
 
   /** Providers present in the catalogue, with how many models each contributes. */
   const providers = useMemo(() => {
@@ -168,13 +182,13 @@ function PlaygroundPage() {
   const models = useMemo(() => {
     const needle = modelSearch.trim().toLowerCase();
     const source =
-      providerFilter === SMART_ROUTING
-        ? smartModels
-        : (catalog ?? []).filter(
-            (entry) => providerFilter === 'all' || entry.providerId === providerFilter,
-          );
+      providerFilter === 'all'
+        ? bareModels
+        : providerFilter === SMART_FILTER
+          ? smartModels
+          : (catalog ?? []).filter((entry) => entry.providerId === providerFilter);
     return source.filter((entry) => !needle || entry.id.toLowerCase().includes(needle));
-  }, [catalog, smartModels, modelSearch, providerFilter]);
+  }, [catalog, bareModels, smartModels, modelSearch, providerFilter]);
 
   // Keep the selection inside the visible list. Without this, narrowing the
   // filters would leave the picker displaying a model it no longer lists, and
@@ -197,7 +211,7 @@ function PlaygroundPage() {
 
   const selected =
     catalog?.find((entry) => entry.id === model) ??
-    smartModels.find((entry) => entry.id === model) ??
+    bareModels.find((entry) => entry.id === model) ??
     null;
   const endpoint =
     protocol === 'openai' ? '/openai/v1/chat/completions' : '/anthropic/v1/messages';
@@ -433,7 +447,11 @@ function PlaygroundPage() {
                 </span>
                 <span className="label-text-alt text-[10px] text-base-content/40">
                   {models.length} of{' '}
-                  {providerFilter === SMART_ROUTING ? smartModels.length : catalog?.length ?? 0}
+                  {providerFilter === 'all'
+                    ? bareModels.length
+                    : providerFilter === SMART_FILTER
+                      ? smartModels.length
+                      : catalog?.length ?? 0}
                 </span>
               </label>
 
@@ -443,9 +461,9 @@ function PlaygroundPage() {
                   value={providerFilter}
                   onChange={(event) => setProviderFilter(event.target.value)}
                 >
-                  <option value="all">All providers ({catalog?.length ?? 0})</option>
+                  <option value="all">All providers ({bareModels.length})</option>
                   {smartModels.length > 0 && (
-                    <option value={SMART_ROUTING}>Smart Routing ({smartModels.length})</option>
+                    <option value={SMART_FILTER}>Smart Routing ({smartModels.length})</option>
                   )}
                   {providers.map((entry) => (
                     <option key={entry.id} value={entry.id}>
@@ -475,8 +493,8 @@ function PlaygroundPage() {
                 {models.map((entry) => (
                   <option key={entry.id} value={entry.id}>
                     {entry.id}
-                    {entry.providerId === SMART_ROUTING
-                      ? `  —  ${(entry.smartRoutedBy ?? []).join(' → ')}`
+                    {entry.providerId === BARE
+                      ? `  ·  ${(entry.smartRoutedBy ?? []).join(' → ')}`
                       : ''}
                   </option>
                 ))}
@@ -491,16 +509,20 @@ function PlaygroundPage() {
                 </label>
               )}
 
-              {selected && selected.providerId === SMART_ROUTING && (
-                <div className="alert alert-info bg-info/10 border-info/25 text-[11px] py-2 px-3 mt-1">
-                  <Shuffle className="w-3.5 h-3.5 shrink-0" />
-                  <span>
-                    No prefix is sent, so the gateway picks:{' '}
-                    <span className="font-mono font-semibold">
+              {selected?.providerId === BARE && (
+                // Surface tokens rather than `alert-info`: that class ships the text colour meant for
+                // a solid info background, and pairing it with a 10% wash left dark text on a dark
+                // panel. These two are defined per theme, so the contrast holds in both.
+                <div className="flex gap-2 items-start rounded-lg border border-base-300 bg-base-100 px-3 py-2 mt-1">
+                  <Shuffle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-primary" />
+                  <span className="text-[11px] leading-relaxed text-base-content/70">
+                    Sent without a prefix, so the gateway chooses:{' '}
+                    <span className="font-mono font-semibold text-base-content">
                       {(selected.smartRoutedBy ?? []).join(' → ')}
                     </span>
-                    . It moves to the next one only if the one before it cannot serve the request —
-                    a spent quota, dead credentials, an unreachable upstream.
+                    {(selected.smartRoutedBy?.length ?? 0) > 1
+                      ? '. It moves to the next only when the one before it cannot serve the request — a spent quota, dead credentials, an unreachable upstream.'
+                      : '. The only provider that serves this model, so there is nothing to fall back to.'}
                   </span>
                 </div>
               )}

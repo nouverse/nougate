@@ -379,9 +379,9 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
           isPriced: pricing.isPriced,
           isCustom: p instanceof CustomProvider,
           /**
-           * Providers that would serve this model when it is called with no prefix at all, in the
-           * order routing would try them. Empty when only one provider has it, which is the case
-           * where a bare call gains nothing over a prefixed one.
+           * Providers that would serve this model called with no prefix at all, in the order routing
+           * tries them. Empty only when nothing can currently serve it — a single entry still means
+           * a bare call works, it just has nowhere to fall back to.
            */
           smartRoutedBy: smartRoutable.get(modelId) ?? [],
         };

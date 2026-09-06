@@ -124,22 +124,27 @@ describe('picking providers for a model', () => {
   });
 });
 
-describe('the smart-routable catalogue the picker offers', () => {
-  test('lists only models more than one provider can serve, with those providers in order', () => {
+describe('the routing table the picker is built from', () => {
+  test('covers every servable bare id, with its providers in the order routing tries them', () => {
     fakeProvider('alpha', { models: ['shared-model', 'alpha-only'] });
     fakeProvider('beta', { models: ['shared-model'] });
 
     const routable = smartRoutableModels();
-    expect([...routable.keys()]).toEqual(['shared-model']);
+    expect([...routable.keys()].sort()).toEqual(['alpha-only', 'shared-model']);
     expect(routable.get('shared-model')).toEqual(['alpha', 'beta']);
+    // One candidate is still a route — it just has nowhere to fail over to.
+    expect(routable.get('alpha-only')).toEqual(['alpha']);
   });
 
-  test('a model whose second provider has no accounts drops off the list', () => {
-    // Otherwise the picker offers "smart routing" for a model with exactly one real candidate.
+  test('a provider with no accounts drops out, so its models can lose their only candidate', () => {
     fakeProvider('alpha', { models: ['shared-model'] });
-    fakeProvider('beta', { models: ['shared-model'], accounts: 0 });
+    fakeProvider('beta', { models: ['shared-model', 'beta-only'], accounts: 0 });
 
-    expect(smartRoutableModels().has('shared-model')).toBe(false);
+    const routable = smartRoutableModels();
+    // Down to one candidate, but still routable.
+    expect(routable.get('shared-model')).toEqual(['alpha']);
+    // Nothing left to serve it, so sending it bare really would fail — and it is absent.
+    expect(routable.has('beta-only')).toBe(false);
   });
 
   test('agrees with routeCandidates rather than keeping its own rules', () => {
