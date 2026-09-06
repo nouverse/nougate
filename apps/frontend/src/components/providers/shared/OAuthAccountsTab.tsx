@@ -51,7 +51,7 @@ const COPY: Record<string, {
     intro: 'Signs in with your Claude subscription. Open the link in a new tab, approve, and bring the result back here.',
     button: 'Sign In with Claude',
     consent:
-      'Approve in the new tab. If it lands back on this gateway the account is added for you and this dialog closes; if it cannot reach the gateway, copy that tab\'s full URL and paste it below.',
+      'Approve in the new tab. Anthropic redirects to a localhost address, so on a local gateway it lands back here and the account is added for you. On a deployed one that address is your own machine, not the server, and the tab will fail to load — that is expected. Copy its full URL and paste it below.',
     pasteLabel: 'Paste Redirect URL',
     pastePlaceholder: 'Paste the entire redirected URL, or just the code, here...',
   },

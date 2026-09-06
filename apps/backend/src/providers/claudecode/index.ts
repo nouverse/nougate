@@ -49,7 +49,6 @@ import {
   type ClaudeCodeConfig,
 } from './config/provider-config';
 import { ClaudeCodeExecutor } from './upstream/executor';
-import { getBaseUrl } from '@/core/base-url';
 import { sanitizeAnthropicBody } from './mappers/anthropic';
 import { dropUnusableThinking } from './mappers/thinking';
 import { cloakToolNames, decloakResponse, type ToolNameMap } from './mappers/tool-names';
@@ -72,21 +71,30 @@ const STREAM_HEADERS = {
 };
 
 /**
- * Where Claude sends the operator back after they approve.
- *
- * Points to this gateway's own callback endpoint, not to Anthropic's page. The 9router proves
- * that Anthropic's OAuth server accepts arbitrary `redirect_uri` values for this public PKCE
- * client — it is a native/CLI client that cannot pre-register URIs.
- */
-/**
  * The redirect URI for Claude's OAuth.
  *
- * Claude Code CLI's client_id only accepts `http://localhost:{port}/callback` — any port is fine
- * (RFC 8252 loopback redirect), but the path **must** be `/callback`. 9router uses port 20127;
- * we use whatever port the gateway is already listening on.
+ * **Always loopback, never `BASE_URL`.** Claude Code's client id is a native/CLI client: it accepts
+ * `http://localhost:{port}/callback` — any port, RFC 8252 — and rejects anything else. Building this
+ * from `BASE_URL` worked on a laptop by coincidence, because there `BASE_URL` *is* loopback, and
+ * broke the moment the gateway was deployed to a real domain: the authorize request went out with
+ * `https://<host>/callback` and was refused before the operator ever saw a consent screen.
+ *
+ * Codex has the same constraint and states it as a constant; this one now does too.
+ *
+ * ## What that means for a deployed gateway
+ *
+ * The browser lands on `localhost` afterwards, which is the operator's own machine and not the
+ * server — so the tab fails to load. That is the expected shape of this flow, not a failure: the
+ * code is in that URL, and the dialog takes it pasted. On a local run the address happens to be the
+ * gateway itself, so the exchange finishes on its own and the dialog closes. Same URI, two outcomes,
+ * and neither needs configuring.
+ *
+ * `addAccount({ redirectUri })` still overrides it, for an operator who knows their client id
+ * accepts something else.
  */
 function getClaudeCallbackUri(): string {
-  return `${getBaseUrl()}/callback`;
+  const port = process.env.PORT?.trim() || '3000';
+  return `http://localhost:${port}/callback`;
 }
 
 export class ClaudeCodeProvider implements IProvider {
