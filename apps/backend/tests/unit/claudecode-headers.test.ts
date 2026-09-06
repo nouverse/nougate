@@ -7,8 +7,8 @@
  */
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { buildRequestHeaders, DEFAULT_BETA_FEATURES } from '@/providers/cc/upstream/headers';
-import { updateClaudeCodeConfig } from '@/providers/cc/config/provider-config';
+import { buildRequestHeaders, DEFAULT_BETA_FEATURES } from '@/providers/claudecode/upstream/headers';
+import { updateClaudeCodeConfig } from '@/providers/claudecode/config/provider-config';
 
 const OAUTH_TOKEN = 'sk-ant-oat01-token';
 const API_KEY = 'sk-ant-api03-key';

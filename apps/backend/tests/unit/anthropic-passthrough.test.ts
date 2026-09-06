@@ -18,7 +18,7 @@ beforeAll(async () => {
 
 describe('what reaches the upstream', () => {
   test('the model is replaced, never copied from the client', () => {
-    const body = sanitizeAnthropicBody({ model: 'cc:claude-opus-5', messages: [] }, 'claude-opus-5');
+    const body = sanitizeAnthropicBody({ model: 'claudecode:claude-opus-5', messages: [] }, 'claude-opus-5');
     // The client names the gateway's public id; the upstream only knows its own.
     expect(body.model).toBe('claude-opus-5');
   });

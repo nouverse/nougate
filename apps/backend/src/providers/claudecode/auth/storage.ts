@@ -11,7 +11,7 @@
  * which is exactly the friction this provider exists to avoid.
  */
 
-import { ccDataPath, resolveStatePath } from '../data-path';
+import { claudecodeDataPath, resolveStatePath } from '../data-path';
 import { createStateFileWriter } from '@/core/state-file';
 import type { ClaudeCodeAccount, SelectionStrategy } from './types';
 
@@ -24,7 +24,7 @@ import type { ClaudeCodeAccount, SelectionStrategy } from './types';
  * right, and it is also what makes this module impossible to exercise twice in one test run.
  */
 function accountsFile(): string {
-  return process.env.CLAUDE_CODE_ACCOUNTS_FILE || ccDataPath('accounts.json');
+  return process.env.CLAUDE_CODE_ACCOUNTS_FILE || claudecodeDataPath('accounts.json');
 }
 
 /** One coalescing writer per path — see `saveConfig`. */
@@ -33,7 +33,7 @@ const writers = new Map<string, ReturnType<typeof createStateFileWriter<StorageF
 function writerFor(path: string) {
   let writer = writers.get(path);
   if (!writer) {
-    writer = createStateFileWriter<StorageFormat>(path, { label: 'cc accounts' });
+    writer = createStateFileWriter<StorageFormat>(path, { label: 'claudecode accounts' });
     writers.set(path, writer);
   }
   return writer;
@@ -56,7 +56,7 @@ export async function loadConfig(): Promise<StorageFormat> {
   } catch (error) {
     // Reported, never thrown: a corrupt accounts file must not stop the gateway from booting and
     // serving every other provider. The operator sees an empty list and a log line saying why.
-    console.error('[cc] could not read accounts file:', error);
+    console.error('[claudecode] could not read accounts file:', error);
   }
   return { accounts: [] };
 }

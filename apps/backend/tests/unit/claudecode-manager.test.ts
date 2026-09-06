@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import * as manager from '@/providers/cc/auth/manager';
+import * as manager from '@/providers/claudecode/auth/manager';
 
 let dir: string;
 

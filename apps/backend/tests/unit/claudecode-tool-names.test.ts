@@ -14,8 +14,8 @@ import {
   decloakResponse,
   decloakStreamEvent,
   decloakToolNames,
-} from '@/providers/cc/mappers/tool-names';
-import { CC_DECOY_TOOLS } from '@/providers/cc/config/cloaking';
+} from '@/providers/claudecode/mappers/tool-names';
+import { CC_DECOY_TOOLS } from '@/providers/claudecode/config/cloaking';
 
 const SUFFIX = '_ide';
 

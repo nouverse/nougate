@@ -46,7 +46,7 @@ const COPY: Record<string, {
     pasteLabel: 'Paste Redirect URL',
     pastePlaceholder: 'Paste the entire redirected localhost:1455 URL here...',
   },
-  'cc': {
+  'claudecode': {
     title: 'Add Claude Account',
     intro: 'Signs in with your Claude subscription. Open the link in a new tab, approve, and bring the result back here.',
     button: 'Sign In with Claude',
@@ -128,7 +128,7 @@ export function OAuthAccountsTab({ providerId, accounts, refreshQueries }: Props
 
     const onMessage = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return;
-      if (event.data?.type !== 'cc-oauth-done') return;
+      if (event.data?.type !== 'claudecode-oauth-done') return;
       setShowAuthModal(false);
       showToast('Account added successfully!');
       refreshQueries();

@@ -22,7 +22,7 @@ import { registerProvider } from "@/core/registry";
 import { loadProxyConfig } from "@/config/manager";
 import { AntigravityProvider } from "@/providers/antigravity";
 import { CopilotProvider } from "@/providers/copilot";
-import { ClaudeCodeProvider } from "@/providers/cc";
+import { ClaudeCodeProvider } from "@/providers/claudecode";
 import { CodexProvider } from "@/providers/codex";
 import { registerOpenAIProtocol } from "@/protocols/openai";
 import { registerAnthropicProtocol } from "@/protocols/anthropic";

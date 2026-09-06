@@ -6,11 +6,11 @@
  * every upstream reads.
  */
 
-import { ccDataPath, resolveStatePath } from '../data-path';
+import { claudecodeDataPath, resolveStatePath } from '../data-path';
 import { createStateFileWriter } from '@/core/state-file';
 import { DEFAULT_JITTER_CONFIG, type JitterConfig } from '@/core/jitter';
 
-const CONFIG_FILE = process.env.CLAUDE_CODE_CONFIG_FILE || ccDataPath('config.json');
+const CONFIG_FILE = process.env.CLAUDE_CODE_CONFIG_FILE || claudecodeDataPath('config.json');
 
 export interface ClaudeCodeConfig {
   /** Where requests go. Overridable so a proxy or a regional endpoint can be pointed at. */
@@ -78,7 +78,7 @@ export async function loadClaudeCodeConfig(): Promise<void> {
       current = { ...DEFAULTS, ...(await Bun.file(path).json()) };
     }
   } catch (error) {
-    console.error('[cc] could not read config, using defaults:', error);
+    console.error('[claudecode] could not read config, using defaults:', error);
     current = { ...DEFAULTS };
   }
 }
@@ -88,7 +88,7 @@ export function getClaudeCodeConfig(): ClaudeCodeConfig {
 }
 
 const writer = createStateFileWriter<ClaudeCodeConfig>(CONFIG_FILE, {
-  label: 'cc config',
+  label: 'claudecode config',
 });
 
 export async function updateClaudeCodeConfig(patch: Partial<ClaudeCodeConfig>): Promise<ClaudeCodeConfig> {

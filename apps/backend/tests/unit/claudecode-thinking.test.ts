@@ -8,8 +8,8 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { dropUnusableThinking } from '@/providers/cc/mappers/thinking';
-import { CLAUDE_SIGNATURE_MARKER } from '@/providers/cc/upstream/signature';
+import { dropUnusableThinking } from '@/providers/claudecode/mappers/thinking';
+import { CLAUDE_SIGNATURE_MARKER } from '@/providers/claudecode/upstream/signature';
 
 /** A signature that passes validation: base64 of a buffer opening with the Claude marker. */
 const GOOD_SIG = Buffer.from([CLAUDE_SIGNATURE_MARKER, 0x01, 0x02]).toString('base64');

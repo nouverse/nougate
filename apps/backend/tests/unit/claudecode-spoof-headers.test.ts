@@ -8,7 +8,7 @@ import {
   mapStainlessArch,
   mapStainlessOs,
   selectAnthropicBeta,
-} from '@/providers/cc/upstream/spoof-headers';
+} from '@/providers/claudecode/upstream/spoof-headers';
 
 describe('CLAUDE_CLI_SPOOF_HEADERS', () => {
   test('User-Agent matches claude-cli/<version> pattern', () => {

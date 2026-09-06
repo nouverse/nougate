@@ -12,9 +12,9 @@ import {
   classifyRefreshError,
   isPermanentRefreshFailure,
   TokenRefreshError,
-} from '@/providers/cc/auth/refresh-errors';
-import { createSingleFlight } from '@/providers/cc/auth/single-flight';
-import { refreshTokens, resetRefreshDedup } from '@/providers/cc/auth/oauth';
+} from '@/providers/claudecode/auth/refresh-errors';
+import { createSingleFlight } from '@/providers/claudecode/auth/single-flight';
+import { refreshTokens, resetRefreshDedup } from '@/providers/claudecode/auth/oauth';
 
 const realFetch = globalThis.fetch;
 

@@ -1,7 +1,7 @@
 /**
  * Where Codex credentials live on disk.
  *
- * Same pattern as cc: atomic writes via `createStateFileWriter`, immediate flush on
+ * Same pattern as claudecode: atomic writes via `createStateFileWriter`, immediate flush on
  * credential changes, coalesced for health score updates.
  */
 

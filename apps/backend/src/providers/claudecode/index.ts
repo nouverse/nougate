@@ -90,7 +90,7 @@ function getClaudeCallbackUri(): string {
 }
 
 export class ClaudeCodeProvider implements IProvider {
-  readonly id = 'cc';
+  readonly id = 'claudecode';
   readonly displayName = 'Claude Code';
 
   readonly accountFlow = 'oauth-redirect' as const;
@@ -138,7 +138,7 @@ export class ClaudeCodeProvider implements IProvider {
     const { protocol, body, modelSpec, ctx } = params;
     const isStreaming = (body as { stream?: boolean }).stream === true;
     const upstreamModelId = modelSpec.upstreamModelId || modelSpec.modelId;
-    const responseModelId = `cc:${modelSpec.modelId}`;
+    const responseModelId = `claudecode:${modelSpec.modelId}`;
     const executor = new ClaudeCodeExecutor();
 
     if (protocol === 'anthropic') {
@@ -250,7 +250,7 @@ export class ClaudeCodeProvider implements IProvider {
           }));
         } catch (error) {
           console.warn(
-            `[cc] usage lookup failed for ${account.label}: ${String(error).slice(0, 200)}`,
+            `[claudecode] usage lookup failed for ${account.label}: ${String(error).slice(0, 200)}`,
           );
           return [];
         }
@@ -301,7 +301,7 @@ export class ClaudeCodeProvider implements IProvider {
    * So the body decides which step this is:
    *
    *   - `{}`               — begin. Returns the URL to open; the redirect lands on the gateway's own
-   *                           `/api/providers/cc/oauth-callback` endpoint.
+   *                           `/callback` endpoint.
    *   - `{ code, state }`  — finish (called by the callback route). Exchanges and stores the tokens.
    *   - `{ apiKey }`       — skip the flow entirely: a pasted key or `claude setup-token` token.
    */
@@ -320,12 +320,12 @@ export class ClaudeCodeProvider implements IProvider {
     if (body?.code) {
       const pending = this.pending;
       if (!pending) {
-        console.error('[cc] addAccount({ code }) called but no pending authorization exists');
+        console.error('[claudecode] addAccount({ code }) called but no pending authorization exists');
         throw Object.assign(new Error('Start the sign-in again — no authorization is in progress.'), {
           status: 409,
         });
       }
-      console.log(`[cc] exchanging code (${body.code.slice(0, 8)}…) with redirect_uri=${pending.redirectUri}`);
+      console.log(`[claudecode] exchanging code (${body.code.slice(0, 8)}…) with redirect_uri=${pending.redirectUri}`);
       try {
         const tokens = await exchangeCode(body.code, pending.redirectUri, pending.codeVerifier, pending.state);
         this.pending = null;
@@ -336,10 +336,10 @@ export class ClaudeCodeProvider implements IProvider {
           ...(tokens.expires_in ? { expiresInSeconds: tokens.expires_in } : {}),
           ...(body.label ? { label: body.label } : {}),
         });
-        console.log(`[cc] account added: ${account.label}`);
+        console.log(`[claudecode] account added: ${account.label}`);
         return { success: true, email: account.label };
       } catch (err: any) {
-        console.error(`[cc] token exchange failed:`, err?.message || err);
+        console.error(`[claudecode] token exchange failed:`, err?.message || err);
         throw err;
       }
     }

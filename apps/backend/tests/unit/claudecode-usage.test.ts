@@ -8,7 +8,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { getUsage, resetUsageCache } from '@/providers/cc/api/usage';
+import { getUsage, resetUsageCache } from '@/providers/claudecode/api/usage';
 
 const realFetch = globalThis.fetch;
 
