@@ -7,8 +7,8 @@
  */
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { updateClaudeCodeConfig } from '@/providers/claude-code/config/provider-config';
-import { refreshAccessToken } from '@/providers/claude-code/upstream/refresh';
+import { updateClaudeCodeConfig } from '@/providers/cc/config/provider-config';
+import { refreshAccessToken } from '@/providers/cc/upstream/refresh';
 
 afterEach(async () => {
   await updateClaudeCodeConfig({ refreshCommand: '' });

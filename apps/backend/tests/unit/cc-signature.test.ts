@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   isValidClaudeSignature,
   CLAUDE_SIGNATURE_MARKER,
-} from '@/providers/claude-code/upstream/signature';
+} from '@/providers/cc/upstream/signature';
 
 /**
  * A real signature, captured from a live session.

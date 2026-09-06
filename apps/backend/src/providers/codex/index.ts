@@ -43,15 +43,25 @@ import {
 } from './config/provider-config';
 import { CodexExecutor } from './upstream/executor';
 import { getCodexUsage, usageToQuotas } from './api/usage';
-import { decodeAccountId } from './auth/credential';
+import {
+  createResponsesToOpenAIStreamTransformer,
+  finalizeResponsesToOpenAIResponse,
+  mapOpenAIToResponses,
+} from './mappers/openai-to-responses';
+import {
+  createOpenAIToAnthropicStreamTransformer,
+  finalizeOpenAIToAnthropicResponse,
+  mapAnthropicToOpenAI,
+} from '@/core/mappers/anthropic-to-openai';
 
 const HOUR_MS = 3_600_000;
 
 const STREAM_HEADERS = {
   'Content-Type': 'text/event-stream',
-  'Cache-Control': 'no-cache',
+  'Cache-Control': 'no-cache, no-transform',
   Connection: 'keep-alive',
   'Access-Control-Allow-Origin': '*',
+  'X-Accel-Buffering': 'no',
 };
 
 /**
@@ -103,18 +113,65 @@ export class CodexProvider implements IProvider {
     return codexModelRegistry.listModelIds();
   }
 
+  /**
+   * One request, translated in and out of the Responses API.
+   *
+   * Codex speaks neither dialect that reaches this gateway, and it has no non-streaming mode — the
+   * upstream rejects `stream: false` — so `stream` is read from the caller here and the answer is
+   * either piped or collected, never passed through. Two branches rather than one because the
+   * Anthropic side is Chat Completions with a translation on each end; the Responses part of the
+   * work is the same code both times.
+   *
+   * TODO: a native `/codex/v1/responses` route. `ProtocolId` already carries `'codex'`, and a client
+   * that speaks Responses natively should not be translated to Chat Completions and back to reach an
+   * upstream that wanted Responses in the first place.
+   */
   async execute(params: ProviderExecuteParams): Promise<Response> {
-    const { body, modelSpec } = params;
+    const { protocol, body, modelSpec, ctx } = params;
+    const isStreaming = (body as { stream?: boolean })?.stream === true;
+    const upstreamModelId = modelSpec.upstreamModelId || modelSpec.modelId;
+    const responseModelId = `codex:${modelSpec.modelId}`;
     const executor = new CodexExecutor();
 
-    // Codex always uses Responses API format — no protocol translation needed
+    if (protocol === 'anthropic') {
+      const messageId = `msg_${Date.now().toString(36)}`;
+      const chatBody = mapAnthropicToOpenAI(body, upstreamModelId);
+
+      const result = await executor.execute({
+        body: mapOpenAIToResponses(chatBody, upstreamModelId),
+        modelSpec,
+        clientId: ctx.clientId,
+      });
+
+      if (isStreaming) {
+        if (!result.response.body) throw new Error('No response body from upstream Codex');
+        return new Response(
+          result.response.body
+            .pipeThrough(createResponsesToOpenAIStreamTransformer(responseModelId))
+            .pipeThrough(createOpenAIToAnthropicStreamTransformer(responseModelId, messageId)),
+          { status: 200, headers: STREAM_HEADERS },
+        );
+      }
+
+      const asChat = await finalizeResponsesToOpenAIResponse(result.response, responseModelId);
+      return await finalizeOpenAIToAnthropicResponse(asChat, responseModelId, messageId);
+    }
+
     const result = await executor.execute({
-      body: body as Record<string, any>,
+      body: mapOpenAIToResponses(body, upstreamModelId),
       modelSpec,
-      clientId: params.ctx.clientId,
+      clientId: ctx.clientId,
     });
 
-    return result.response;
+    if (isStreaming) {
+      if (!result.response.body) throw new Error('No response body from upstream Codex');
+      return new Response(
+        result.response.body.pipeThrough(createResponsesToOpenAIStreamTransformer(responseModelId)),
+        { status: 200, headers: STREAM_HEADERS },
+      );
+    }
+
+    return await finalizeResponsesToOpenAIResponse(result.response, responseModelId);
   }
 
   async getQuotas(): Promise<IProviderQuota[]> {

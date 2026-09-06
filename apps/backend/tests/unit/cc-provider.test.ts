@@ -13,8 +13,8 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { ClaudeCodeProvider } from '@/providers/claude-code';
-import { credentialKind } from '@/providers/claude-code/auth/credential';
+import { ClaudeCodeProvider } from '@/providers/cc';
+import { credentialKind } from '@/providers/cc/auth/credential';
 
 describe('what the dashboard is told to render', () => {
   test('the credential this provider wants comes from a sign-in, not a paste', () => {
@@ -72,10 +72,10 @@ describe('what the dashboard is told to render', () => {
   });
 
   test('the id and prefix operators type are stable', () => {
-    // Models are addressed as `claude-code:<model>`, and that string ends up in config files and
+    // Models are addressed as `cc:<model>`, and that string ends up in config files and
     // agent packs. Renaming it silently breaks every one of them.
     const provider = new ClaudeCodeProvider();
-    expect(provider.id).toBe('claude-code');
+    expect(provider.id).toBe('cc');
     expect(provider.displayName).toBe('Claude Code');
   });
 

@@ -12,7 +12,7 @@ import {
   authHeaders,
   credentialHint,
   credentialKind,
-} from '@/providers/claude-code/auth/credential';
+} from '@/providers/cc/auth/credential';
 
 describe('telling the two kinds of credential apart', () => {
   test('an API key is recognised by its documented prefix', () => {

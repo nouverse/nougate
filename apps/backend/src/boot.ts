@@ -22,7 +22,7 @@ import { registerProvider } from "@/core/registry";
 import { loadProxyConfig } from "@/config/manager";
 import { AntigravityProvider } from "@/providers/antigravity";
 import { CopilotProvider } from "@/providers/copilot";
-import { ClaudeCodeProvider } from "@/providers/claude-code";
+import { ClaudeCodeProvider } from "@/providers/cc";
 import { CodexProvider } from "@/providers/codex";
 import { registerOpenAIProtocol } from "@/protocols/openai";
 import { registerAnthropicProtocol } from "@/protocols/anthropic";
@@ -54,21 +54,25 @@ export async function boot(): Promise<(req: Request) => Response | Promise<Respo
   await initApiKeys();
   await initCalibration();
 
+  // Registration order is display order: `getAllProviders()` hands them back in this sequence and
+  // both the dashboard sidebar and the provider list render it unsorted. Which provider is the
+  // *default* is decided by id in `core/registry`, not by position, so this list can be reordered
+  // freely.
   const antigravityProvider = new AntigravityProvider();
   await antigravityProvider.init();
   registerProvider(antigravityProvider);
 
-  const copilotProvider = new CopilotProvider();
-  await copilotProvider.init();
-  registerProvider(copilotProvider);
+  const codexProvider = new CodexProvider();
+  await codexProvider.init();
+  registerProvider(codexProvider);
 
   const claudeCodeProvider = new ClaudeCodeProvider();
   await claudeCodeProvider.init();
   registerProvider(claudeCodeProvider);
 
-  const codexProvider = new CodexProvider();
-  await codexProvider.init();
-  registerProvider(codexProvider);
+  const copilotProvider = new CopilotProvider();
+  await copilotProvider.init();
+  registerProvider(copilotProvider);
 
   // Registered last so a custom provider can never shadow a built-in ID.
   await initCustomProviders();

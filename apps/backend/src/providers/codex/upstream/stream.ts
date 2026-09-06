@@ -1,46 +1,15 @@
 /**
  * SSE stream helpers for Codex Responses API.
  *
- * Handles: terminal event detection, abort payload synthesis, SSE peek for transient errors.
+ * One job: read the first stretch of a 200 OK body and decide whether it is really an error.
+ * Codex reports "server is overloaded" and "model at capacity" *inside* a successful stream, so a
+ * status check alone hands the caller a response that fails several kilobytes later.
  */
 
-// Responses API events that signal the stream has reached a terminal state
-const OPENAI_RESPONSES_TERMINAL_EVENTS = new Set([
-  'response.completed',
-  'response.done',
-  'response.failed',
-  'error',
-]);
-
-export function isTerminalEvent(eventName: string | null, chunk?: any): boolean {
-  if (eventName && OPENAI_RESPONSES_TERMINAL_EVENTS.has(eventName)) return true;
-  const status = chunk?.response?.status;
-  return status === 'completed' || status === 'failed';
-}
-
-const sharedEncoder = new TextEncoder();
-
-/** Synthesize a response.failed event for streams that close without a terminal event. */
-export function buildAbortedTerminalBytes(): Uint8Array {
-  const failedEvent = `event: response.failed\ndata: ${JSON.stringify({
-    type: 'response.failed',
-    response: {
-      id: `resp_${Date.now()}`,
-      status: 'failed',
-      error: {
-        type: 'stream_error',
-        code: 'stream_disconnected',
-        message: 'stream closed before response.completed',
-      },
-    },
-  })}\n\ndata: [DONE]\n\n`;
-  return sharedEncoder.encode(failedEvent);
-}
-
 // SSE error patterns inside 200-OK bodies
-export const SSE_RETRY_PATTERNS = ['server_is_overloaded', 'service_unavailable_error'];
-export const SSE_ACCOUNT_FALLBACK_PATTERNS = ['selected model is at capacity', 'model_at_capacity'];
-export const SSE_USER_OUTPUT_PATTERNS = [
+const SSE_RETRY_PATTERNS = ['server_is_overloaded', 'service_unavailable_error'];
+const SSE_ACCOUNT_FALLBACK_PATTERNS = ['selected model is at capacity', 'model_at_capacity'];
+const SSE_USER_OUTPUT_PATTERNS = [
   'event: response.output_text.delta',
   'event: response.function_call_arguments.delta',
   '"type":"response.output_text.delta"',
@@ -48,7 +17,7 @@ export const SSE_USER_OUTPUT_PATTERNS = [
 ];
 
 /** How many bytes to peek before deciding the stream is clean. */
-export const SSE_PEEK_BYTES = 256 * 1024;
+const SSE_PEEK_BYTES = 256 * 1024;
 
 export const MODEL_CAPACITY_MESSAGE = 'Selected model is at capacity. Please try a different model.';
 
@@ -56,7 +25,7 @@ export const MODEL_CAPACITY_MESSAGE = 'Selected model is at capacity. Please try
  * Search nested objects for a `message` string.
  * Used to extract error messages from SSE data events.
  */
-export function findNestedMessage(value: any, depth = 0): string | null {
+function findNestedMessage(value: any, depth = 0): string | null {
   if (!value || depth > 6 || typeof value === 'string') return null;
   if (Array.isArray(value)) {
     for (const item of value) {
@@ -79,7 +48,7 @@ export function findNestedMessage(value: any, depth = 0): string | null {
 /**
  * Extract a human-readable error message from SSE text.
  */
-export function extractSseErrorMessage(text: string | null | undefined, fallback: string): string {
+function extractSseErrorMessage(text: string | null | undefined, fallback: string): string {
   const exact = text?.match(/Selected model is at capacity\. Please try a different model\./i)?.[0];
   if (exact) return exact;
 

@@ -200,7 +200,7 @@ async function handleClaudeCodeOAuthCallback(url: URL): Promise<Response> {
   }
 
   try {
-    const provider = getProvider('claude-code');
+    const provider = getProvider('cc');
     if (!provider?.addAccount) {
       return new Response('Claude Code provider not available', { status: 500 });
     }
@@ -223,7 +223,7 @@ async function handleClaudeCodeOAuthCallback(url: URL): Promise<Response> {
     if (window.opener) {
       // Addressed to this origin rather than to '*': the dashboard checks the sender, and a
       // message that says "an account was added" is not one to broadcast to whatever is listening.
-      window.opener.postMessage({ type: 'claude-code-oauth-done' }, window.location.origin);
+      window.opener.postMessage({ type: 'cc-oauth-done' }, window.location.origin);
     } else {
       setTimeout(() => { window.location.href = '/frontend/'; }, 1500);
     }

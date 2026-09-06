@@ -165,13 +165,13 @@ async function readUsage(token: string): Promise<ClaudeUsageSnapshot | null> {
     if (res.status === 429) {
       usageCooldown.set(token, Date.now() + USAGE_429_COOLDOWN_MS);
       console.warn(
-        `[claude-code] usage endpoint rate limited; not asking again for ${USAGE_429_COOLDOWN_MS / 1000}s`,
+        `[cc] usage endpoint rate limited; not asking again for ${USAGE_429_COOLDOWN_MS / 1000}s`,
       );
     }
 
     return await readLegacyUsage(token);
   } catch (error) {
-    console.warn(`[claude-code] could not read usage: ${String(error).slice(0, 200)}`);
+    console.warn(`[cc] could not read usage: ${String(error).slice(0, 200)}`);
     return null;
   }
 }
@@ -269,7 +269,7 @@ async function readLegacyUsage(token: string): Promise<ClaudeUsageSnapshot | nul
     // a bar that would imply a cap nobody reported.
     return { ...base, extraUsage: await usageRes.json(), note: 'organization usage, not a plan cap' };
   } catch (error) {
-    console.warn(`[claude-code] could not read org usage: ${String(error).slice(0, 200)}`);
+    console.warn(`[cc] could not read org usage: ${String(error).slice(0, 200)}`);
     return null;
   }
 }

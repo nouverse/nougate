@@ -37,7 +37,16 @@ const COPY: Record<string, {
     pasteLabel: 'Paste Redirect URL',
     pastePlaceholder: 'Paste the entire redirected localhost URL here...',
   },
-  'claude-code': {
+  codex: {
+    title: 'Add ChatGPT Account',
+    intro: 'Signs in with your ChatGPT subscription. Open the link in a new tab, approve, then paste the URL you land on.',
+    button: 'Sign In with ChatGPT',
+    consent:
+      'OpenAI redirects to `http://localhost:1455/auth/callback`, a port this gateway does not listen on — so the tab will fail to load, which is expected. Copy its full URL and paste it below.',
+    pasteLabel: 'Paste Redirect URL',
+    pastePlaceholder: 'Paste the entire redirected localhost:1455 URL here...',
+  },
+  'cc': {
     title: 'Add Claude Account',
     intro: 'Signs in with your Claude subscription. Open the link in a new tab, approve, and bring the result back here.',
     button: 'Sign In with Claude',
@@ -119,7 +128,7 @@ export function OAuthAccountsTab({ providerId, accounts, refreshQueries }: Props
 
     const onMessage = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return;
-      if (event.data?.type !== 'claude-code-oauth-done') return;
+      if (event.data?.type !== 'cc-oauth-done') return;
       setShowAuthModal(false);
       showToast('Account added successfully!');
       refreshQueries();

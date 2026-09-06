@@ -8,7 +8,7 @@ import {
   deriveUuid,
   generateBillingHeader,
   generateFakeUserID,
-} from '@/providers/claude-code/upstream/body-cloaking';
+} from '@/providers/cc/upstream/body-cloaking';
 
 describe('generateBillingHeader', () => {
   test('format matches cc_version=<ver>.<build>; cc_entrypoint=sdk-cli; cch=<hash>;', () => {

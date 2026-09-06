@@ -6,12 +6,11 @@
  * every upstream reads.
  */
 
-import { dataPath } from '@/core/paths';
+import { ccDataPath, resolveStatePath } from '../data-path';
 import { createStateFileWriter } from '@/core/state-file';
 import { DEFAULT_JITTER_CONFIG, type JitterConfig } from '@/core/jitter';
 
-const CONFIG_FILE =
-  process.env.CLAUDE_CODE_CONFIG_FILE || dataPath('providers', 'claude-code', 'config.json');
+const CONFIG_FILE = process.env.CLAUDE_CODE_CONFIG_FILE || ccDataPath('config.json');
 
 export interface ClaudeCodeConfig {
   /** Where requests go. Overridable so a proxy or a regional endpoint can be pointed at. */
@@ -73,12 +72,13 @@ let current: ClaudeCodeConfig = { ...DEFAULTS };
 
 export async function loadClaudeCodeConfig(): Promise<void> {
   try {
-    const file = Bun.file(CONFIG_FILE);
-    if (await file.exists()) {
-      current = { ...DEFAULTS, ...(await file.json()) };
+    // Reads may still come from the pre-rename directory; writes always go to CONFIG_FILE.
+    const path = process.env.CLAUDE_CODE_CONFIG_FILE ?? (await resolveStatePath('config.json'));
+    if (path) {
+      current = { ...DEFAULTS, ...(await Bun.file(path).json()) };
     }
   } catch (error) {
-    console.error('[claude-code] could not read config, using defaults:', error);
+    console.error('[cc] could not read config, using defaults:', error);
     current = { ...DEFAULTS };
   }
 }
@@ -88,7 +88,7 @@ export function getClaudeCodeConfig(): ClaudeCodeConfig {
 }
 
 const writer = createStateFileWriter<ClaudeCodeConfig>(CONFIG_FILE, {
-  label: 'claude-code config',
+  label: 'cc config',
 });
 
 export async function updateClaudeCodeConfig(patch: Partial<ClaudeCodeConfig>): Promise<ClaudeCodeConfig> {

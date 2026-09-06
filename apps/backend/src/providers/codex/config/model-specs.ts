@@ -11,7 +11,6 @@
 
 import type { IModelRegistry, IModelSpec } from '@/core/interfaces';
 
-const REVIEW_SUFFIX = '-review';
 
 interface CodexModelDef {
   id: string;
@@ -38,40 +37,14 @@ const CODEX_MODELS: CodexModelDef[] = [
   { id: 'gpt-5.4-mini', name: 'GPT 5.4 Mini' },
   { id: 'gpt-5.4-mini-review', name: 'GPT 5.4 Mini Review', upstreamModelId: 'gpt-5.4-mini', quotaFamily: 'review' },
   { id: 'gpt-5.3-codex-spark', name: 'GPT 5.3 Codex Spark' },
-  { id: 'gpt-5.3-codex-spark-review', name: 'GPT 5.3 Codex Spark Review', upstreamModelId: 'gpt-5.3-codex-spark', quotaFamily: 'review' },
-  // Image models
-  { id: 'gpt-5.6-sol-image', name: 'GPT 5.6 Sol Image', capabilities: ['text2img', 'edit'], kind: 'image' },
-  { id: 'gpt-5.6-terra-image', name: 'GPT 5.6 Terra Image', capabilities: ['text2img', 'edit'], kind: 'image' },
-  { id: 'gpt-5.6-luna-image', name: 'GPT 5.6 Luna Image', capabilities: ['text2img', 'edit'], kind: 'image' },
-  { id: 'gpt-5.5-image', name: 'GPT 5.5 Image', capabilities: ['text2img', 'edit'], kind: 'image' },
-  { id: 'gpt-5.4-image', name: 'GPT 5.4 Image', capabilities: ['text2img', 'edit'], kind: 'image' },
-  { id: 'gpt-5.3-image', name: 'GPT 5.3 Image', capabilities: ['text2img', 'edit'], kind: 'image' },
-];
+  { id: 'gpt-5.3-codex-spark-review', name: 'GPT 5.3 Codex Spark Review', upstreamModelId: 'gpt-5.3-codex-spark', quotaFamily: 'review' },];
 
-/** Thinking effort options supported by Codex. */
-export const CODEX_THINKING_OPTIONS = ['auto', 'none', 'low', 'medium', 'high'] as const;
 export const CODEX_EFFORT_LEVELS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'] as const;
 
 /** Resolve upstream model ID for review variants. */
 export function getUpstreamModelId(modelId: string): string {
   const def = CODEX_MODELS.find((m) => m.id === modelId);
   return def?.upstreamModelId ?? modelId;
-}
-
-/** Check if a model is a review variant. */
-export function isReviewModel(modelId: string): boolean {
-  return modelId.endsWith(REVIEW_SUFFIX);
-}
-
-/** Check if a model is an image model. */
-export function isImageModel(modelId: string): boolean {
-  const def = CODEX_MODELS.find((m) => m.id === modelId);
-  return def?.kind === 'image';
-}
-
-/** Strip -image suffix from model ID. */
-export function stripImageSuffix(modelId: string): string {
-  return modelId.endsWith('-image') ? modelId.slice(0, -6) : modelId;
 }
 
 function toModelSpec(def: CodexModelDef): IModelSpec {

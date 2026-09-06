@@ -10,10 +10,10 @@
  *   bun run src/scripts/diagnose-claude-request.ts --tools    # include a tool, exercising the rename
  */
 
-import { initManager, getAccounts } from '@/providers/claude-code/auth/manager';
-import { loadClaudeCodeConfig, getClaudeCodeConfig } from '@/providers/claude-code/config/provider-config';
-import { buildRequestHeaders, DEFAULT_BETA_FEATURES } from '@/providers/claude-code/upstream/headers';
-import { cloakToolNames } from '@/providers/claude-code/mappers/tool-names';
+import { initManager, getAccounts } from '@/providers/cc/auth/manager';
+import { loadClaudeCodeConfig, getClaudeCodeConfig } from '@/providers/cc/config/provider-config';
+import { buildRequestHeaders, DEFAULT_BETA_FEATURES } from '@/providers/cc/upstream/headers';
+import { cloakToolNames } from '@/providers/cc/mappers/tool-names';
 
 const withTools = process.argv.includes('--tools');
 

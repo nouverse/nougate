@@ -21,7 +21,7 @@ import {
 } from '@/core/upstream-errors';
 import { getProxyConfig } from '@/config/manager';
 import { buildRequestHeaders } from './headers';
-import { reframeResponse } from './framing';
+import { reframeResponse } from '@/core/response-framing';
 import {
   cooldownScope,
   getBestAccount,
@@ -85,12 +85,12 @@ async function refreshIfExpiring(account: ClaudeCodeAccount): Promise<void> {
      */
     if (isPermanentRefreshFailure(error)) {
       console.error(
-        `[claude-code] ${account.label} can no longer renew itself — sign in again (${(error as TokenRefreshError).failure.code || 'no reason given'})`,
+        `[cc] ${account.label} can no longer renew itself — sign in again (${(error as TokenRefreshError).failure.code || 'no reason given'})`,
       );
       return;
     }
     console.warn(
-      `[claude-code] could not renew ${account.label} ahead of expiry: ${String(error).slice(0, 200)}`,
+      `[cc] could not renew ${account.label} ahead of expiry: ${String(error).slice(0, 200)}`,
     );
   }
 }
@@ -191,7 +191,7 @@ export class ClaudeCodeExecutor {
                 const tokens = await refreshTokens(account.refreshToken);
                 await storeRefreshedTokens(account.id, tokens);
                 tried.splice(tried.indexOf(account.id), 1);
-                console.warn(`[claude-code] renewed ${account.label} after a 401`);
+                console.warn(`[cc] renewed ${account.label} after a 401`);
                 continue;
               } catch (error) {
                 /**
@@ -211,7 +211,7 @@ export class ClaudeCodeExecutor {
                 } else {
                   await markCooldown(account.id, scope, REFRESH_RETRY_COOLDOWN_MS);
                   console.warn(
-                    `[claude-code] could not renew ${account.label}, cooling ${REFRESH_RETRY_COOLDOWN_MS}ms: ${String(error).slice(0, 200)}`,
+                    `[cc] could not renew ${account.label}, cooling ${REFRESH_RETRY_COOLDOWN_MS}ms: ${String(error).slice(0, 200)}`,
                   );
                 }
                 await updateAccountUsage(account.id, false);
@@ -225,7 +225,7 @@ export class ClaudeCodeExecutor {
               // Same account, same attempt budget — the retry below picks it up because a successful
               // replace clears the state that would have skipped it.
               tried.splice(tried.indexOf(account.id), 1);
-              console.warn(`[claude-code] refreshed the token on ${account.label} after a 401`);
+              console.warn(`[cc] refreshed the token on ${account.label} after a 401`);
               continue;
             }
             await invalidate(account.id, `token expired and could not be refreshed — ${error}`);
@@ -248,7 +248,7 @@ export class ClaudeCodeExecutor {
             : DEFAULT_COOLDOWN_MS;
           await markCooldown(account.id, scope, waitMs);
           await updateAccountUsage(account.id, false);
-          console.warn(`[claude-code] ${account.label} rate limited on ${modelId}; cooling ${waitMs}ms`);
+          console.warn(`[cc] ${account.label} rate limited on ${modelId}; cooling ${waitMs}ms`);
           continue;
         }
 
@@ -267,7 +267,7 @@ export class ClaudeCodeExecutor {
           }
 
           console.error(
-            `[claude-code] ${response.status} from upstream (${classification.kind}): ${text.slice(0, 300)}`,
+            `[cc] ${response.status} from upstream (${classification.kind}): ${text.slice(0, 300)}`,
           );
 
           // The classifier has already worked out whether a different credential could do better,
@@ -296,8 +296,8 @@ export class ClaudeCodeExecutor {
         const aborted = (error as { name?: string })?.name === 'AbortError';
         console.error(
           aborted
-            ? `[claude-code] ${account.label} timed out after ${timeoutMs}ms`
-            : `[claude-code] request failed on ${account.label}: ${String(error).slice(0, 200)}`,
+            ? `[cc] ${account.label} timed out after ${timeoutMs}ms`
+            : `[cc] request failed on ${account.label}: ${String(error).slice(0, 200)}`,
         );
         await updateAccountUsage(account.id, false);
       }

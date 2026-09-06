@@ -8,6 +8,7 @@
 import { randomUUID } from 'node:crypto';
 import type { IModelSpec } from '@/core/interfaces';
 import { ProviderResponseError } from '@/core/upstream-errors';
+import { reframeResponse } from '@/core/response-framing';
 import {
   cooldownScope,
   getBestAccount,
@@ -17,26 +18,14 @@ import {
   storeRefreshedTokens,
   updateAccountUsage,
 } from '../auth/manager';
-import { CODEX_OAUTH, refreshTokens, isPermanentRefreshFailure, type TokenRefreshError } from '../auth/oauth';
+import { refreshTokens, isPermanentRefreshFailure, type TokenRefreshError } from '../auth/oauth';
 import type { CodexAccount } from '../auth/types';
 import { getCodexConfig } from '../config/provider-config';
 import { transformCodexRequest } from './request-transform';
-import {
-  peekSseTransientError,
-  extractSseErrorMessage,
-  MODEL_CAPACITY_MESSAGE,
-} from './stream';
+import { peekSseTransientError, MODEL_CAPACITY_MESSAGE } from './stream';
 
 const CODEX_USER_AGENT = 'codex_cli_rs/0.136.0';
 const CODEX_ORIGINATOR = 'codex_cli_rs';
-
-const STREAM_HEADERS = {
-  'Content-Type': 'text/event-stream',
-  'Cache-Control': 'no-cache, no-transform',
-  Connection: 'keep-alive',
-  'Access-Control-Allow-Origin': '*',
-  'X-Accel-Buffering': 'no',
-};
 
 /** Default cooldown for 429s without retry-after. */
 const DEFAULT_COOLDOWN_MS = 60_000;
@@ -125,10 +114,13 @@ export class CodexExecutor {
     const modelId = modelSpec.modelId;
     const scope = cooldownScope(modelId);
 
-    // Transform request
+    // The resolved spec decides the model, not the client's string: what arrives is still prefixed
+    // (`codex:gpt-5.5`), and sending that upstream is a refusal — "the 'codex:gpt-5.5' model is not
+    // supported when using Codex with a ChatGPT account" — that reads like a plan problem rather
+    // than a routing one.
     const { body: transformedBody, isCompact } = transformCodexRequest(
       modelId,
-      { ...options.body },
+      { ...options.body, model: modelSpec.upstreamModelId || modelId },
     );
 
     const baseUrl = getCodexConfig().baseUrl.replace(/\/$/, '');
@@ -258,7 +250,7 @@ export class CodexExecutor {
               });
             }
             await updateAccountUsage(account.id, true);
-            return { response: currentResponse, accountId: account.id, attempts };
+            return { response: reframeResponse(currentResponse), accountId: account.id, attempts };
           }
 
           if (peek.accountFallback) {
@@ -300,7 +292,7 @@ export class CodexExecutor {
 
           if (!currentResponse.ok) {
             await updateAccountUsage(account.id, false);
-            return { response: currentResponse, accountId: account.id, attempts };
+            return { response: reframeResponse(currentResponse), accountId: account.id, attempts };
           }
         }
       } catch (error) {

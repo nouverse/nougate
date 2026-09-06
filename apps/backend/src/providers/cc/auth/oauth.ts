@@ -112,7 +112,7 @@ export async function exchangeCode(
     code_verifier: codeVerifier,
   };
 
-  console.log(`[claude-code] token exchange POST ${CLAUDE_OAUTH.tokenUrl}`, {
+  console.log(`[cc] token exchange POST ${CLAUDE_OAUTH.tokenUrl}`, {
     ...exchangeBody,
     code: exchangeBody.code.slice(0, 8) + '…',
     code_verifier: exchangeBody.code_verifier.slice(0, 8) + '…',
@@ -126,7 +126,7 @@ export async function exchangeCode(
 
   if (!res.ok) {
     const body = (await res.text()).slice(0, 500);
-    console.error(`[claude-code] token exchange ${res.status}: ${body}`);
+    console.error(`[cc] token exchange ${res.status}: ${body}`);
     throw new Error(`Token exchange failed (${res.status}): ${body}`);
   }
   return (await res.json()) as ClaudeTokenResponse;

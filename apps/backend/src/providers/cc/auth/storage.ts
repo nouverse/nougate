@@ -11,7 +11,7 @@
  * which is exactly the friction this provider exists to avoid.
  */
 
-import { dataPath } from '@/core/paths';
+import { ccDataPath, resolveStatePath } from '../data-path';
 import { createStateFileWriter } from '@/core/state-file';
 import type { ClaudeCodeAccount, SelectionStrategy } from './types';
 
@@ -24,9 +24,7 @@ import type { ClaudeCodeAccount, SelectionStrategy } from './types';
  * right, and it is also what makes this module impossible to exercise twice in one test run.
  */
 function accountsFile(): string {
-  return (
-    process.env.CLAUDE_CODE_ACCOUNTS_FILE || dataPath('providers', 'claude-code', 'accounts.json')
-  );
+  return process.env.CLAUDE_CODE_ACCOUNTS_FILE || ccDataPath('accounts.json');
 }
 
 /** One coalescing writer per path — see `saveConfig`. */
@@ -35,7 +33,7 @@ const writers = new Map<string, ReturnType<typeof createStateFileWriter<StorageF
 function writerFor(path: string) {
   let writer = writers.get(path);
   if (!writer) {
-    writer = createStateFileWriter<StorageFormat>(path, { label: 'claude-code accounts' });
+    writer = createStateFileWriter<StorageFormat>(path, { label: 'cc accounts' });
     writers.set(path, writer);
   }
   return writer;
@@ -48,12 +46,17 @@ export interface StorageFormat {
 
 export async function loadConfig(): Promise<StorageFormat> {
   try {
-    const file = Bun.file(accountsFile());
+    // An explicit override names one file and means it; only the default path has a previous
+    // location to fall back to. See `data-path.ts`.
+    const path = process.env.CLAUDE_CODE_ACCOUNTS_FILE ?? (await resolveStatePath('accounts.json'));
+    if (!path) return { accounts: [] };
+
+    const file = Bun.file(path);
     if (await file.exists()) return await file.json();
   } catch (error) {
     // Reported, never thrown: a corrupt accounts file must not stop the gateway from booting and
     // serving every other provider. The operator sees an empty list and a log line saying why.
-    console.error('[claude-code] could not read accounts file:', error);
+    console.error('[cc] could not read accounts file:', error);
   }
   return { accounts: [] };
 }

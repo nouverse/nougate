@@ -35,7 +35,7 @@
  */
 
 import { CC_DECOY_TOOLS } from '../config/cloaking';
-import { reframedHeaders } from '../upstream/framing';
+import { reframedHeaders } from '@/core/response-framing';
 
 /** Suffixed name → the name the client actually used. Built on the way up, spent on the way down. */
 export type ToolNameMap = Map<string, string>;
@@ -211,7 +211,7 @@ export function createToolNameDecloakStream(
  * One response, with the client's tool names restored, whichever shape it arrived in.
  *
  * Status is carried across unchanged. Headers are carried across *minus* the framing ones — see
- * `upstream/framing`, which is the difference between this working and every tool request failing.
+ * `core/response-framing`, which is the difference between this working and every tool request failing.
  */
 export async function decloakResponse(
   response: Response,

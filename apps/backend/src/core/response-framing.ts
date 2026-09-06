@@ -1,10 +1,13 @@
 /**
  * Honest framing headers on a response this process re-emits.
  *
- * Every response leaving this provider is a *new* body: `fetch` decompressed the upstream bytes
- * before this code ever saw them, and the streaming paths pipe those bytes through transformers that
+ * Every response leaving a provider is a *new* body: `fetch` decompressed the upstream bytes before
+ * any of this code saw them, and the streaming paths pipe those bytes through transformers that
  * change their length. The upstream's framing headers describe none of that, so they have to come off
  * before the response is handed on.
+ *
+ * Shared rather than per provider because the mistake is not provider-specific — it is what happens
+ * to any decoded body that crosses a runtime boundary, and it has now been made twice.
  */
 
 /**
