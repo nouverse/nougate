@@ -120,3 +120,37 @@ export function explainNoCandidate(resolved: ResolvedModel): string {
     ? `No provider serves "${resolved.raw}". Did you mean ${suggestions.join(', ')}?`
     : `No provider serves "${resolved.raw}". Call /v1/models for the list.`;
 }
+
+/**
+ * Bare model ids more than one provider could answer, each with those providers in routing order.
+ *
+ * The dashboard's model picker uses this to offer a "Smart Routing" list. Derived from
+ * `routeCandidates` rather than recomputed, so the list can only ever show what routing would
+ * actually do — a picker built from its own idea of the rules is a picker that drifts, and it drifts
+ * silently, because both sides look right in isolation.
+ *
+ * Cut at two providers on purpose. A bare id served by exactly one provider still routes, it just
+ * behaves identically to the prefixed form — listing it would pad the menu with entries that make
+ * "smart routing" mean nothing.
+ */
+export function smartRoutableModels(): Map<string, string[]> {
+  const byModel = new Map<string, string[]>();
+
+  for (const provider of getAllProviders()) {
+    let modelIds: string[];
+    try {
+      modelIds = provider.getModelRegistry().listModelIds();
+    } catch {
+      continue;
+    }
+    for (const modelId of modelIds) {
+      if (byModel.has(modelId)) continue;
+      const providerIds = routeCandidates({ providerId: null, modelId, raw: modelId }).map(
+        (candidate) => candidate.provider.id,
+      );
+      if (providerIds.length > 1) byModel.set(modelId, providerIds);
+    }
+  }
+
+  return byModel;
+}

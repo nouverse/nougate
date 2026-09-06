@@ -16,7 +16,7 @@ import type { IAccount, IModelSpec, IProvider, ProviderExecuteParams } from '@/c
 import type { JitterConfig } from '@/core/jitter';
 import { registerProvider, unregisterProvider } from '@/core/registry';
 import { resolveModel } from '@/core/model-resolver';
-import { explainNoCandidate, routeCandidates } from '@/core/smart-routing';
+import { explainNoCandidate, routeCandidates, smartRoutableModels } from '@/core/smart-routing';
 import { executeWithFailover } from '@/core/provider-execute';
 import { ProviderResponseError } from '@/core/upstream-errors';
 
@@ -121,6 +121,35 @@ describe('picking providers for a model', () => {
     expect(routeCandidates(resolveModel('declared-model')).map((c) => c.provider.id)).toEqual([
       'catchall',
     ]);
+  });
+});
+
+describe('the smart-routable catalogue the picker offers', () => {
+  test('lists only models more than one provider can serve, with those providers in order', () => {
+    fakeProvider('alpha', { models: ['shared-model', 'alpha-only'] });
+    fakeProvider('beta', { models: ['shared-model'] });
+
+    const routable = smartRoutableModels();
+    expect([...routable.keys()]).toEqual(['shared-model']);
+    expect(routable.get('shared-model')).toEqual(['alpha', 'beta']);
+  });
+
+  test('a model whose second provider has no accounts drops off the list', () => {
+    // Otherwise the picker offers "smart routing" for a model with exactly one real candidate.
+    fakeProvider('alpha', { models: ['shared-model'] });
+    fakeProvider('beta', { models: ['shared-model'], accounts: 0 });
+
+    expect(smartRoutableModels().has('shared-model')).toBe(false);
+  });
+
+  test('agrees with routeCandidates rather than keeping its own rules', () => {
+    fakeProvider('alpha', { models: ['shared-model'] });
+    fakeProvider('beta', { models: ['shared-model'] });
+    fakeProvider('catchall', { models: ['declared'], specForAnything: true });
+
+    for (const [modelId, providerIds] of smartRoutableModels()) {
+      expect(routeCandidates(resolveModel(modelId)).map((c) => c.provider.id)).toEqual(providerIds);
+    }
   });
 });
 

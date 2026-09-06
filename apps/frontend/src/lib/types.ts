@@ -225,6 +225,11 @@ export interface CatalogModel {
   /** False when no rate is known, so cost is reported as $0. */
   isPriced: boolean;
   isCustom: boolean;
+  /**
+   * Providers that would answer this model called with no prefix, in the order routing tries them.
+   * Empty unless more than one provider serves it — see `core/smart-routing` on the backend.
+   */
+  smartRoutedBy: string[];
 }
 
 export interface ModelSpec {

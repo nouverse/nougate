@@ -16,6 +16,7 @@ import { handleCustomProvidersRoute } from "@/router/custom-providers";
 import { handleUsersRoute } from "@/router/users";
 import { CustomProvider } from "@/providers/custom";
 import { resolvePricing } from "@/core/metrics/pricing";
+import { smartRoutableModels } from "@/core/smart-routing";
 import { projectPath } from "@/core/paths";
 import { NOUGATE_VERSION } from "@/core/version";
 
@@ -355,6 +356,7 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
   // them. Served from the admin side so the dashboard does not need a gateway
   // API key to populate the playground's model picker.
   if (url.pathname === "/api/models" && req.method === "GET") {
+    const smartRoutable = smartRoutableModels();
     const models = getAllProviders().flatMap((p) => {
       const registry = p.getModelRegistry();
       return registry.listModelIds().map((modelId) => {
@@ -376,6 +378,12 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
           /** False when no rate is known, so cost is reported as $0. */
           isPriced: pricing.isPriced,
           isCustom: p instanceof CustomProvider,
+          /**
+           * Providers that would serve this model when it is called with no prefix at all, in the
+           * order routing would try them. Empty when only one provider has it, which is the case
+           * where a bare call gains nothing over a prefixed one.
+           */
+          smartRoutedBy: smartRoutable.get(modelId) ?? [],
         };
       });
     });

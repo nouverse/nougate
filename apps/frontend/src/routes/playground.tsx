@@ -3,7 +3,17 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useModelCatalog, useApiKeys, useConfig } from '@/hooks/useQueries';
 import { CopyButton } from '@/components/shared/CopyButton';
 import { formatCost, formatDuration, formatTokens } from '@/lib/format';
-import { Play, Square, Terminal, Zap, AlertTriangle, Search } from 'lucide-react';
+import { Play, Square, Terminal, Zap, AlertTriangle, Search, Shuffle } from 'lucide-react';
+import type { CatalogModel } from '@/lib/types';
+
+/**
+ * The pseudo-provider the picker uses for "let the gateway choose".
+ *
+ * Not a provider id the backend knows: selecting it sends the model with **no** prefix, which is the
+ * signal that starts routing. Kept distinct from any real id so a provider called "smart" could
+ * never collide with it.
+ */
+const SMART_ROUTING = '__smart__';
 
 export const Route = createFileRoute('/playground')({
   component: PlaygroundPage,
@@ -121,6 +131,26 @@ function PlaygroundPage() {
     }
   }, [usableKeys, apiKeyId]);
 
+  /**
+   * Models the gateway will route on its own, one row each.
+   *
+   * The catalogue carries one entry per provider/model pair, so a smart-routed model appears in it
+   * several times — once per provider that serves it. Here it collapses to a single row whose `id` is
+   * the **bare** model, because that is exactly the string that makes the gateway choose: send
+   * `claude-sonnet-4-6` and routing picks, send `antigravity:claude-sonnet-4-6` and it does not.
+   *
+   * Which models qualify is decided on the backend by the routing code itself and arrives as
+   * `smartRoutedBy`; nothing here re-derives it.
+   */
+  const smartModels = useMemo(() => {
+    const rows = new Map<string, CatalogModel>();
+    for (const entry of catalog ?? []) {
+      if ((entry.smartRoutedBy?.length ?? 0) < 2 || rows.has(entry.modelId)) continue;
+      rows.set(entry.modelId, { ...entry, id: entry.modelId, providerId: SMART_ROUTING });
+    }
+    return Array.from(rows.values()).sort((a, b) => a.id.localeCompare(b.id));
+  }, [catalog]);
+
   /** Providers present in the catalogue, with how many models each contributes. */
   const providers = useMemo(() => {
     const counts = new Map<string, { id: string; name: string; count: number }>();
@@ -137,10 +167,14 @@ function PlaygroundPage() {
 
   const models = useMemo(() => {
     const needle = modelSearch.trim().toLowerCase();
-    return (catalog ?? [])
-      .filter((entry) => providerFilter === 'all' || entry.providerId === providerFilter)
-      .filter((entry) => !needle || entry.id.toLowerCase().includes(needle));
-  }, [catalog, modelSearch, providerFilter]);
+    const source =
+      providerFilter === SMART_ROUTING
+        ? smartModels
+        : (catalog ?? []).filter(
+            (entry) => providerFilter === 'all' || entry.providerId === providerFilter,
+          );
+    return source.filter((entry) => !needle || entry.id.toLowerCase().includes(needle));
+  }, [catalog, smartModels, modelSearch, providerFilter]);
 
   // Keep the selection inside the visible list. Without this, narrowing the
   // filters would leave the picker displaying a model it no longer lists, and
@@ -161,7 +195,10 @@ function PlaygroundPage() {
     }
   }, [liveText]);
 
-  const selected = catalog?.find((entry) => entry.id === model) ?? null;
+  const selected =
+    catalog?.find((entry) => entry.id === model) ??
+    smartModels.find((entry) => entry.id === model) ??
+    null;
   const endpoint =
     protocol === 'openai' ? '/openai/v1/chat/completions' : '/anthropic/v1/messages';
 
@@ -395,7 +432,8 @@ function PlaygroundPage() {
                   Model
                 </span>
                 <span className="label-text-alt text-[10px] text-base-content/40">
-                  {models.length} of {catalog?.length ?? 0}
+                  {models.length} of{' '}
+                  {providerFilter === SMART_ROUTING ? smartModels.length : catalog?.length ?? 0}
                 </span>
               </label>
 
@@ -406,6 +444,9 @@ function PlaygroundPage() {
                   onChange={(event) => setProviderFilter(event.target.value)}
                 >
                   <option value="all">All providers ({catalog?.length ?? 0})</option>
+                  {smartModels.length > 0 && (
+                    <option value={SMART_ROUTING}>Smart Routing ({smartModels.length})</option>
+                  )}
                   {providers.map((entry) => (
                     <option key={entry.id} value={entry.id}>
                       {entry.name} ({entry.count})
@@ -434,6 +475,9 @@ function PlaygroundPage() {
                 {models.map((entry) => (
                   <option key={entry.id} value={entry.id}>
                     {entry.id}
+                    {entry.providerId === SMART_ROUTING
+                      ? `  —  ${(entry.smartRoutedBy ?? []).join(' → ')}`
+                      : ''}
                   </option>
                 ))}
               </select>
@@ -445,6 +489,20 @@ function PlaygroundPage() {
                     <CopyButton value={model} title={`Copy "${model}"`} />
                   </span>
                 </label>
+              )}
+
+              {selected && selected.providerId === SMART_ROUTING && (
+                <div className="alert alert-info bg-info/10 border-info/25 text-[11px] py-2 px-3 mt-1">
+                  <Shuffle className="w-3.5 h-3.5 shrink-0" />
+                  <span>
+                    No prefix is sent, so the gateway picks:{' '}
+                    <span className="font-mono font-semibold">
+                      {(selected.smartRoutedBy ?? []).join(' → ')}
+                    </span>
+                    . It moves to the next one only if the one before it cannot serve the request —
+                    a spent quota, dead credentials, an unreachable upstream.
+                  </span>
+                </div>
               )}
             </div>
 
