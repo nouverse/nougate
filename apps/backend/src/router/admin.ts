@@ -207,9 +207,10 @@ async function handleClaudeCodeOAuthCallback(url: URL): Promise<Response> {
 
     const result = await provider.addAccount({ code, state }) as { success?: boolean; email?: string };
 
-    // Redirect to dashboard on success — the operator sees the new account in the list.
-    // A simple HTML page that also posts a message to the opener handles both the popup and
-    // the full-tab case.
+    // The account is already stored by this point, so this page has one job: tell the dashboard that
+    // it happened. `window.close()` is deliberately not attempted — this tab is opened by a link
+    // rather than by script, and browsers refuse to close those, so trying produces a console error
+    // and a tab that sits there anyway. The operator closes it; the dialog behind it has already gone.
     const email = result?.email || 'Claude account';
     return new Response(
       `<!DOCTYPE html>
@@ -220,8 +221,9 @@ async function handleClaudeCodeOAuthCallback(url: URL): Promise<Response> {
   <p>You can close this tab.</p>
   <script>
     if (window.opener) {
-      window.opener.postMessage({ type: 'claude-code-oauth-done' }, '*');
-      setTimeout(() => window.close(), 1500);
+      // Addressed to this origin rather than to '*': the dashboard checks the sender, and a
+      // message that says "an account was added" is not one to broadcast to whatever is listening.
+      window.opener.postMessage({ type: 'claude-code-oauth-done' }, window.location.origin);
     } else {
       setTimeout(() => { window.location.href = '/frontend/'; }, 1500);
     }

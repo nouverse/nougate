@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { Account } from '@/lib/types';
@@ -39,13 +39,12 @@ const COPY: Record<string, {
   },
   'claude-code': {
     title: 'Add Claude Account',
-    intro:
-      'Signs in with your Claude subscription. A popup opens for authorization — once approved, the account is added automatically.',
+    intro: 'Signs in with your Claude subscription. Open the link in a new tab, approve, and bring the result back here.',
     button: 'Sign In with Claude',
     consent:
-      'Click the button above to open the Claude authorization page. After you approve, the popup closes and the account appears here.',
-    pasteLabel: 'Or Paste Code Manually',
-    pastePlaceholder: 'If the popup didn\'t work, paste the code or redirect URL here...',
+      'Approve in the new tab. If it lands back on this gateway the account is added for you and this dialog closes; if it cannot reach the gateway, copy that tab\'s full URL and paste it below.',
+    pasteLabel: 'Paste Redirect URL',
+    pastePlaceholder: 'Paste the entire redirected URL, or just the code, here...',
   },
 };
 
@@ -96,32 +95,6 @@ export function OAuthAccountsTab({ providerId, accounts, refreshQueries }: Props
         setAuthUrl(res.redirectUrl);
         setPastedUrl('');
         setShowAuthModal(true);
-
-        // For providers with a server-side callback (like claude-code), open a popup window.
-        // The callback page posts a message back when done, so the modal auto-closes.
-        if (providerId === 'claude-code') {
-          const popup = window.open(res.redirectUrl, 'claude-oauth', 'width=600,height=700,popup=yes');
-
-          const onMessage = (event: MessageEvent) => {
-            if (event.data?.type === 'claude-code-oauth-done') {
-              window.removeEventListener('message', onMessage);
-              setShowAuthModal(false);
-              showToast('Account added successfully!');
-              refreshQueries();
-            }
-          };
-          window.addEventListener('message', onMessage);
-
-          // Poll in case the popup closes without posting (e.g. user closes it manually)
-          const pollTimer = setInterval(() => {
-            if (popup && popup.closed) {
-              clearInterval(pollTimer);
-              window.removeEventListener('message', onMessage);
-              // Refresh in case the callback succeeded before the popup was detected as closed
-              refreshQueries();
-            }
-          }, 1000);
-        }
       } else {
         showToast('OAuth flow initialization failed.');
       }
@@ -129,6 +102,32 @@ export function OAuthAccountsTab({ providerId, accounts, refreshQueries }: Props
       showToast(`Error initializing auth: ${err.message}`);
     }
   };
+
+  /**
+   * Close the dialog when the sign-in tab reports it is done.
+   *
+   * A provider whose `redirect_uri` points back at this gateway — Claude Code does — finishes the
+   * exchange server-side, so the operator has nothing left to paste. That tab posts a message on its
+   * way out; without listening for it the dialog sits there asking for a URL whose code has already
+   * been spent.
+   *
+   * Only while the dialog is open, and only from this origin: the message is a request to change what
+   * is on screen, and any page the operator has open can post one.
+   */
+  useEffect(() => {
+    if (!showAuthModal) return;
+
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type !== 'claude-code-oauth-done') return;
+      setShowAuthModal(false);
+      showToast('Account added successfully!');
+      refreshQueries();
+    };
+
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [showAuthModal, refreshQueries]);
 
   const handleAuthenticate = async () => {
     if (!pastedUrl.trim()) return;
