@@ -20,33 +20,8 @@ export function resolveModel(raw: string): ResolvedModel {
 }
 
 /**
- * Ensure that a parsed model includes an explicit provider prefix.
- */
-export function requireProviderPrefix(resolved: ResolvedModel): void {
-  if (resolved.providerId === null) {
-    throw new ModelPrefixError(resolved.raw);
-  }
-}
-
-
-/**
  * Format a provider-local model ID into its public provider-prefixed form.
  */
 export function formatModelId(providerId: string, modelId: string): string {
   return `${providerId}:${modelId}`;
-}
-
-/**
- * Error raised when a client omits the required provider prefix.
- */
-export class ModelPrefixError extends Error {
-  readonly status = 400;
-
-  constructor(raw: string) {
-    super(
-      `Model must include provider prefix. Got: "${raw}". Expected format: ` +
-        `"provider:model-id" (e.g. "antigravity:gemini-3.5-flash-low").`,
-    );
-    this.name = 'ModelPrefixError';
-  }
 }

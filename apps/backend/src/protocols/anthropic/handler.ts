@@ -1,15 +1,12 @@
-import {
-  ModelPrefixError,
-  formatModelId,
-  requireProviderPrefix,
-} from "@/core/model-resolver";
+import { formatModelId } from "@/core/model-resolver";
 import type { IProtocolHandler } from "@/core/interfaces";
 import { ProviderResponseError } from "@/core/upstream-errors";
 import type { RequestContext } from "@/core/request-context";
 import { getAllProviders } from "@/core/registry";
 import { prepareRequestPayload } from "@/core/metrics/compression";
 import { instrumentResponse } from "@/core/metrics/tracker";
-import { executeProviderRequest } from "@/core/provider-execute";
+import { executeWithFailover } from "@/core/provider-execute";
+import { explainNoCandidate, routeCandidates } from "@/core/smart-routing";
 
 /**
  * Build a JSON response with the shared CORS and proxy headers.
@@ -86,15 +83,6 @@ export class AnthropicProtocolHandler implements IProtocolHandler {
       return handleListModels();
     }
 
-    try {
-      requireProviderPrefix(ctx.resolvedModel);
-    } catch (error) {
-      if (error instanceof ModelPrefixError) {
-        return createErrorResponse(error.message, "invalid_request_error", error.status);
-      }
-      throw error;
-    }
-
     let anthropicBody: any;
     try {
       anthropicBody = await ctx.req.json();
@@ -102,9 +90,12 @@ export class AnthropicProtocolHandler implements IProtocolHandler {
       return createErrorResponse(error?.message || "Invalid JSON body", "invalid_request_error", 400);
     }
 
-    const modelSpec = ctx.provider.getModelRegistry().getSpec(ctx.resolvedModel.modelId);
-    if (!modelSpec) {
-      return createErrorResponse(`Unknown model "${anthropicBody.model}"`, "invalid_request_error", 400);
+    // An unprefixed model fans out across every provider that declares it; a prefixed one resolves
+    // to exactly that provider. Either way what comes back is an ordered list, so the two cases
+    // share one execution path — see `core/smart-routing`.
+    const candidates = routeCandidates(ctx.resolvedModel);
+    if (candidates.length === 0) {
+      return createErrorResponse(explainNoCandidate(ctx.resolvedModel), "invalid_request_error", 400);
     }
 
     const startedAt = Date.now();
@@ -116,15 +107,15 @@ export class AnthropicProtocolHandler implements IProtocolHandler {
     // A throw here (no usable account, upstream unreachable, exhausted retries)
     // must still reach the client as a protocol-shaped JSON error rather than
     // escaping into the server's default HTML error page.
-    let response: Response;
+    let served;
     try {
-      response = await executeProviderRequest(ctx.provider, {
+      served = await executeWithFailover(candidates, (candidate) => ({
         protocol: "anthropic",
         body: compressedBody,
         resolvedModel: ctx.resolvedModel,
-        modelSpec,
+        modelSpec: candidate.modelSpec,
         ctx,
-      });
+      }));
     } catch (error: any) {
       console.error(
         `[Anthropic] Upstream execution failed for "${ctx.resolvedModel.raw}":`,
@@ -161,14 +152,16 @@ export class AnthropicProtocolHandler implements IProtocolHandler {
       );
     }
 
-    return instrumentResponse(response, {
-      provider: ctx.provider.id,
-      model: modelSpec.modelId,
+    // The provider that *served*, not the one that was picked first — otherwise a failed-over
+    // request bills the provider that refused it.
+    return instrumentResponse(served.response, {
+      provider: served.provider.id,
+      model: served.modelSpec.modelId,
       protocol: "anthropic",
       clientId: ctx.clientId,
       sessionId: ctx.sessionId,
       apiKeyId: ctx.apiKeyId ?? null,
-      modelSpec,
+      modelSpec: served.modelSpec,
       estimatedInputTokens: compression.tokensAfter,
       compression,
       startedAt,

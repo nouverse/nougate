@@ -86,7 +86,9 @@ function PlaygroundPage() {
   const [stream, setStream] = useState(true);
   const [temperature, setTemperature] = useState('');
   const [maxTokens, setMaxTokens] = useState('1024');
-  const [apiKey, setApiKey] = useState('');
+  // The key's *id*, not its secret: keys are stored hashed, so nothing can hand the dashboard the
+  // secret back. The session authorises the call; this only says which key to attribute it to.
+  const [apiKeyId, setApiKeyId] = useState('');
 
   const [running, setRunning] = useState(false);
   const [liveText, setLiveText] = useState('');
@@ -97,10 +99,27 @@ function PlaygroundPage() {
   const abortRef = useRef<AbortController | null>(null);
   const outputRef = useRef<HTMLPreElement>(null);
 
-  // Proxy routes always require a key — the playground is deliberately subject
-  // to the same check as any other client.
-  const hasActiveKey = (apiKeys?.keys ?? []).some((key) => !key.revoked);
+
+  /** Keys that can actually be attributed to: revoked and expired ones are not offered. */
+  const usableKeys = useMemo(
+    () =>
+      (apiKeys?.keys ?? []).filter(
+        (key) => !key.revoked && (!key.expiresAt || key.expiresAt > Date.now()),
+      ),
+    [apiKeys],
+  );
   const baseUrl = config?.baseUrl || window.location.origin;
+  // Preselect, and drop a selection that stops being usable — a revoked key left sitting in the
+  // dropdown would fail with an auth error that looks like the gateway is broken.
+  useEffect(() => {
+    if (usableKeys.length === 0) {
+      if (apiKeyId) setApiKeyId('');
+      return;
+    }
+    if (!usableKeys.some((key) => key.id === apiKeyId)) {
+      setApiKeyId(usableKeys[0]!.id);
+    }
+  }, [usableKeys, apiKeyId]);
 
   /** Providers present in the catalogue, with how many models each contributes. */
   const providers = useMemo(() => {
@@ -173,9 +192,12 @@ function PlaygroundPage() {
   };
 
   const curlCommand = useMemo(() => {
+    // Deliberately a placeholder, not the selected key: this snippet runs in a terminal with no
+    // dashboard session, so it needs the real secret — which nothing here can supply, because keys
+    // are stored hashed. Printing the key's id instead would produce a command that always 401s.
     const authHeader = protocol === 'anthropic'
-      ? `-H "x-api-key: ${apiKey || 'sk-nou-...'}"`
-      : `-H "Authorization: Bearer ${apiKey || 'sk-nou-...'}"`;
+      ? `-H "x-api-key: sk-nou-..."`
+      : `-H "Authorization: Bearer sk-nou-..."`;
 
     return [
       `curl ${baseUrl}${endpoint} \\`,
@@ -184,7 +206,7 @@ function PlaygroundPage() {
       `  -d '${JSON.stringify(buildBody())}'`,
     ].join('\n');
     // buildBody reads the same state this depends on.
-  }, [protocol, endpoint, baseUrl, apiKey, model, stream, systemPrompt, userPrompt, temperature, maxTokens]);
+  }, [protocol, endpoint, baseUrl, model, stream, systemPrompt, userPrompt, temperature, maxTokens]);
 
   const stop = () => {
     abortRef.current?.abort();
@@ -208,13 +230,10 @@ function PlaygroundPage() {
     const startedAt = Date.now();
 
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (apiKey.trim()) {
-      // Send whichever header this protocol's clients normally use.
-      if (protocol === 'anthropic') {
-        headers['x-api-key'] = apiKey.trim();
-      } else {
-        headers.Authorization = `Bearer ${apiKey.trim()}`;
-      }
+    if (apiKeyId) {
+      // Names the key to bill; the dashboard session is what authorises the call. A custom header is
+      // also what forces a CORS preflight, which is why this cannot be forged from another site.
+      headers['x-nougate-api-key-id'] = apiKeyId;
     }
 
     try {
@@ -499,26 +518,38 @@ function PlaygroundPage() {
             <div className="form-control w-full">
               <label className="label">
                 <span className="label-text font-semibold text-xs text-base-content/75">
-                  Gateway API key <span className="text-error">*</span>
+                  Attribute usage to
                 </span>
               </label>
-              <input
-                type="password"
-                placeholder="sk-nou-..."
-                className="input input-bordered input-sm w-full bg-base-100 font-mono text-xs"
-                value={apiKey}
-                onChange={(event) => setApiKey(event.target.value)}
-              />
-              {!apiKey && (
-                <label className="label">
+              <select
+                className="select select-bordered select-sm w-full bg-base-100 text-xs"
+                value={apiKeyId}
+                onChange={(event) => setApiKeyId(event.target.value)}
+                disabled={usableKeys.length === 0}
+              >
+                {usableKeys.length === 0 ? (
+                  <option value="">No usable keys</option>
+                ) : (
+                  usableKeys.map((key) => (
+                    <option key={key.id} value={key.id}>
+                      {key.name} · {key.keyPrefix}…
+                    </option>
+                  ))
+                )}
+              </select>
+              <label className="label">
+                {usableKeys.length === 0 ? (
                   <span className="label-text-alt text-[10px] text-warning flex items-center gap-1">
                     <AlertTriangle className="w-3 h-3 shrink-0" />
-                    {hasActiveKey
-                      ? 'Proxy routes always require a key — this request will be rejected without one.'
-                      : 'No keys exist yet. Create one on the API Keys page first.'}
+                    No usable keys. Create one on the API Keys page first.
                   </span>
-                </label>
-              )}
+                ) : (
+                  <span className="label-text-alt text-[10px] text-base-content/40">
+                    Signed in, so no secret is needed here — this only decides which key the request
+                    is billed and charted against.
+                  </span>
+                )}
+              </label>
             </div>
 
             <div className="flex items-center gap-2">

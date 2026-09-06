@@ -1,7 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import {
-  ModelPrefixError,
-  requireProviderPrefix,
   resolveModel,
 } from "@/core/model-resolver";
 
@@ -22,15 +20,4 @@ describe("Model Resolver", () => {
     });
   });
 
-  test("requireProviderPrefix rejects bare model IDs", () => {
-    expect(() => requireProviderPrefix(resolveModel("gemini-3.5-flash-low"))).toThrow(
-      ModelPrefixError,
-    );
-  });
-
-  test("requireProviderPrefix accepts provider-prefixed model IDs", () => {
-    expect(() =>
-      requireProviderPrefix(resolveModel("antigravity:gemini-3.5-flash-low")),
-    ).not.toThrow();
-  });
 });

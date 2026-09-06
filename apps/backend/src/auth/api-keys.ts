@@ -267,6 +267,22 @@ export function extractApiKey(req: Request): string | null {
   return null;
 }
 
+/**
+ * A key by its id, for a caller that already proved who it is another way.
+ *
+ * The dashboard's Playground is the case this exists for. Keys are stored as a hash, so nothing can
+ * hand a signed-in operator the secret back — but the Playground does not need the secret, only a
+ * key to attribute its usage to. Reads the same warm cache `verifyApiKey` uses, so it stays cheap
+ * and cannot disagree with it about whether a key is revoked.
+ */
+export function findApiKeyById(id: string): ApiKeyRecord | null {
+  if (!id || !cache) return null;
+  for (const record of cache.values()) {
+    if (record.id === id) return record;
+  }
+  return null;
+}
+
 export type ApiKeyVerification =
   | { ok: true; record: ApiKeyRecord }
   | { ok: false; reason: 'missing' | 'invalid' | 'revoked' | 'expired' };

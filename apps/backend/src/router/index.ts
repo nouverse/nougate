@@ -4,7 +4,8 @@ import { buildSessionId } from "@/protocols/openai/handler";
 import { handleAdminRoute } from "@/router/admin";
 import { handleAuthRoute } from "@/router/auth";
 import { enforceDashboardAuth } from "@/auth/guard";
-import { extractApiKey, touchApiKey, verifyApiKey } from "@/auth/api-keys";
+import { extractApiKey, findApiKeyById, touchApiKey, verifyApiKey } from "@/auth/api-keys";
+import { getActiveUser } from "@/auth/guard";
 import {
   handleCorsPreflight,
   logIncomingRequest,
@@ -38,6 +39,37 @@ function resolveProviderForRequest(model: string) {
       : getDefaultProvider();
 
   return { resolvedModel, provider };
+}
+
+/**
+ * The dashboard Playground, standing in for a gateway key it cannot possibly hold.
+ *
+ * Keys are stored hashed, so a signed-in operator cannot be handed one back — which is why the
+ * Playground used to demand the secret be pasted in, and why forgetting it meant minting a throwaway
+ * key just to try a prompt. What it actually needs is not permission (a signed-in operator already
+ * outranks any key they could mint) but *attribution*: which key this request should be billed and
+ * charted against.
+ *
+ * So the session authorises and the header names the ledger. The header is what keeps this from
+ * widening the CSRF surface: a custom header forces a CORS preflight, and a forged cross-site
+ * request cannot satisfy one — while `Access-Control-Allow-Origin: *` on these routes already stops
+ * a browser from attaching cookies cross-origin at all.
+ */
+async function resolvePlaygroundKey(req: Request): Promise<{ id: string; name: string } | null> {
+  const requested = req.headers.get("x-nougate-api-key-id");
+  if (!requested) return null;
+
+  const user = await getActiveUser(req);
+  if (!user) return null;
+
+  const record = findApiKeyById(requested.trim());
+  // Revocation is already enforced one level down — the verification cache is loaded
+  // `WHERE revoked = 0`, so a revoked key is simply not found. The flag is checked anyway, for the
+  // same reason `verifyApiKey` checks it: this must never be the place that outlives that guarantee.
+  if (!record || record.revoked) return null;
+  if (record.expiresAt && record.expiresAt < Date.now()) return null;
+
+  return { id: record.id, name: record.name };
 }
 
 const API_KEY_ERROR_MESSAGES: Record<string, string> = {
@@ -98,12 +130,16 @@ export async function handleRequest(req: Request): Promise<Response> {
     // instance with no keys yet serves nobody, which is the safe direction for
     // something reachable from the internet.
     const verification = verifyApiKey(extractApiKey(req));
-    if (!verification.ok) {
+    const playgroundKey = verification.ok ? null : await resolvePlaygroundKey(req);
+    if (!verification.ok && !playgroundKey) {
       return withCorsHeaders(apiKeyDenied(handler.protocol, verification.reason));
     }
 
-    const apiKeyId = verification.record.id;
-    const apiKeyName = verification.record.name;
+    const identity = verification.ok
+      ? { id: verification.record.id, name: verification.record.name }
+      : playgroundKey!;
+    const apiKeyId = identity.id;
+    const apiKeyName = identity.name;
     touchApiKey(apiKeyId);
 
     const previewBody = await getPreviewBody(req);

@@ -457,7 +457,7 @@ describe("Unit Tests: transformGoogleEventToOpenAI", () => {
 });
 
 describe("Unit Tests: OpenAIProtocolHandler", () => {
-  test("Rejects requests without provider prefix", async () => {
+  test("An unprefixed model no provider serves is a 400 that names the fix", async () => {
     const handler = new OpenAIProtocolHandler();
     const req = new Request("http://localhost:3000/openai/v1/chat/completions", {
       method: "POST",
@@ -492,12 +492,12 @@ describe("Unit Tests: OpenAIProtocolHandler", () => {
       clientId: "client-handler-test",
     });
 
+    // A bare model id is a routing question now, not a rejection: it is refused only when nothing
+    // in the registry serves it, and the message points at /v1/models rather than at prefix syntax.
     expect(response.status).toBe(400);
-    expect(await response.json()).toMatchObject({
-      error: {
-        code: "model_prefix_required",
-      },
-    });
+    const body = await response.json();
+    expect(body).toMatchObject({ error: { code: "model_not_found" } });
+    expect(body.error.message).toContain("gemini-3-flash");
   });
 
   test("Lists models from every registered provider, sorted by ID", async () => {

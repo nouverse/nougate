@@ -35,6 +35,56 @@ afterAll(async () => {
   rmSync(STATE_DIR, { recursive: true, force: true });
 });
 
+/**
+ * The Playground reaches keys by id, because it can never reach them by secret.
+ *
+ * Keys are stored hashed, so a signed-in operator cannot be handed one back — the dashboard names a
+ * key to attribute usage to and lets its session do the authorising. That only holds if a lookup by
+ * id refuses exactly what `verifyApiKey` refuses; a revoked key that stays findable here is a
+ * revocation that does not revoke.
+ */
+describe('Finding a key by id', () => {
+  test('finds a live key and refuses a revoked one', async () => {
+    const created = await keys.createApiKey({ name: 'playground' });
+
+    const found = keys.findApiKeyById(created.id);
+    expect(found?.id).toBe(created.id);
+    expect(found?.name).toBe('playground');
+    // The secret must not be reachable this way, whatever else changes.
+    expect((found as Record<string, unknown> | null)?.key).toBeUndefined();
+
+    // Revoked keys never enter the verification cache — it is loaded `WHERE revoked = 0` — so a
+    // lookup stops finding them entirely rather than returning one flagged as dead.
+    await keys.revokeApiKey(created.id);
+    expect(keys.findApiKeyById(created.id)).toBeNull();
+  });
+
+  test('an expired key is still found, and is the caller\'s job to refuse', async () => {
+    // Expiry is not filtered out of the cache the way revocation is, so this is the check that
+    // actually runs in the router. Both refusals live next to each other there for that reason.
+    const created = await keys.createApiKey({ name: 'playground-expired', expiresInDays: 1 });
+    await keys.updateApiKeyExpiry(created.id, Date.now() - 1000);
+
+    const found = keys.findApiKeyById(created.id);
+    expect(found).not.toBeNull();
+    expect(found!.expiresAt).toBeLessThan(Date.now());
+  });
+
+  test('an id that matches nothing is null, not a throw', () => {
+    expect(keys.findApiKeyById('no-such-key')).toBeNull();
+    expect(keys.findApiKeyById('')).toBeNull();
+  });
+
+  test('survives a rotation, because the id is the identity the dashboard holds', async () => {
+    const created = await keys.createApiKey({ name: 'playground-rotated' });
+    const rotated = await keys.rotateApiKey(created.id);
+    expect(rotated.ok).toBe(true);
+
+    // A Playground selection made before the rotation still names a usable key afterwards.
+    expect(keys.findApiKeyById(created.id)?.id).toBe(created.id);
+  });
+});
+
 describe('Rotating a key', () => {
   test('issues a new working secret and kills the old one', async () => {
     const created = await keys.createApiKey({ name: 'zed' });
