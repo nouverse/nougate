@@ -23,6 +23,7 @@ import { loadProxyConfig } from "@/config/manager";
 import { AntigravityProvider } from "@/providers/antigravity";
 import { CopilotProvider } from "@/providers/copilot";
 import { ClaudeCodeProvider } from "@/providers/claude-code";
+import { CodexProvider } from "@/providers/codex";
 import { registerOpenAIProtocol } from "@/protocols/openai";
 import { registerAnthropicProtocol } from "@/protocols/anthropic";
 import { handleRequest } from "@/router";
@@ -64,6 +65,10 @@ export async function boot(): Promise<(req: Request) => Response | Promise<Respo
   const claudeCodeProvider = new ClaudeCodeProvider();
   await claudeCodeProvider.init();
   registerProvider(claudeCodeProvider);
+
+  const codexProvider = new CodexProvider();
+  await codexProvider.init();
+  registerProvider(codexProvider);
 
   // Registered last so a custom provider can never shadow a built-in ID.
   await initCustomProviders();
