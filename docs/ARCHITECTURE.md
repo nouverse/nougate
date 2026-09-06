@@ -363,6 +363,34 @@ key, token counts, duration, status, and the tokens compression saved.
 
 ---
 
+### Prompt caching
+
+Two halves, and only one of them is central.
+
+**Reading** the cache is provider-agnostic. `core/usage-cache.ts` knows all three vocabularies —
+Gemini's `cachedContentTokenCount`, OpenAI's `prompt_tokens_details.cached_tokens`, Anthropic's
+`cache_read_input_tokens` — so every provider, including a custom one pointed at any of them, is
+accounted for without writing code.
+
+One trap lives here: the two families disagree about what the prompt count *means*. OpenAI and
+Gemini report a total with the cached part as a subset; Anthropic reports the **remainder** and puts
+the cached tokens beside it. `promptTokens()` adds them back, and without it a 2,830-token prompt was
+logged as 6 and emitted as an OpenAI usage block whose `cached_tokens` exceeded its `prompt_tokens`.
+
+**Causing** the cache is per upstream, because the upstreams differ:
+
+| Upstream | What creates the cache |
+|---|---|
+| OpenAI, Codex, Copilot | Automatic. Nothing to send |
+| Gemini / Antigravity | Implicit, provider-side |
+| Anthropic, from an **OpenAI-shaped client** | Nougate marks the system block with `cache_control` once it passes `CACHE_BREAKPOINT_MIN_CHARS` — that dialect has no way to ask, so nobody else can |
+| Anthropic, from an **Anthropic client** | The client's own breakpoints, passed through untouched |
+
+Anthropic orders its cache prefix `tools → system → messages`, so a breakpoint on the system block
+covers the tool schemas too — usually the larger half on an agent client.
+
+---
+
 ## 9. Auth
 
 Two independent systems, because the clients are different.

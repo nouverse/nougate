@@ -70,3 +70,42 @@ export function openAiCacheUsage(cached: number | undefined) {
 export function anthropicCacheUsage(cached: number | undefined) {
   return typeof cached === 'number' ? { cache_read_input_tokens: cached } : {};
 }
+
+/**
+ * The whole prompt, however the upstream chose to split it.
+ *
+ * OpenAI and Gemini report a **total** and name the cached part as a subset of it. Anthropic does the
+ * opposite: `input_tokens` is what was *not* served from cache, and the cached tokens sit beside it
+ * in their own fields. Copying `input_tokens` into `prompt_tokens` therefore under-reports the prompt
+ * by exactly the amount the cache saved — and produces an OpenAI usage block that is impossible under
+ * OpenAI's own rules, where `cached_tokens` came out larger than the `prompt_tokens` it is supposed
+ * to be part of. A client computing "uncached = prompt − cached" got a negative number, and the
+ * metrics recorded a 2,830-token prompt as 6.
+ *
+ * `cache_creation_input_tokens` is counted here even though `cacheReadTokens` deliberately excludes
+ * it: the two answer different questions. That one asks what the cache *saved*, and a write saves
+ * nothing — it costs 1.25x. This asks how large the prompt *was*, and tokens written to the cache
+ * were read from the prompt like any other.
+ *
+ * Detection is by the two Anthropic-only field names rather than by the presence of `input_tokens`,
+ * which OpenAI's Responses API also uses — with OpenAI's own subset semantics.
+ */
+export function promptTokens(usage: any): number | undefined {
+  if (!usage || typeof usage !== 'object') return undefined;
+
+  const anthropicInput = usage.input_tokens;
+  const cacheRead = usage.cache_read_input_tokens;
+  const cacheWrite = usage.cache_creation_input_tokens;
+
+  if (
+    typeof anthropicInput === 'number' &&
+    (typeof cacheRead === 'number' || typeof cacheWrite === 'number')
+  ) {
+    return anthropicInput + (cacheRead ?? 0) + (cacheWrite ?? 0);
+  }
+
+  for (const value of [usage.prompt_tokens, usage.promptTokenCount, anthropicInput]) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+  }
+  return undefined;
+}

@@ -5,7 +5,7 @@
  * but the client called the OpenAI-compatible route.
  */
 import { getCavemanPrompt } from '@/core/caveman';
-import { cacheReadTokens, openAiCacheUsage } from "@/core/usage-cache";
+import { cacheReadTokens, openAiCacheUsage, promptTokens } from "@/core/usage-cache";
 
 const DEFAULT_MAX_TOKENS = 8192;
 
@@ -282,7 +282,9 @@ export async function finalizeAnthropicToOpenAIResponse(
       },
     ],
     usage: {
-      prompt_tokens: data.usage?.input_tokens ?? 0,
+      // The whole prompt, cached part included — see `promptTokens`. Anthropic's
+      // `input_tokens` alone is only what the cache did not serve.
+      prompt_tokens: promptTokens(data.usage) ?? 0,
       completion_tokens: data.usage?.output_tokens ?? 0,
       total_tokens: (data.usage?.input_tokens ?? 0) + (data.usage?.output_tokens ?? 0),
       // The other half of the breakpoint above: an upstream that honoured it says so as
@@ -360,7 +362,8 @@ export function createAnthropicToOpenAIStreamTransformer(requestedModelId: strin
   const handleEvent = (event: any, controller: TransformStreamDefaultController) => {
     switch (event.type) {
       case 'message_start': {
-        inputTokens = event.message?.usage?.input_tokens ?? 0;
+        // Cached tokens are part of the prompt, and Anthropic reports them beside it, not in it.
+        inputTokens = promptTokens(event.message?.usage) ?? 0;
         outputTokens = event.message?.usage?.output_tokens ?? 0;
         // `message_start` is the only event that carries the cache counts.
         cachedTokens = cacheReadTokens(event.message?.usage) ?? cachedTokens;

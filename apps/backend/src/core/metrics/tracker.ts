@@ -4,6 +4,7 @@ import { costOf, resolvePricing } from '@/core/metrics/pricing';
 import { calibrate, recordActualTokens } from '@/core/metrics/calibrator';
 import { estimateTokensFromChars } from '@/core/metrics/tokenizer';
 import { tokenMetricsLogger } from '@/core/metrics/logger';
+import { promptTokens } from '@/core/usage-cache';
 
 export interface CompressionStats {
   tokensBefore: number;
@@ -69,7 +70,9 @@ function absorbUsage(totals: UsageTotals, usage: any): void {
     return;
   }
 
-  const input = usage.prompt_tokens ?? usage.input_tokens;
+  // Not `input_tokens` directly: on an Anthropic upstream that field excludes whatever the
+  // cache served, so a passthrough request would log a 2,830-token prompt as 6.
+  const input = promptTokens(usage);
   const output = usage.completion_tokens ?? usage.output_tokens;
   const cached =
     usage.prompt_tokens_details?.cached_tokens ??
