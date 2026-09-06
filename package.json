@@ -1,7 +1,7 @@
 {
   "name": "@nouverse/nougate",
   "description": "Modular LLM router with multi-provider auth isolation and multi-protocol support.",
-  "version": "0.7.0",
+  "version": "1.0.0",
   "private": true,
   "workspaces": [
     "apps/*"

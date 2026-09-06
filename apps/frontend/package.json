@@ -1,7 +1,7 @@
 {
   "name": "@nouverse/nougate-frontend",
   "description": "Nougate dashboard \u2014 React + Vite + TanStack Router + TailwindCSS + daisyUI.",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {

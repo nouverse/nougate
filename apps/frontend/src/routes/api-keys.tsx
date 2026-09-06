@@ -40,6 +40,8 @@ function ApiKeysPage() {
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [pendingRotate, setPendingRotate] = useState<string | null>(null);
   const [editingExpiry, setEditingExpiry] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState<string | null>(null);
+  const [nameDraft, setNameDraft] = useState('');
   const [expiryDraft, setExpiryDraft] = useState('');
 
   const notify = (message: string, type: 'success' | 'error' = 'success') => {
@@ -86,6 +88,19 @@ function ApiKeysPage() {
       notify(input.expiresAt ? 'Expiry updated' : 'Key no longer expires');
     },
     onError: (err: any) => notify(err.message || 'Failed to update expiry', 'error'),
+  });
+
+  const renameMutation = useMutation({
+    mutationFn: (input: { id: string; name: string }) =>
+      api.patch(`/api/api-keys/${input.id}/name`, { name: input.name }),
+    onSuccess: () => {
+      setEditingName(null);
+      refresh();
+      // Said out loud because it is not obvious and it is not undoable: the client breakdown groups
+      // by the name a request carried, so past traffic keeps the old one.
+      notify('Key renamed — past usage stays under the old name in the client breakdown');
+    },
+    onError: (err: any) => notify(err.message || 'Failed to rename key', 'error'),
   });
 
   const revokeMutation = useMutation({
@@ -277,7 +292,54 @@ function ApiKeysPage() {
               <tbody>
                 {data.keys.map((key) => (
                   <tr key={key.id}>
-                    <td className="font-semibold text-xs">{key.name}</td>
+                    <td className="font-semibold text-xs">
+                      {editingName === key.id ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="text"
+                            autoFocus
+                            maxLength={64}
+                            className="input input-bordered input-xs bg-base-100 w-40"
+                            value={nameDraft}
+                            onChange={(event) => setNameDraft(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' && nameDraft.trim()) {
+                                renameMutation.mutate({ id: key.id, name: nameDraft });
+                              }
+                              if (event.key === 'Escape') setEditingName(null);
+                            }}
+                          />
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-xs text-primary"
+                            disabled={renameMutation.isPending || !nameDraft.trim()}
+                            onClick={() => renameMutation.mutate({ id: key.id, name: nameDraft })}
+                          >
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-xs"
+                            onClick={() => setEditingName(null)}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          className="group inline-flex items-center gap-1.5 text-left hover:text-primary transition-colors"
+                          title="Rename this key"
+                          onClick={() => {
+                            setNameDraft(key.name);
+                            setEditingName(key.id);
+                          }}
+                        >
+                          {key.name}
+                          <Pencil className="w-3 h-3 opacity-0 group-hover:opacity-60 shrink-0" />
+                        </button>
+                      )}
+                    </td>
                     <td className="font-mono text-[11px] text-base-content/60">{key.keyPrefix}</td>
                     <td className="text-right font-mono text-xs">{formatCount(key.requestCount)}</td>
                     <td className="text-[11px] text-base-content/60">

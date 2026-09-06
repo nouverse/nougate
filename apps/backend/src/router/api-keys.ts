@@ -3,6 +3,7 @@ import {
   deleteApiKey,
   flushApiKeyUsage,
   listApiKeys,
+  renameApiKey,
   revokeApiKey,
   rotateApiKey,
   updateApiKeyExpiry,
@@ -80,6 +81,20 @@ export async function handleApiKeysRoute(req: Request, url: URL): Promise<Respon
       }
 
       const updated = await updateApiKeyExpiry(decodeURIComponent(expiryMatch[1]), expiresAt);
+      return updated ? json(updated) : json({ error: 'Key not found' }, 404);
+    }
+
+    const nameMatch = url.pathname.match(/^\/api\/api-keys\/([^/]+)\/name$/);
+    if (nameMatch && req.method === 'PATCH') {
+      const body = (await req.json().catch(() => ({}))) as any;
+      if (typeof body?.name !== 'string' || !body.name.trim()) {
+        return json({ error: 'A name is required so the key can be identified later.' }, 400);
+      }
+      if (body.name.trim().length > 64) {
+        return json({ error: 'A key name is at most 64 characters.' }, 400);
+      }
+
+      const updated = await renameApiKey(decodeURIComponent(nameMatch[1]), body.name);
       return updated ? json(updated) : json({ error: 'Key not found' }, 404);
     }
 

@@ -339,6 +339,13 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
     return createAdminEventStream();
   }
 
+  if (url.pathname === "/api/version" && req.method === "GET") {
+    // The dashboard footer reads this instead of carrying its own copy. It shipped `v0.7.0`
+    // hardcoded in the sidebar while the gateway had moved on, which is the drift a constant is
+    // supposed to prevent — and a constant only prevents it for callers that actually read it.
+    return createJsonResponse({ version: APP_VERSION });
+  }
+
   if (url.pathname === "/api/status") {
     const defaultProvider = getDefaultProvider();
     const allAccounts = getAllProviders().flatMap((p) => p.getAccounts());

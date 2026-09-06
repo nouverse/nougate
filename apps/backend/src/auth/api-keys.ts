@@ -233,6 +233,40 @@ export async function updateApiKeyExpiry(
 }
 
 /**
+ * Rename a key.
+ *
+ * The name is not decoration: it is what `clientId` falls back to on every request this key makes,
+ * so it is the label the per-client cost breakdown groups by. Renaming therefore changes how *future*
+ * traffic is grouped while historical rows keep the old string — the client chart shows both names,
+ * the per-key chart does not care because it joins on the id. The dashboard says so where the rename
+ * happens rather than leaving it to be discovered in a graph.
+ *
+ * Returns null when no such key exists, so the caller answers 404 rather than reporting a rename
+ * that touched nothing.
+ */
+export async function renameApiKey(id: string, name: string): Promise<ApiKeyRecord | null> {
+  const trimmed = name.trim();
+  if (!trimmed) {
+    throw new Error('A name is required so the key can be identified later.');
+  }
+
+  // Counters buffer in memory; flushing first keeps the returned record's request count honest.
+  await flushApiKeyUsage();
+
+  const [existing] = await getDb().select().from(t.apiKeys).where(eq(t.apiKeys.id, id));
+  if (!existing) {
+    return null;
+  }
+
+  await getDb().update(t.apiKeys).set({ name: trimmed }).where(eq(t.apiKeys.id, id));
+  // The cache holds whole records, and `apiKeyName` is read straight off one on every proxy request.
+  // Skipping this would leave requests attributed to the old name until the next mutation.
+  await refreshCache();
+
+  return rowToRecord({ ...existing, name: trimmed });
+}
+
+/**
  * Permanently delete a key row.
  */
 export async function deleteApiKey(id: string): Promise<boolean> {

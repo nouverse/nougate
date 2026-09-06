@@ -59,6 +59,22 @@ export function useModelCatalog() {
   });
 }
 
+/**
+ * The version the gateway reports.
+ *
+ * Fetched rather than bundled: a number compiled into the dashboard is a number that can disagree
+ * with the gateway serving it, and the footer showing `v0.7.0` against a 1.0.0 backend is exactly
+ * how someone ends up debugging the wrong build. `staleTime: Infinity` because a running gateway
+ * does not change version underneath itself — a new one arrives with a new page load.
+ */
+export function useGatewayVersion() {
+  return useQuery({
+    queryKey: ['gateway-version'],
+    queryFn: () => api.get<{ version: string }>('/api/version').then((r) => r.version),
+    staleTime: Infinity,
+  });
+}
+
 export function useConfig() {
   const queryClient = useQueryClient();
   

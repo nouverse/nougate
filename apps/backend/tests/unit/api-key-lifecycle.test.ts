@@ -85,6 +85,64 @@ describe('Finding a key by id', () => {
   });
 });
 
+/**
+ * Renaming a key.
+ *
+ * The name is what a request without an explicit `x-client-id` is attributed to, so this is not a
+ * cosmetic field — a rename that failed to reach the verification cache would keep billing traffic
+ * to the old label until something else happened to invalidate it.
+ */
+describe('Renaming a key', () => {
+  test('changes the name the next request is attributed to', async () => {
+    const created = await keys.createApiKey({ name: 'old-name' });
+
+    const renamed = await keys.renameApiKey(created.id, 'new-name');
+    expect(renamed?.name).toBe('new-name');
+
+    // The cache is what every proxy request reads; a rename that only touched the row would leave
+    // `apiKeyName` stale for the life of the process.
+    const verified = keys.verifyApiKey(created.key);
+    expect(verified.ok).toBe(true);
+    if (verified.ok) expect(verified.record.name).toBe('new-name');
+  });
+
+  test('keeps the identity, the secret and the counters', async () => {
+    const created = await keys.createApiKey({ name: 'before' });
+    keys.touchApiKey(created.id);
+    await keys.flushApiKeyUsage();
+
+    const renamed = await keys.renameApiKey(created.id, 'after');
+    expect(renamed?.id).toBe(created.id);
+    expect(renamed?.keyPrefix).toBe(created.keyPrefix);
+    expect(renamed?.requestCount).toBe(1);
+    // Renaming is not rotating: the secret that was working still works.
+    expect(keys.verifyApiKey(created.key).ok).toBe(true);
+  });
+
+  test('trims, and refuses a name that is only whitespace', async () => {
+    const created = await keys.createApiKey({ name: 'trim-me' });
+
+    expect((await keys.renameApiKey(created.id, '  padded  '))?.name).toBe('padded');
+    // Empty is a mistake, not an instruction to fall back to "Unnamed key" the way creation does —
+    // the operator typed into a field that already had a name in it.
+    await expect(keys.renameApiKey(created.id, '   ')).rejects.toThrow(/name is required/i);
+    expect(keys.findApiKeyById(created.id)?.name).toBe('padded');
+  });
+
+  test('an id that matches nothing is null, so the caller can answer 404', async () => {
+    expect(await keys.renameApiKey('no-such-key', 'whatever')).toBeNull();
+  });
+
+  test('a revoked key can still be renamed, because history keeps its label', async () => {
+    // Revoked keys stay in the dashboard with their usage attached; being unable to fix a typo on
+    // one would mean the metrics carry that typo forever.
+    const created = await keys.createApiKey({ name: 'typoo' });
+    await keys.revokeApiKey(created.id);
+
+    expect((await keys.renameApiKey(created.id, 'typo-fixed'))?.name).toBe('typo-fixed');
+  });
+});
+
 describe('Rotating a key', () => {
   test('issues a new working secret and kills the old one', async () => {
     const created = await keys.createApiKey({ name: 'zed' });

@@ -4,6 +4,7 @@ import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { useProviders, useConfig, useCustomProviders } from '@/hooks/useQueries';
 import { useTheme } from '@/hooks/useTheme';
 import { useSSE } from '@/hooks/useSSE';
+import { useGatewayVersion } from '@/hooks/useQueries';
 import { api } from '@/lib/api';
 import { LogViewer } from '@/components/shared/LogViewer';
 import { useAuth, logout } from '@/hooks/useAuth';
@@ -17,6 +18,7 @@ interface Props {
 export function AppShell({ children }: Props) {
   useSSE();
 
+  const { data: version } = useGatewayVersion();
   const queryClient = useQueryClient();
   const { data: providers } = useProviders();
   const { data: customProviders } = useCustomProviders();
@@ -189,7 +191,7 @@ export function AppShell({ children }: Props) {
       </div>
 
       <div className="p-4 border-t border-base-300 text-[10px] text-base-content/40 text-center font-mono leading-relaxed">
-        <div>v0.7.0</div>
+        <div>{version ? `v${version}` : '\u00a0'}</div>
         <div>Powered By Nouverse Technologies</div>
       </div>
     </div>
