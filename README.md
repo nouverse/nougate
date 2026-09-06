@@ -1,8 +1,15 @@
 # Nougate
 
-> Route any LLM provider through any protocol. One gateway, isolated providers, strict model namespacing.
+> Route any LLM provider through any protocol. One gateway, isolated providers, and a model id that either names a provider or lets the gateway choose one.
 
-**Nougate** is Nouverse's internal LLM gateway — a modular router that sits between your tools and AI providers. Route requests through OpenAI or Anthropic protocols, authenticate via isolated per-provider accounts, and address any model unambiguously with `provider:model-id` namespacing.
+**Nougate** is Nouverse's internal LLM gateway — a modular router that sits between your tools and AI providers. Route requests through OpenAI or Anthropic protocols, authenticate via isolated per-provider accounts, and address a model either way:
+
+```jsonc
+{ "model": "antigravity:gemini-3.7-flash" }  // pinned — this provider, never another
+{ "model": "claude-sonnet-4-6" }             // routed — the gateway picks, and fails over
+```
+
+![Nougate dashboard — the Token Metrics page, showing spend against what compression and the prompt cache saved, with the top models and providers behind it](screenshots/screenshot.png)
 
 ---
 
@@ -11,7 +18,7 @@
 ### Core
 - **Multi-Protocol**: Expose providers via OpenAI (`/openai/v1/`) and Anthropic (`/anthropic/v1/`) compatible APIs simultaneously.
 - **Multi-Provider**: Pluggable provider system — each provider owns its auth, accounts, config, and model registry.
-- **Strict Model Namespacing**: All models use `provider:model-id` format (e.g. `antigravity:gemini-3.5-flash-low`, `copilot:claude-opus-4.6`).
+- **Model Namespacing, with an escape hatch**: `provider:model-id` pins a request to one provider (e.g. `antigravity:gemini-3.7-flash`). A bare `model-id` instead fans out to every provider that serves it — see [Smart routing](#smart-routing).
 - **Per-Provider Auth Isolation**: Credentials and account storage are fully isolated per provider.
 - **Custom Providers**: Define your own upstream from the dashboard — pick an ID, base URL, OpenAI or Anthropic API style, keys and pricing, then call it as `{provider_id}:{model}`.
 - **Gateway API Keys**: Issue `sk-nou-…` keys so clients authenticate against the proxy routes. Always required — an instance with no keys serves nobody.
@@ -19,8 +26,7 @@
 
 ### Account Management
 - **Hybrid Intelligent Routing**: Sticky by default (preserves prompt cache), auto-failover on rate limit/error.
-- **Health Scoring & Cooldowns**: Penalizes on errors, applies family-level cooldowns on quota exhaustion.
-- **Tiered Account Sorting**: Accounts classified as Ultra/Pro/Free (auto-detected from quota). Higher tiers get priority in fallback selection.
+- **Health Scoring & Cooldowns**: Health moves on a 0–100 scale shared by every provider; a spent quota cools the model, not the whole account. A 4xx caused by the *request* costs an account nothing, because every credential would refuse it identically.
 - **Device Fingerprinting**: Full impersonation headers + CLI pool variant per account.
 
 ### Token Optimization
@@ -29,6 +35,7 @@
 - **Multi-Layer Signature Cache**: 4-layer LRU cache (tool, family, session, reasoning) for thinking signature continuity.
 
 ### Resilience
+- **Cross-Provider Failover**: A bare model id is tried against each provider that serves it, in the order you registered them, until one answers. Only before the first byte reaches the client — a stream in flight is never retried.
 - **Smart Retry with Delay Parsing**: Parses structured error payloads for retry delays, exponential backoff, max 5 attempts.
 - **Per-Model Timeout**: Configurable timeout per model spec (default 60s) with AbortController.
 - **JSON Schema Cleaning**: Strips unsupported fields for Gemini compatibility ($ref, anyOf, constraints).
@@ -39,19 +46,53 @@
 - **Configurable System Prompt**: Global system instruction injection, overridable via provider config without redeploy.
 - **Caveman Mode**: Adjustable conciseness levels (1-5) prepended to system prompts.
 
+### Smart routing
+
+Send a model **without** a `provider:` prefix and the gateway picks. Candidates are every
+provider that declares that exact model id *and* holds an account, tried in registration
+order until one answers.
+
+```bash
+# Pinned: antigravity, or nothing.
+curl … -d '{"model":"antigravity:claude-sonnet-4-6", …}'
+
+# Routed: antigravity first, claudecode if it cannot serve the request.
+curl … -d '{"model":"claude-sonnet-4-6", …}'
+```
+
+- A spent quota, dead credentials or an unreachable upstream **moves on**. A malformed
+  body does not — every provider refuses it identically, so you get the real error instead
+  of "all providers failed".
+- Failover happens **before the first byte** only. Once a stream is flowing there is no
+  taking it back.
+- Matching is on the **exact** model id. `copilot:claude-opus-4.6` and
+  `antigravity:claude-opus-4-6-thinking` are the same model to you and unrelated to the
+  router; aliasing them needs a curated table, and guessing would silently route you to a
+  different model.
+- The dashboard's **API Playground** lists the routable ids under a *Smart Routing* filter,
+  and every model row shows both forms with their own copy button.
+
 ### Observability
 - **Real-time Dashboard**: Monitor accounts, quotas, cooldowns, health scores via React + daisyUI web UI.
 - **Per-Provider Overview**: Traffic, spend, top models and account health for any provider, from the same metrics pipeline — plus a **Quota** tab for providers that report upstream limits.
-- **Token & Cost Analytics**: Per-request token usage and estimated spend recorded to SQLite, charted by model, provider and client, with the savings compression earned.
+- **Token & Cost Analytics**: Per-request token usage and estimated spend recorded to SQLite, charted by model, provider and client, with the savings compression *and* the prompt cache earned, plotted separately.
 - **Live System Logs**: Console capture with level filtering, search, auto-scroll.
 
 ### Providers
 
-| Provider | Auth | Quota reporting | Models |
-|----------|------|-----------------|--------|
-| **Antigravity** | Google OAuth (multi-account) | Per-model rolling windows, averaged across the pool | Gemini 3/3.1/3.5 Flash, Gemini 3.1 Pro, Claude Sonnet/Opus 4.6 via Gemini |
-| **Copilot** | GitHub Device Flow (multi-account) | Monthly chat / completions / premium-request entitlements per seat | Claude Sonnet 4.5, Claude Opus 4.5/4.6, Gemini 2.5 Pro, GPT-4o/4.1/5-mini |
-| **Custom** | Your own API keys (multi-key rotation) | — | Anything the upstream exposes — auto-discovered from its `/models` endpoint |
+Registration order is display order and bare-model routing order. Both are set in
+`apps/backend/src/boot.ts`.
+
+| Provider | Prefix | Auth | Quota reporting | Models |
+|---|---|---|---|---|
+| **Google Antigravity** | `antigravity:` | Google OAuth (multi-account) | Per-model rolling windows, averaged across the pool | Gemini 3.1/3.6/3.7 Flash, Claude Sonnet 4.6, Claude Opus 4.6 Thinking |
+| **OpenAI Codex** | `codex:` | ChatGPT OAuth (PKCE, multi-account) | Primary/secondary windows and review quota from the `wham` API | GPT-6 Astra, GPT-5.6 Sol/Terra/Luna, GPT-5.5, GPT-5.4 (+ Mini), GPT-5.3 Codex Spark — each with a `-review` variant |
+| **Claude Code** | `claudecode:` | Anthropic OAuth, or a pasted `setup-token` / API key | Five-hour and weekly plan windows from `/api/oauth/usage` | Claude Opus 5, Opus 4.8, Sonnet 5, Sonnet 4.6, Haiku 4.5, Fable 5.1 |
+| **GitHub Copilot** | `copilot:` | GitHub Device Flow (multi-account) | Monthly chat / completions / premium-request entitlements per seat | Claude Sonnet 4.5, Claude Opus 4.5/4.6, Gemini 2.5 Pro, GPT-4o/4.1/5-mini |
+| **Custom** | your own | Your own API keys (multi-key rotation) | — | Anything the upstream exposes — auto-discovered from its `/models` endpoint |
+
+The Codex provider speaks OpenAI's **Responses** API upstream, not Chat Completions;
+Nougate translates in both directions so your client never has to know.
 
 Providers are plugins: each owns its auth, accounts, config and model registry, and
 the core never branches on a provider's name. Features like quota reporting are
@@ -73,15 +114,18 @@ are working on the code (or pointing an AI agent at it).
 │   │       │   ├── metrics/      #   usage logger, queries, pricing, rollups
 │   │       │   └── mappers/      #   protocol translation shared by all providers
 │   │       ├── protocols/        # openai/, anthropic/ — client-facing wire formats
-│   │       ├── providers/        # antigravity/, copilot/, custom/ (isolated plugins)
+│   │       ├── providers/        # antigravity/, codex/, claudecode/, copilot/,
+│   │       │                     #   custom/ — isolated plugins
 │   │       ├── auth/             # dashboard users, sessions, gateway API keys
 │   │       ├── config/           # global config types & manager
 │   │       ├── router/           # admin, metrics, api-keys, custom-providers, users
-│   │       └── server.ts         # bootstrap & registration order
+│   │       ├── boot.ts           # provider registration order = routing order
+│   │       └── server.ts         # Bun.serve entry point
 │   └── frontend/                 # React 19 SPA (Vite, TanStack Router, daisyUI)
 ├── data/                         # ALL runtime state — see "Where State Lives"
 ├── .claude/skills/               # contributor guides for AI coding agents
-├── docs/                         # ARCHITECTURE.md, COMPARISON.md, deep dives
+├── docs/                         # ARCHITECTURE.md, COMPARISON.md
+├── screenshots/                  # dashboard images used by this README
 ├── config.example.json           # template for data/config.json (never read at runtime)
 ├── docker-compose.{dev,prod}.yml
 ├── Dockerfile
@@ -268,12 +312,22 @@ or `SESSION_SECRET_FILE`.
 > different upstream that happens to be OpenAI- or Anthropic-shaped belongs in a
 > **custom provider**, which exists precisely so a URL can be set from the UI.
 
+Every provider keeps its own file under `data/providers/<id>/config.json`, and the keys
+differ because the settings do. A few worth knowing:
+
+| Provider | Key | What it does |
+|---|---|---|
+| `codex` | `cliVersion` | The Codex CLI version the gateway claims to be. The upstream **gates models on it** — newer models answer *"requires a newer version of Codex"* until it is raised |
+| `claudecode` | `betaFeatures` | Replaces the default `anthropic-beta` gate list wholesale. A gate that graduates to GA is sometimes rejected as unknown, and waiting for a release to drop one is not an option |
+| `claudecode` | `cloakToolNames` / `toolNameSuffix` | Suffixes client tool names so they cannot collide with the ones an OAuth session already knows. Off is for diagnosing whether a tool problem is this mechanic's fault |
+| `claudecode` | `refreshCommand` | A command that prints a fresh OAuth access token. Empty by default, deliberately: shelling out to an arbitrary string is a capability, not a convenience |
+
 ### Model Spec Overrides (`data/providers/antigravity/model-specs.json`)
 
 Override or add models at runtime without code changes:
 ```jsonc
 {
-  "gemini-3.5-flash-low": {
+  "gemini-3.6-flash-low": {
     "maxOutputTokens": 64000,
     "thinkingMode": "level",
     "thinkingLevel": "medium"
@@ -445,14 +499,20 @@ provider. Disabling a provider unregisters its prefix without deleting its keys 
 The **API Playground** page sends a real request through the gateway — the same routes, auth
 and metrics pipeline your clients hit, not a simulation.
 
-- Pick any model from the full catalogue (all providers, already prefixed) with a filter box.
+- Pick any model from the full catalogue. **All providers** lists every model bare, one row
+  each; **Smart Routing** narrows to the ones more than one provider can serve; picking a
+  single provider switches to the `provider:model` form.
 - Switch between the OpenAI and Anthropic protocol to check both translations.
 - Toggle streaming to watch tokens arrive live, or turn it off for a single JSON response.
 - See status, latency, input/output tokens and estimated cost after each run.
 - Copy the equivalent `curl` command, ready to paste into a terminal or a teammate's chat.
 
-Paste a gateway key into the playground's key field — the playground is deliberately
-subject to the same check as any other client, so a request without one is rejected.
+**Choose which key to bill, not which key to paste.** Gateway keys are stored hashed, so
+nothing can hand a signed-in operator the secret back — which used to mean minting a
+throwaway key just to try a prompt. The Playground instead picks a key from a dropdown: your
+dashboard session authorises the call, and the key you chose is what the usage is attributed
+to. The `curl` snippet still shows `sk-nou-...`, because a terminal has no session and does
+need the real secret.
 
 ---
 
@@ -605,7 +665,7 @@ In `~/.config/zed/settings.json`:
         "api_url": "https://nougate.nouverse.tech/anthropic",
         "available_models": [
           {
-            "name": "antigravity:gemini-3.5-flash-low",
+            "name": "antigravity:gemini-3.6-flash-low",
             "display_name": "(Nougate) Gemini 3.5 Flash Medium",
             "max_tokens": 1048576,
             "max_output_tokens": 64000,
@@ -640,7 +700,7 @@ claude --model antigravity:claude-sonnet-4-6
       "npm": "@ai-sdk/openai-compatible",
       "options": { "baseURL": "https://nougate.nouverse.tech/openai/v1" },
       "models": {
-        "antigravity:gemini-3.5-flash-low": {
+        "antigravity:gemini-3.6-flash-low": {
           "name": "Gemini 3.5 Flash Medium",
           "limit": { "context": 1048576, "output": 65535 }
         }
@@ -656,7 +716,7 @@ claude --model antigravity:claude-sonnet-4-6
 curl https://nougate.nouverse.tech/openai/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "antigravity:gemini-3.5-flash-low",
+    "model": "antigravity:gemini-3.6-flash-low",
     "messages": [{"role": "user", "content": "Hello"}],
     "stream": true
   }'
@@ -671,8 +731,27 @@ curl https://nougate.nouverse.tech/openai/v1/chat/completions \
 2. Click "Add Account" → OAuth flow opens in browser
 3. Accounts auto-discover project ID and start quota polling
 
+### Codex (ChatGPT OAuth)
+1. Navigate to dashboard → Providers → OpenAI Codex
+2. Click "Add Account" → open the authorization link in a new tab
+3. OpenAI redirects to `http://localhost:1455/auth/callback`, a port this gateway does not
+   listen on, so the tab fails to load — that is expected. Copy its full URL and paste it back
+
+> Codex gates models on the CLI version it is told about. `cliVersion` in the provider
+> config is what the gateway claims to be; models refused with *"requires a newer version of
+> Codex"* need it raised, not a different plan.
+
+### Claude Code (Anthropic OAuth)
+1. Navigate to dashboard → Providers → Claude Code
+2. Click "Add Account" → open the authorization link in a new tab
+3. Approving lands back on this gateway, which finishes the exchange and closes the dialog.
+   If that tab cannot reach the gateway, paste its URL — or the `code#state` value — instead
+
+A pasted `claude setup-token` or a plain `sk-ant-…` API key also works; only an OAuth
+account can renew itself.
+
 ### Copilot (GitHub Device Flow)
-1. Navigate to dashboard → Providers → Copilot
+1. Navigate to dashboard → Providers → GitHub Copilot
 2. Click "Add Account" → Device code displayed
 3. Enter code at github.com/login/device → token auto-exchanges
 
@@ -682,15 +761,17 @@ curl https://nougate.nouverse.tech/openai/v1/chat/completions \
 3. Add one or more keys — they rotate like accounts, with health scores and cooldowns
 4. **Auto-load from upstream** to import the models it exposes
 
-### Tier System (Antigravity only)
-Antigravity accounts are classified from their remaining quota, and the tier adds a
-bonus to the rotation score:
-- **Ultra**: All quotas > 70% remaining (priority +30)
-- **Pro**: Average quota > 30% (priority +15)
-- **Free**: Everything else (no bonus)
+### Tier bonus (Antigravity only)
 
-Tiers refresh on each quota poll; a manual override is available via the admin API.
-Other providers rank purely on health score and least-recently-used.
+An Antigravity account may carry a `tier`, which adds a bonus to its rotation score:
+**ultra** +30, **pro** +15, **free** none.
+
+> Nothing sets it automatically. The auto-detection and the admin override were both removed
+> as unreachable code — they had no callers — so `tier` is read by the scorer and written only
+> by editing `data/providers/antigravity/accounts.json` by hand. Left in rather than deleted
+> because the scoring half still works; wire a setter back up if you want it live.
+
+Every other provider ranks purely on health score with least-recently-used as the tie-break.
 
 ---
 
@@ -700,9 +781,11 @@ Other providers rank purely on health score and least-recently-used.
 |---|---|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Planes, request pipeline, contracts, the capability model, persistence, known gaps |
 | [docs/COMPARISON.md](docs/COMPARISON.md) | Rated comparison against 9Router and OmniRoute across architecture, features and scalability — including where Nougate loses |
-| [docs/ANTIGRAVITY_MANAGER_ADOPTION.md](docs/ANTIGRAVITY_MANAGER_ADOPTION.md) | Gap analysis against Antigravity-Manager, the original reference — what shipped, what is still missing, and what was deliberately declined |
-| [FINDINGS_FIX.md](FINDINGS_FIX.md) | The August 2026 stability sweep: 15 defects found across the providers, mappers, metrics and CI, and how each was fixed |
 | `.claude/skills/nougate-contributing/` | Working guide: invariants, adding a provider, the data layer, frontend conventions, and the mistakes already made here |
+
+Two documents, on purpose. Design notes that described work in progress were deleted
+rather than left to rot — a stale document is worse than an absent one, because it is
+quoted with confidence.
 
 ---
 

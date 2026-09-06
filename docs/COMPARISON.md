@@ -10,7 +10,7 @@ which one fits a given situation, including the cases where the answer is not No
 > own claims and have **not** been independently verified here. Both move fast, so treat
 > version-specific numbers as a snapshot.
 
-**Updated:** August 2026, after a 15-finding stability sweep (see `FINDINGS_FIX.md`).
+**Updated:** September 2026, after cross-provider failover, the Codex and Claude Code providers, and Nougate 1.0.0.
 
 ---
 
@@ -22,9 +22,9 @@ checked rather than taken on taste.
 | Dimension | Nougate | 9Router | OmniRoute |
 |---|:---:|:---:|:---:|
 | Architecture & extensibility | **5** | 3 | 4 |
-| Provider coverage | **2** | 4 | **5** |
+| Provider coverage | 3 | 4 | **5** |
 | Client protocol support | 4 | 3 | **5** |
-| Routing & resilience | 3 | 4 | **5** |
+| Routing & resilience | 4 | 4 | **5** |
 | Observability & cost attribution | **5** | 2 | 4 |
 | Security & access control | 4 | 2 | 4 |
 | **Horizontal scalability** | **1** | 1 | **3** |
@@ -48,12 +48,12 @@ produces a number that looks objective and means nothing. Use the
 | Runtime | Bun + TypeScript | Node 20 + Next.js 16 | Node + TypeScript |
 | Dashboard | React 19 + Vite, served by the backend | Next.js 16, React 19 | Web UI + Electron + PWA |
 | Default port | 3000 | 20128 | 20128 |
-| Built-in providers | 2 + unlimited user-defined | 40+ | 291+ catalogued |
+| Built-in providers | 4 + unlimited user-defined | 40+ | 291+ catalogued |
 | Add-a-provider path | Write a plugin, **or** define one from the dashboard | Fork / contribute upstream | Pick from the catalogue |
 | Client protocols | OpenAI + Anthropic, both first-class | OpenAI-compatible (+ translation) | OpenAI, Anthropic, Ollama, Responses |
 | Persistence | SQLite **or** Postgres via Drizzle; JSON for accounts | LowDB (single JSON file) | SQLite + optional Redis |
 | Multi-account rotation | Health, per-model cooldown, quota-aware, failover | Round-robin / sticky | Circuit breaker, per-key cooldown, model lockout |
-| Cross-provider fallback | **No** | Yes — 3-tier | Yes — 19 strategies, auto-combos |
+| Cross-provider fallback | Yes — bare model fans out, ordered failover | Yes — 3-tier | Yes — 19 strategies, auto-combos |
 | Compression | RTK + Headroom + Caveman, **attributed per engine** | RTK + Caveman | 12-engine stack, claims 15–95% |
 | Cost analytics | Per request / model / client / **API key**, 90-day rollups | Quota tracking + cost estimate | Cost telemetry, free-tier budget tracker |
 | Client authentication | Gateway API keys, **mandatory** | — | Scoped tokens, per-key rate limits |
@@ -83,13 +83,15 @@ parity test that fails the build if the schemas drift.
 extensible — 291 catalogued providers could not exist otherwise — but the surface is large,
 so the cost of understanding before extending is large too.
 
-### Provider coverage — Nougate 2 · 9Router 4 · OmniRoute 5
+### Provider coverage — Nougate 3 · 9Router 4 · OmniRoute 5
 
 *How many upstreams work today, without writing code?*
 
-Nougate's biggest loss, and not worth softening. Two built-in providers. Custom providers
-reach any OpenAI- or Anthropic-compatible endpoint — most of the market — but not upstreams
-with bespoke auth or a non-standard wire format. Those need a plugin.
+Still a loss, and not worth softening. Four built-in providers — Antigravity, Codex, Claude
+Code, Copilot — each wrapping a subscription the operator already pays for, which is the
+point rather than an accident of coverage. Custom providers reach any OpenAI- or
+Anthropic-compatible endpoint, most of the market, but not upstreams with bespoke auth or a
+non-standard wire format. Those need a plugin.
 
 ### Client protocol support — Nougate 4 · 9Router 3 · OmniRoute 5
 
@@ -97,21 +99,32 @@ with bespoke auth or a non-standard wire format. Those need a plugin.
 
 Nougate treats OpenAI and Anthropic as peers rather than translating one into the other.
 All four client×upstream combinations live in `core/mappers/`, so an Anthropic-native client
-can call an OpenAI-style upstream and vice versa. Missing: Gemini native and Codex
-`/v1/responses`.
+can call an OpenAI-style upstream and vice versa, and the Codex provider adds a third
+upstream dialect — OpenAI's Responses API — translated in both directions.
 
-### Routing & resilience — Nougate 3 · 9Router 4 · OmniRoute 5
+Missing: Gemini native as a *client* protocol, and a native `/codex/v1/responses` route.
+`ProtocolId` already carries `'codex'`; only the handler is absent.
+
+### Routing & resilience — Nougate 4 · 9Router 4 · OmniRoute 5
 
 *What happens when something fails?*
 
-**Within a provider**, Nougate is now strong: per-model health scores, per-model cooldowns
-with a separate account-wide scope, unified error classification that tells a spent quota
-apart from a rate limit, quota-aware ranking, and fail-fast on unknown models.
+**Within a provider**: per-model health scores, per-model cooldowns with a separate
+account-wide scope, unified error classification that tells a spent quota apart from a rate
+limit, quota-aware ranking, and fail-fast on unknown models.
 
-**Across providers there is nothing.** If Antigravity runs out, the request fails — it does
-not fall through to Copilot. That is the headline feature of both alternatives, the reason
-people install them. For a gateway with three registered providers, that is an awkward gap.
-The 3 reflects that, not the quality of the in-provider rotation.
+**Across providers**: a model sent without a `provider:` prefix fans out to every provider
+that declares it and holds an account, tried in the operator's own registration order. A
+spent quota, dead credentials or an unreachable upstream moves to the next; a malformed body
+does not, because every provider would refuse it identically. This closes what was the
+headline gap against both alternatives.
+
+Not a 5, and the reasons are specific. Failover is only possible **before the first byte** —
+once a stream is flowing to the client there is no taking it back. And the fan-out matches
+on an **exact** model id, so `claude-opus-4.6` on Copilot and `claude-opus-4-6-thinking` on
+Antigravity are unrelated as far as routing is concerned. Aliasing them needs a curated
+table; guessing by normalising punctuation would silently route to a *different model*,
+which is worse than an honest error.
 
 ### Observability & cost attribution — Nougate 5 · 9Router 2 · OmniRoute 4
 
@@ -177,7 +190,7 @@ and Nougate will not grow them soon.
 
 ### Code quality & verifiability — Nougate 4 · 9Router 3 · OmniRoute —
 
-254 tests, typed contracts, a schema-parity test, and the habit of proving a regression test
+544 tests, typed contracts, a schema-parity test, and the habit of proving a regression test
 catches its bug by sabotaging the fix first.
 
 Loses a point honestly: coverage is thinnest exactly where the code is hottest — ~2,200
@@ -200,10 +213,13 @@ which claims 500+ contributors.
 
 | Change | Effect on the rating |
 |---|---|
+| Cross-provider failover on a bare model id | Routing 3 → 4; the gap the previous revision called the headline one |
+| Codex and Claude Code shipped as built-in providers | Coverage 2 → 3 |
+| Codex adds the Responses API as a third upstream dialect | Reinforces Client protocol at 4 |
 | Gateway API keys became mandatory, failing closed | Security 3 → 4 |
-| Per-engine compression attribution | Reinforces Observability at 5 |
-| Per-model cooldowns, error classifier, calibrator, quota-aware ranking | In-provider resilience up; the score stays 3 because cross-provider fallback is still absent |
-| 15 stability bugs fixed, 254 tests | Code quality up to 4 |
+| Per-engine compression attribution, cached-token accounting in the trend chart | Reinforces Observability at 5 |
+| Per-model cooldowns, error classifier, calibrator, quota-aware ranking | In-provider resilience |
+| 544 tests | Code quality stays at 4 |
 | Single-instance limit verified explicitly | Scalability scored honestly at 1 — Postgres support previously implied better |
 
 ---
@@ -216,7 +232,7 @@ There is no single winner; the three are not really competing for the same slot.
 |---|---|---|
 | One developer who wants coding not to stop when a quota runs out | **9Router** | Fastest path to that outcome; one JSON file is enough state for one person |
 | Maximum provider coverage, sophisticated routing, MCP and agent protocols | **OmniRoute** | The only one with all of it, if you can operate that much surface |
-| A team sharing a gateway: who spent what, real sign-in, room to move to Postgres, add upstreams from a dashboard | **Nougate** | Built for exactly this — provided you can live without cross-provider fallback |
+| A team sharing a gateway: who spent what, real sign-in, room to move to Postgres, add upstreams from a dashboard | **Nougate** | Built for exactly this |
 | A critical path across teams needing more than one instance | **Not Nougate** | Only one instance is safe today; see the scalability section |
 | Code others can audit and fork | **9Router / OmniRoute** | Nougate is internal |
 
@@ -229,11 +245,12 @@ coverage and capability, Nougate optimises operability and attribution.**
 
 Ordered by effect on the table above:
 
-1. **Cross-provider fallback** — the only thing that genuinely separates Nougate from both
-   alternatives. The parts exist: the provider registry, a `getBestAccount` that returns
-   `null` when exhausted, and `UpstreamErrorClass.rotate` which already knows when moving on
-   is warranted. What is missing is a layer above dispatch that catches the failure and tries
-   the next provider in a chain.
+1. **Cross-provider model aliasing** — failover now works, but only on an exact model id.
+   `claude-opus-4.6` (Copilot) and `claude-opus-4-6-thinking` (Antigravity) are the same
+   model to a person and unrelated to the router, so today exactly one model id is served by
+   more than one provider. A curated alias table would multiply that; normalising punctuation
+   automatically would not, because a near-miss that silently becomes a different model is
+   worse than an error.
 2. **Behavioural tests for the mappers** — ~2,200 lines with no net, already proven to hide a
    bug that broke cost reporting on nearly every Anthropic-client request.
 3. **Move provider state to a shared store** — the prerequisite for more than one instance.
@@ -248,4 +265,4 @@ Ordered by effect on the table above:
 - [n9router on npm](https://www.npmjs.com/package/n9router)
 - [OmniRoute — github.com/diegosouzapw/OmniRoute](https://github.com/diegosouzapw/OmniRoute)
 - [OmniRoute — omniroute.online](https://omniroute.online/)
-- Nougate: this repository — `docs/ARCHITECTURE.md`, `FINDINGS_FIX.md`, and `apps/backend/src/`
+- Nougate: this repository — `docs/ARCHITECTURE.md` and `apps/backend/src/`
