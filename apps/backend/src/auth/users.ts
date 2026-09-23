@@ -356,20 +356,27 @@ export async function initUsers(): Promise<void> {
        * typed back exactly, so the account it creates is one nobody can sign in to.
        *
        * Not flagged for mandatory replacement either — they chose it deliberately, so forcing a
-       * change would be theatre.
+       * change would be theatre — *unless* `INITIAL_ADMIN_MUST_CHANGE` says the password is a way in
+       * rather than theirs to keep. Two callers set it: a Nouride daemon lending this gateway the
+       * first-run password it generated (a bundled `router` / `device-pro` build), and a Nouride Box,
+       * whose first login is the setup PIN printed on its card. Either way the value was chosen *for*
+       * the operator, and without the flag the gateway kept it for good while the daemon beside it
+       * forced a change.
        */
       assertValidUsername(configuredName);
+      const mustChange = /^(1|true|yes)$/i.test(process.env.INITIAL_ADMIN_MUST_CHANGE ?? '');
       await getDb().insert(t.users).values({
         id: crypto.randomUUID(),
         username: configuredName,
         passwordHash: await hashPassword(configuredPassword),
-        mustChangePassword: 0,
+        mustChangePassword: mustChange ? 1 : 0,
         createdAt: Date.now(),
       });
       // The username, never the password: it came from the operator and does not need reading back
       // to them out of a log file.
       announce('✓  FIRST RUN — dashboard account created', [
         `Sign in as  ${configuredName}  with the password from INITIAL_ADMIN_PASSWORD.`,
+        ...(mustChange ? ['It must be changed at first sign-in.'] : []),
       ]);
       return;
     } catch (error) {

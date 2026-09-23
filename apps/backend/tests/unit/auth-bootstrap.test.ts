@@ -181,6 +181,24 @@ describe('with valid INITIAL_ADMIN_*', () => {
 
     expect((await users.getUserByUsername('operator'))!.mustChangePassword).toBe(false);
   });
+
+  /**
+   * A password chosen *for* the operator: the one a bundled Nouride daemon generated and lent to this
+   * gateway, or a Nouride Box's setup PIN. Without the flag the daemon forced a change and this
+   * gateway, holding the same password, kept it for good.
+   */
+  test('INITIAL_ADMIN_MUST_CHANGE makes it work once', async () => {
+    process.env.INITIAL_ADMIN_USERNAME = 'admin';
+    process.env.INITIAL_ADMIN_PASSWORD = 'K7M2QX94';
+    process.env.INITIAL_ADMIN_MUST_CHANGE = '1';
+    try {
+      await users.initUsers();
+      expect((await users.getUserByUsername('admin'))!.mustChangePassword).toBe(true);
+      expect(await users.verifyCredentials('admin', 'K7M2QX94')).not.toBeNull();
+    } finally {
+      delete process.env.INITIAL_ADMIN_MUST_CHANGE;
+    }
+  });
 });
 
 describe('on every boot after the first', () => {
