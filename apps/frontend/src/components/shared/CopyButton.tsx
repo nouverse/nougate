@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Check, Copy } from 'lucide-react';
 import { useModelCatalog } from '@/hooks/useQueries';
+import { copyText } from '@/lib/clipboard';
 
 interface Props {
   value: string;
@@ -37,7 +38,7 @@ export function CopyButton({ value, label, className = '', title }: Props) {
       className={`btn btn-ghost btn-xs px-1.5 gap-1 ${copied ? 'text-success' : 'text-base-content/40 hover:text-base-content'} ${className}`}
       onClick={(event) => {
         event.stopPropagation();
-        navigator.clipboard.writeText(value).then(() => setCopied(true));
+        void copyText(value).then((ok) => ok && setCopied(true));
       }}
     >
       {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}

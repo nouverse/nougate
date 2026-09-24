@@ -22,6 +22,7 @@ import {
   RefreshCw,
   Pencil,
 } from 'lucide-react';
+import { copyText } from '@/lib/clipboard';
 
 export const Route = createFileRoute('/api-keys')({
   component: ApiKeysPage,
@@ -186,8 +187,7 @@ function ApiKeysPage() {
                 type="button"
                 className="btn btn-sm btn-primary rounded-xl gap-1.5"
                 onClick={() => {
-                  navigator.clipboard.writeText(freshKey.key);
-                  setCopied(true);
+                  void copyText(freshKey.key).then((ok) => ok && setCopied(true));
                 }}
               >
                 {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
