@@ -235,3 +235,24 @@ describe('on every boot after the first', () => {
     expect(await users.getUserByUsername('someone-else')).toBeNull();
   });
 });
+
+describe('a host resetting the accounts', () => {
+  test('every account goes, and the next boot seeds the first one again', async () => {
+    process.env.INITIAL_ADMIN_USERNAME = 'owner';
+    process.env.INITIAL_ADMIN_PASSWORD = 'first-password-1';
+    await users.initUsers();
+    await users.createUser('second', 'second-password-1');
+    expect(await users.countUsers()).toBe(2);
+
+    // `deleteUser` would refuse the last one; a reset must not.
+    expect(await users.clearUsers()).toBe(2);
+    expect(await users.countUsers()).toBe(0);
+
+    process.env.INITIAL_ADMIN_USERNAME = 'admin';
+    process.env.INITIAL_ADMIN_PASSWORD = 'K7M2QX94-reset';
+    await users.initUsers();
+    expect(await users.countUsers()).toBe(1);
+    expect(await users.getUserByUsername('admin')).not.toBeNull();
+    expect(await users.getUserByUsername('owner')).toBeNull();
+  });
+});

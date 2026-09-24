@@ -30,7 +30,7 @@ import { handleRequest } from "@/router";
 import { setupLogCapture } from "@/router/middleware";
 import { initDb } from "@/core/db";
 import { initApiKeys } from "@/auth/api-keys";
-import { initUsers } from "@/auth/users";
+import { clearUsers, initUsers } from "@/auth/users";
 import { initCustomProviders } from "@/providers/custom/manager";
 import { startMetricsMaintenance } from "@/core/metrics/maintenance";
 import { initCalibration } from "@/core/metrics/calibrator";
@@ -82,4 +82,16 @@ export async function boot(): Promise<(req: Request) => Response | Promise<Respo
   registerAnthropicProtocol();
 
   return handleRequest;
+}
+
+/**
+ * Remove every account so the next boot starts from `INITIAL_ADMIN_*`, as a new install does.
+ *
+ * For a host that offers "reset sign-in" — the Nouride Box's setup console resets its own accounts
+ * and this gateway's together — without it reaching into this gateway's database. Call it after
+ * `boot()`, then restart: the accounts are recreated on the way up, not here. Returns how many were
+ * removed.
+ */
+export async function resetAccounts(): Promise<number> {
+  return clearUsers();
 }

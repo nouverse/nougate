@@ -222,6 +222,21 @@ export async function deleteUser(userId: string): Promise<void> {
   await getDb().delete(t.users).where(eq(t.users.id, userId));
 }
 
+/**
+ * Every account gone, on purpose: the host's "reset sign-in" (a Nouride Box's setup console).
+ *
+ * Not `deleteUser` in a loop, which refuses the last account for a good reason that does not apply
+ * here — the host restarts the gateway straight after, and `initUsers` seeds the first account from
+ * `INITIAL_ADMIN_*` on the empty table, exactly as on a new install. Here rather than in the host so
+ * that nothing outside this gateway has to know its file or its tables.
+ */
+export async function clearUsers(): Promise<number> {
+  const removed = await countUsers();
+  await getDb().delete(t.users);
+  failedAttempts.clear();
+  return removed;
+}
+
 // ─── Authentication ───────────────────────────────────────────────────────────
 
 /**
