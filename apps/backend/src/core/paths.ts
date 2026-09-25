@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'fs';
+import { cpSync, existsSync, mkdirSync, readFileSync } from 'fs';
 import { dirname, join } from 'path';
 
 /**
@@ -149,4 +149,47 @@ export function dataPath(...segments: string[]): string {
  */
 export function projectPath(...segments: string[]): string {
   return join(getProjectRoot(), ...segments);
+}
+
+/**
+ * Every name this gateway keeps in its data directory: what the `dataPath()` callers write, and the
+ * SQLite files beside the database.
+ */
+const STATE_FILES = [
+  'nougate.db',
+  'nougate.db-wal',
+  'nougate.db-shm',
+  'config.json',
+  'calibration.json',
+  '.session-secret',
+  'providers',
+] as const;
+
+/**
+ * Bring this gateway's state into `getDataDir()` from where a host kept it before, once.
+ *
+ * For a host that moved where it points `NOUGATE_HOME` (Nouride did, to give the gateway a folder of
+ * its own). Only when the data directory has no database yet, and only from the first source that has
+ * one — so it runs on the first start after the move and never again, and never replaces a database
+ * in use. Call it **before** `boot()`: nothing is open, so the database and its WAL are copied as one
+ * consistent set.
+ *
+ * **Copied, never moved.** The host's previous build may come back — an update that does not start
+ * is rolled back — and it looks where it always did. Moved, it would find the gateway empty.
+ *
+ * Copied by name, never as a directory, because a source may be the host's own data directory, full
+ * of files that are not this gateway's. Returns the source used, or null.
+ */
+export function adoptStateFrom(sources: readonly string[]): string | null {
+  const target = getDataDir();
+  if (existsSync(join(target, 'nougate.db'))) return null;
+  const source = sources.find((dir) => existsSync(join(dir, 'nougate.db')));
+  if (!source) return null;
+
+  mkdirSync(target, { recursive: true });
+  for (const name of STATE_FILES) {
+    const from = join(source, name);
+    if (existsSync(from)) cpSync(from, join(target, name), { recursive: true, force: false, errorOnExist: false });
+  }
+  return source;
 }

@@ -95,3 +95,9 @@ export async function boot(): Promise<(req: Request) => Response | Promise<Respo
 export async function resetAccounts(): Promise<number> {
   return clearUsers();
 }
+
+/**
+ * Copy this gateway's state from where the host kept it before, once — see `adoptStateFrom`. Call
+ * it before `boot()`.
+ */
+export { adoptStateFrom } from "@/core/paths";
