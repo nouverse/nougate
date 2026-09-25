@@ -10,7 +10,8 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
-import { dataPath, getDataDir } from '../../src/core/paths';
+import { existsSync } from 'node:fs';
+import { dataPath, getDataDir, getProjectRoot } from '../../src/core/paths';
 
 const previous = process.env.NOUGATE_HOME;
 afterEach(() => {
@@ -30,5 +31,11 @@ describe('getDataDir', () => {
     expect(getDataDir()).toBe(join('/one', 'data'));
     process.env.NOUGATE_HOME = '/two';
     expect(getDataDir()).toBe(join('/two', 'data'));
+  });
+
+  test('standalone — no NOUGATE_HOME — is exactly what it was: /app/data in Docker, <root>/data otherwise', () => {
+    delete process.env.NOUGATE_HOME;
+    const expected = existsSync('/app/data') ? '/app/data' : join(getProjectRoot(), 'data');
+    expect(getDataDir()).toBe(expected);
   });
 });
