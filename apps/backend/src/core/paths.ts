@@ -123,8 +123,16 @@ export function getProjectRoot(): string {
  *
  * In Docker this is the mounted volume at /app/data; locally it is `data/` at
  * the project root.
+ *
+ * **`NOUGATE_HOME` first, and read on every call.** A host that runs nougate in
+ * its own process (Nouride) sets it so the database lands in the host's volume.
+ * `/app/data` used to be checked first — this image's own layout — and the
+ * Nouride image had that directory too, so in a Nouride container every account
+ * and provider went to a path no volume covered and a recreate wiped them.
  */
 export function getDataDir(): string {
+  const home = process.env.NOUGATE_HOME?.trim();
+  if (home) return join(home, 'data');
   return existsSync('/app/data') ? '/app/data' : join(getProjectRoot(), 'data');
 }
 
