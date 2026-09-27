@@ -45,12 +45,16 @@ const spec = (
 });
 
 const MODEL_REGISTRY: Record<string, IModelSpec> = {
+  'claude-opus-5-5': spec('claude-opus-5-5', 'Claude Opus 5.5', 128_000, 5, 25),
   'claude-opus-5': spec('claude-opus-5', 'Claude Opus 5', 128_000, 5, 25),
   'claude-opus-4-8': spec('claude-opus-4-8', 'Claude Opus 4.8', 128_000, 5, 25),
+  'claude-opus-4-7': spec('claude-opus-4-7', 'Claude Opus 4.7', 128_000, 5, 25),
+  'claude-opus-4-6': spec('claude-opus-4-6', 'Claude Opus 4.6', 128_000, 5, 25),
   'claude-sonnet-5': spec('claude-sonnet-5', 'Claude Sonnet 5', 128_000, 2, 10),
   'claude-sonnet-4-6': spec('claude-sonnet-4-6', 'Claude Sonnet 4.6', 128_000, 3, 15),
   'claude-haiku-4-5': spec('claude-haiku-4-5', 'Claude Haiku 4.5', 64_000, 1, 5),
   'claude-fable-5-1': spec('claude-fable-5-1', 'Claude Fable 5.1', 128_000, 10, 50),
+  'claude-fable-5': spec('claude-fable-5', 'Claude Fable 5', 128_000, 10, 50),
 };
 
 /**
@@ -69,19 +73,22 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
  * Checked against the live API on 2026-09-06.
  */
 const SAMPLING_DEPRECATED = new Set([
+  'claude-opus-5-5',
   'claude-opus-5',
   'claude-opus-4-8',
+  'claude-opus-4-7',
   'claude-sonnet-5',
+  'claude-fable-5',
   'claude-fable-5-1',
 ]);
 
 /** Whether this model rejects the sampling parameters outright. */
 export function deprecatesSamplingParams(modelId: string): boolean {
-  return SAMPLING_DEPRECATED.has(modelId);
+  return SAMPLING_DEPRECATED.has(modelId) || SAMPLING_DEPRECATED.has(modelId.replace(/\./g, '-'));
 }
 
 export function getModelSpec(modelId: string): IModelSpec | null {
-  return MODEL_REGISTRY[modelId] ?? null;
+  return MODEL_REGISTRY[modelId] ?? MODEL_REGISTRY[modelId.replace(/\./g, '-')] ?? null;
 }
 
 export const claudeCodeModelRegistry: IModelRegistry = {
