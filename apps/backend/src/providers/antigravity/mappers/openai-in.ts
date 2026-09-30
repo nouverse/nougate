@@ -7,6 +7,8 @@ import {
 import { cleanJSONSchemaForAntigravity } from "@/providers/antigravity/utils/schema";
 import { getFamilyName } from "@/providers/antigravity/auth/manager";
 import { getCavemanPrompt } from "@/core/caveman";
+import { UnsupportedContentPartError } from "@/core/upstream-errors";
+import { AUDIO_MIME_TYPES, carriesAudio } from "@/providers/antigravity/config/audio";
 
 /**
  * Provider-injected configuration for the OpenAI mapper.
@@ -199,7 +201,46 @@ function buildToolResponseParts(
 }
 
 /**
- * Append text and image parts from a regular OpenAI message.
+ * Refuse `input_audio` this route cannot deliver, before anything else happens to the request.
+ *
+ * Run up front rather than only where the part is mapped, so the caller gets a 400 even when no
+ * account is free — the answer does not depend on one, and a quota error would hide the real cause.
+ * An unknown `format` is refused rather than guessed: a wrong MIME type is either a 400 from Google
+ * that names a part index, or audio decoded as noise, and neither tells the caller what happened.
+ */
+export function assertAudioDeliverable(openaiBody: any, modelSpec: IModelSpec): void {
+  for (const message of openaiBody?.messages ?? []) {
+    if (!Array.isArray(message?.content)) {
+      continue;
+    }
+
+    for (const part of message.content) {
+      if (part?.type !== "input_audio") {
+        continue;
+      }
+
+      if (!carriesAudio(modelSpec)) {
+        throw new UnsupportedContentPartError("input_audio", "antigravity");
+      }
+
+      const format = part.input_audio?.format;
+      if (!Object.hasOwn(AUDIO_MIME_TYPES, format)) {
+        throw new UnsupportedContentPartError(
+          `input_audio with format "${String(format)}"`,
+          "antigravity",
+        );
+      }
+      if (typeof part.input_audio?.data !== "string" || !part.input_audio.data) {
+        throw new UnsupportedContentPartError("input_audio without base64 data", "antigravity");
+      }
+    }
+  }
+}
+
+/**
+ * Append text, image and audio parts from a regular OpenAI message.
+ *
+ * Audio arrives here already checked by `assertAudioDeliverable`, so the format is known.
  */
 function appendContentParts(parts: any[], message: any): void {
   if (!message?.content) {
@@ -227,6 +268,16 @@ function appendContentParts(parts: any[], message: any): void {
           },
         });
       }
+      continue;
+    }
+
+    if (part?.type === "input_audio") {
+      parts.push({
+        inlineData: {
+          mimeType: AUDIO_MIME_TYPES[part.input_audio.format as keyof typeof AUDIO_MIME_TYPES],
+          data: part.input_audio.data,
+        },
+      });
     }
   }
 }
@@ -531,6 +582,8 @@ export function mapOpenAIToGoogle(
   const keepThinking = features.keepThinking ?? false;
   const googleSearchGrounding = features.googleSearchGrounding ?? false;
   const groundingMode = features.groundingMode ?? "auto";
+
+  assertAudioDeliverable(openaiBody, modelSpec);
 
   const googleModel = resolveUpstreamModelId(modelSpec);
   const isCliPool = modelSpec.useCliPool ?? modelSpec.pool === "cli";

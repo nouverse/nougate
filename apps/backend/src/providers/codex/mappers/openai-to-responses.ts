@@ -27,6 +27,8 @@
  * keeps one Responses translation rather than a second one that would drift from this.
  */
 
+import { UnsupportedContentPartError } from '@/core/upstream-errors';
+
 /** Chat Completions tool shape, kept as-is: `normalizeCodexTools` flattens it downstream. */
 type Json = Record<string, any>;
 
@@ -51,6 +53,10 @@ function contentToText(content: any): string {
  * An image arrives as `image_url` and leaves as `input_image`; anything unrecognised is dropped
  * rather than forwarded, because an unknown part type is a 400 from the Responses API and the error
  * names the index rather than the kind.
+ *
+ * Audio is the exception: it is refused here, by name. The upstream still never sees the part —
+ * that reason for dropping holds — but dropping it would have the model answer a voice note it never
+ * heard, and the caller could not tell. Refusing lets it fall back.
  */
 function toInputContent(content: any): Json[] {
   if (typeof content === 'string') {
@@ -67,6 +73,9 @@ function toInputContent(content: any): Json[] {
     if (part?.type === 'text' && typeof part.text === 'string') {
       parts.push({ type: 'input_text', text: part.text });
       continue;
+    }
+    if (part?.type === 'input_audio') {
+      throw new UnsupportedContentPartError('input_audio', 'codex');
     }
     if (part?.type === 'image_url') {
       const url = typeof part.image_url === 'string' ? part.image_url : part.image_url?.url;

@@ -1,6 +1,7 @@
 import type { IModelRegistry, IModelSpec } from '@/core/interfaces';
 import { getProxyConfig } from '@/config/manager';
 import { dataPath } from '@/core/paths';
+import { withRouteModalities } from '@/providers/antigravity/config/audio';
 
 
 const MODEL_REGISTRY: Record<string, IModelSpec> = {
@@ -129,11 +130,15 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
 
 /**
  * Clone a model spec so callers do not mutate the in-memory registry accidentally.
+ *
+ * Modalities are stamped on the way out rather than written into each entry: they follow from the
+ * route (see `config/audio.ts`), so an entry added later — or an override-defined one — cannot
+ * forget them.
  */
 function cloneModelSpec(modelSpec: IModelSpec): IModelSpec {
-  return {
+  return withRouteModalities({
     ...modelSpec,
-  };
+  });
 }
 
 /**
@@ -203,12 +208,12 @@ export function getModelSpec(modelId: string): IModelSpec | null {
     if (proxyConfig && proxyConfig.bypassModelValidation) {
       // Dynamic fallback for unknown models to search/test raw upstream model names
       console.log(`[AntigravityModelRegistry] Unknown model "${modelId}" requested, generating dynamic spec fallback.`);
-      return createDefaultModelSpec(modelId, {
+      return cloneModelSpec(createDefaultModelSpec(modelId, {
         isThinking: modelId.toLowerCase().includes("thinking"),
         thinkingMode: modelId.toLowerCase().includes("thinking") ? "budget" : undefined,
         thinkingBudget: modelId.toLowerCase().includes("thinking") ? 32768 : undefined,
         maxOutputTokens: 64000,
-      });
+      }));
     }
   } catch (error) {
     // If config is not loaded (e.g. during specific standalone script runs), default to non-bypass
