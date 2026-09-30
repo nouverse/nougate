@@ -175,7 +175,7 @@ export class ClaudeCodeProvider implements IProvider {
     if (protocol === 'openai') {
       const { body: cloakedBody, toolNameMap } = this.cloak(
         dropDeprecatedSampling(
-          mapOpenAIToAnthropic(body, upstreamModelId, modelSpec.maxOutputTokens),
+          mapOpenAIToAnthropic(body, upstreamModelId, modelSpec.maxOutputTokens, this.id),
           upstreamModelId,
         ),
       );

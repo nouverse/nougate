@@ -229,6 +229,28 @@ export class ModelUnavailableError extends ProviderResponseError {
 }
 
 /**
+ * The request carries a content part this route cannot deliver to its upstream.
+ *
+ * Raised by a mapper *instead of* dropping the part. A dropped part is the worst failure a gateway
+ * can have: the model answers fluently about a voice note it never heard, and nobody finds out. A
+ * 400 with a named code lets the caller fall back honestly — transcribe, or tell the user.
+ *
+ * Being a 400, it also stops `executeWithFailover`: a later candidate that could have carried the
+ * part is not tried. That holds for today's routes — a Claude model cannot hear on any of them — but
+ * a model served both by a mapper that rejects and by a passthrough that forwards would need the
+ * failover to treat this as provider-specific.
+ */
+export class UnsupportedContentPartError extends ProviderResponseError {
+  constructor(partType: string, providerId: string) {
+    super(`${partType} is not supported by the ${providerId} provider`, {
+      status: 400,
+      clientCode: 'unsupported_content_part',
+    });
+    this.name = 'UnsupportedContentPartError';
+  }
+}
+
+/**
  * The upstream's own words for a refusal, when it sent JSON.
  *
  * Providers disagree about where the sentence lives — Anthropic uses `error.message`, Codex uses a

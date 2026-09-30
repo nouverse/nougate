@@ -64,7 +64,23 @@ export interface IModelSpec {
   inputPricePer1M?: number;
   /** Upstream list price in USD per 1M output tokens, used for cost estimation. */
   outputPricePer1M?: number;
+  /**
+   * What this *route* can deliver to the model, not what the model can do in the abstract: Gemini
+   * hears audio through Antigravity, but the same weights behind a mapper that has no audio part
+   * would not. Omitted means undeclared, and a client should treat an undeclared modality as absent.
+   */
+  inputModalities?: InputModality[];
+  /** `input_audio` formats this route accepts. Omitted when the route carries no audio. */
+  inputAudioFormats?: InputAudioFormat[];
 }
+
+export type InputModality = 'text' | 'image' | 'audio';
+
+/**
+ * `ogg` is outside the OpenAI spec, which only names `mp3` and `wav`. It is declared per route, so a
+ * client only sends it where a route says it is accepted and a strict OpenAI upstream never sees it.
+ */
+export type InputAudioFormat = 'mp3' | 'wav' | 'ogg';
 
 /**
  * One upstream usage limit, in the only shape the dashboard understands.

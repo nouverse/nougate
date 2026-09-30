@@ -6,6 +6,7 @@
  */
 import { getCavemanPrompt } from '@/core/caveman';
 import { cacheReadTokens, openAiCacheUsage, promptTokens } from "@/core/usage-cache";
+import { UnsupportedContentPartError } from '@/core/upstream-errors';
 
 const DEFAULT_MAX_TOKENS = 8192;
 
@@ -38,8 +39,12 @@ function pushMessage(messages: any[], role: 'user' | 'assistant', blocks: any[])
 
 /**
  * Normalize an OpenAI message `content` value into Anthropic content blocks.
+ *
+ * `input_audio` is refused, not dropped: the Messages API has no audio block, and a model that is
+ * handed the text of a turn without its voice note answers as though it had heard it. Other
+ * unrecognised parts are still skipped as before — only audio has a caller waiting to fall back.
  */
-function contentToBlocks(content: any): any[] {
+function contentToBlocks(content: any, providerId: string): any[] {
   if (content === null || content === undefined) {
     return [];
   }
@@ -64,6 +69,10 @@ function contentToBlocks(content: any): any[] {
       continue;
     }
 
+    if (part?.type === 'input_audio') {
+      throw new UnsupportedContentPartError('input_audio', providerId);
+    }
+
     if (part?.type === 'image_url' && typeof part.image_url?.url === 'string') {
       const match = part.image_url.url.match(/^data:([^;]+);base64,(.*)$/);
       if (match) {
@@ -85,11 +94,15 @@ function contentToBlocks(content: any): any[] {
 
 /**
  * Convert an OpenAI chat-completions request into an Anthropic Messages request.
+ *
+ * `providerId` only names the route in a refusal, so the caller learns which provider could not
+ * carry the part rather than a generic "Anthropic".
  */
 export function mapOpenAIToAnthropic(
   openaiBody: any,
   upstreamModelId: string,
   fallbackMaxTokens = DEFAULT_MAX_TOKENS,
+  providerId = 'anthropic',
 ): any {
   const systemParts: string[] = [];
   const messages: any[] = [];
@@ -103,7 +116,7 @@ export function mapOpenAIToAnthropic(
     if (msg.role === 'system' || msg.role === 'developer') {
       const text = typeof msg.content === 'string'
         ? msg.content
-        : contentToBlocks(msg.content).map((b: any) => b.text).filter(Boolean).join('\n');
+        : contentToBlocks(msg.content, providerId).map((b: any) => b.text).filter(Boolean).join('\n');
       if (text) {
         systemParts.push(text);
       }
@@ -122,7 +135,7 @@ export function mapOpenAIToAnthropic(
     }
 
     if (msg.role === 'assistant') {
-      const blocks = contentToBlocks(msg.content);
+      const blocks = contentToBlocks(msg.content, providerId);
       for (const call of msg.tool_calls ?? []) {
         let input: any = {};
         try {
@@ -143,7 +156,7 @@ export function mapOpenAIToAnthropic(
       continue;
     }
 
-    pushMessage(messages, 'user', contentToBlocks(msg.content));
+    pushMessage(messages, 'user', contentToBlocks(msg.content, providerId));
   }
 
   const anthropicBody: any = {

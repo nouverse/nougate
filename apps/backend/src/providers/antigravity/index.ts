@@ -37,7 +37,7 @@ import {
 import { exchangeCode, getProjectId, getUserEmail } from '@/providers/antigravity/auth/oauth';
 
 import { AntigravityExecutor } from '@/providers/antigravity/upstream/executor';
-import { mapOpenAIToGoogle } from '@/providers/antigravity/mappers/openai-in';
+import { assertAudioDeliverable, mapOpenAIToGoogle } from '@/providers/antigravity/mappers/openai-in';
 import { createOpenAIStreamTransformer } from '@/providers/antigravity/mappers/openai-out';
 import { mapAnthropicToGoogle } from '@/providers/antigravity/mappers/anthropic-in';
 import { createAnthropicStreamTransformer, aggregateAnthropicResponse } from '@/providers/antigravity/mappers/anthropic-out';
@@ -430,6 +430,10 @@ export class AntigravityProvider implements IProvider {
     const { protocol, body, modelSpec, ctx } = params;
 
     if (protocol === 'openai') {
+      // Before the executor, because the executor picks an account first and builds the body per
+      // attempt: a refusal that no account can change should not wait on, or be masked by, one.
+      assertAudioDeliverable(body, modelSpec);
+
       const currentMessageCount = body.messages?.length || 0;
       const assistantTurnIndex = body.messages?.filter((m: any) => m.role === "assistant").length || 0;
       checkSessionSignatureRewind(ctx.sessionId, currentMessageCount);

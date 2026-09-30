@@ -261,7 +261,7 @@ export class CustomProvider implements IProvider {
       upstreamStyle === 'anthropic'
         ? protocol === 'anthropic'
           ? passthroughAnthropicBody(body, upstreamModelId)
-          : mapOpenAIToAnthropic(body, upstreamModelId, modelSpec.maxOutputTokens)
+          : mapOpenAIToAnthropic(body, upstreamModelId, modelSpec.maxOutputTokens, this.id)
         : protocol === 'anthropic'
           ? mapAnthropicToOpenAI(body, upstreamModelId)
           : sanitizeOpenAIBody(body, upstreamModelId);
