@@ -1,8 +1,10 @@
 /**
  * RTK — Tool Result Compression
  * 
- * Auto-compress tool_result content (git diff, grep, ls, tree, file reads)
- * before sending to LLM. Lossless, pattern-based, inline — zero network overhead.
+ * Auto-compress tool_result content (git diff, grep, ls, tree, repeated log lines)
+ * before sending to LLM. Pattern-based, inline — zero network overhead. A file an
+ * agent reads must reach the model as it is, so each filter detects its own shape
+ * strictly and leaves everything else alone.
  * Inspired by 9Router/RTK.
  * 
  * Runs before Headroom as a fast first-pass filter.
@@ -20,9 +22,22 @@ interface RtkFilter {
 
 // ─── Filters ──────────────────────────────────────────────────────────────────
 
+/** `@@ -12,7 +12,9 @@` — the one line every unified diff has and nothing else does. */
+const HUNK_HEADER = /^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@/m;
+
 const GIT_DIFF_FILTER: RtkFilter = {
   name: 'git-diff',
-  detect: (c) => /^(diff --git|---|\+\+\+|@@\s)/.test(c) || c.includes('\n--- a/'),
+  /**
+   * A diff, not something that merely starts like one.
+   *
+   * `---` at the start used to be enough, and every Markdown file with front matter starts with it —
+   * each skill's `SKILL.md`, a YAML manifest. Those were compressed as diffs: past the second line in a
+   * row that did not begin with `-` or `+`, everything was dropped, so an agent reading a 121-line
+   * skill got 30 lines of it and none of its rules. A diff starts with `diff --git`, or with its
+   * `---`/`+++` file lines or a hunk header and then has a hunk.
+   */
+  detect: (c) =>
+    c.startsWith('diff --git ') || (/^(--- \S[^\n]*\n\+\+\+ |@@ -)/.test(c) && HUNK_HEADER.test(c)),
   compress: (content) => {
     const lines = content.split('\n');
     const result: string[] = [];
@@ -100,36 +115,39 @@ const LS_TREE_FILTER: RtkFilter = {
   },
 };
 
+/**
+ * A line repeated straight after itself — a log stuck on one message.
+ *
+ * Only consecutive repeats count. Counting a line wherever it recurred, as this used to, fired on code
+ * and config as readily as on logs: `}` and `},` recur all through a JSON file, `return` all through a
+ * Python one. And the compression that followed trimmed every line, dropped every blank line and kept
+ * only the first of each — an agent reading a source file got it unindented and out of order.
+ */
+function repeatsPrevious(line: string, index: number, lines: string[]): boolean {
+  return index > 0 && line.trim() !== '' && line === lines[index - 1];
+}
+
 const DEDUP_LOG_FILTER: RtkFilter = {
   name: 'dedup-log',
   detect: (c) => {
-    // Detect repeated log patterns
-    const lines = c.split('\n').filter(l => l.trim());
+    const lines = c.split('\n');
     if (lines.length < 10) return false;
-    const unique = new Set(lines);
-    return unique.size < lines.length * 0.7; // >30% duplication
+    return lines.filter(repeatsPrevious).length >= lines.length * 0.3;
   },
   compress: (content) => {
-    const lines = content.split('\n');
-    const counts = new Map<string, number>();
-    const order: string[] = [];
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
-      counts.set(trimmed, (counts.get(trimmed) || 0) + 1);
-      if (!order.includes(trimmed)) order.push(trimmed);
-    }
-
     const result: string[] = [];
-    for (const line of order) {
-      const count = counts.get(line) || 1;
-      if (count > 1) {
-        result.push(`${line}  (×${count})`);
-      } else {
-        result.push(line);
+    let run = 0;
+    const lines = content.split('\n');
+    lines.forEach((line, index) => {
+      if (repeatsPrevious(line, index, lines)) {
+        run += 1;
+        return;
       }
-    }
+      if (run > 0) result[result.length - 1] += `  (×${run + 1})`;
+      run = 0;
+      result.push(line);
+    });
+    if (run > 0) result[result.length - 1] += `  (×${run + 1})`;
     return result.join('\n');
   },
 };
@@ -156,7 +174,8 @@ const FILTERS: RtkFilter[] = [
 
 // ─── Core ─────────────────────────────────────────────────────────────────────
 
-function compressText(text: string): string {
+/** Exported for the tests: what a tool result becomes, whichever filter takes it. */
+export function compressText(text: string): string {
   for (const filter of FILTERS) {
     try {
       if (filter.detect(text)) {
