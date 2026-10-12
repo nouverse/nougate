@@ -57,6 +57,20 @@ type AntigravityExecuteOptions = Omit<UpstreamExecuteOptions, "googleBody" | "pr
 };
 
 /**
+ * The pause before trying the next account, in milliseconds.
+ *
+ * Short, and random so that it is not a constant. The next account has not been
+ * limited by this one's failure, and the request was already spaced by the jitter
+ * before its first attempt. The sleep here used to grow by half a second per
+ * attempt up to three, so a request that probed accounts lacking its model spent
+ * half a minute asleep — that was the slow rotation. Waiting on the *same* account
+ * after a short 429 is the grace retry below, and keeps its own delay.
+ */
+export function nextAccountGapMs(): number {
+  return 150 + Math.random() * 300;
+}
+
+/**
  * Build a JSON response with the standard proxy headers for OpenAI clients.
  */
 export interface ExhaustionInput {
@@ -281,8 +295,7 @@ export class AntigravityExecutor {
         graceRetries = 0;
 
         if (attempts > 1) {
-          const delayMs = Math.min(500 * attempts, 3000);
-          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          await new Promise((resolve) => setTimeout(resolve, nextAccountGapMs()));
           console.log(
             `[Switch] Skipping pool switch for ${useCliPool ? "CLI-only" : "sandbox-only"} model (attempt ${attempts})`,
           );

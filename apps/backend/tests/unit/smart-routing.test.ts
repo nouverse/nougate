@@ -42,6 +42,7 @@ interface FakeOptions {
   /** Stands in for `bypassModelValidation`: says yes to any model id asked of `getSpec`. */
   specForAnything?: boolean;
   execute?: (params: ProviderExecuteParams) => Promise<Response>;
+  jitter?: JitterConfig;
 }
 
 const registered: string[] = [];
@@ -58,7 +59,7 @@ function fakeProvider(id: string, options: FakeOptions): IProvider {
     id,
     displayName: id,
     init: async () => {},
-    getJitterConfig: () => NO_JITTER,
+    getJitterConfig: () => options.jitter ?? NO_JITTER,
     getBestAccount: async () => accounts[0] ?? null,
     updateAccountUsage: async () => {},
     getAccounts: () => accounts,
@@ -210,6 +211,23 @@ describe('failing over between providers', () => {
 
     const served = await executeWithFailover(routeCandidates(resolveModel('m')), params);
     expect(served.provider.id).toBe('beta');
+  });
+
+  test('a failover does not wait a second jitter: the request was spaced before its first attempt', async () => {
+    const window: JitterConfig = { jitterEnabled: true, jitterMinMs: 300, jitterMaxMs: 300 };
+    fakeProvider('alpha', {
+      models: ['m'],
+      jitter: window,
+      execute: async () => new Response(JSON.stringify({ error: 'quota' }), { status: 429 }),
+    });
+    fakeProvider('beta', { models: ['m'], jitter: window, execute: async () => new Response('from beta') });
+
+    const started = Date.now();
+    const served = await executeWithFailover(routeCandidates(resolveModel('m')), params);
+    const took = Date.now() - started;
+    expect(served.provider.id).toBe('beta');
+    expect(took).toBeGreaterThanOrEqual(290);
+    expect(took).toBeLessThan(550);
   });
 
   test('a returned 429 moves on too — the shape Antigravity uses when its quota is spent', async () => {

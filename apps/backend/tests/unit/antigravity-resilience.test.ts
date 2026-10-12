@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { isModelUnsupportedFor } from '@/providers/antigravity/auth/manager';
-import { summarizeExhaustion } from '@/providers/antigravity/upstream/executor';
+import { nextAccountGapMs, summarizeExhaustion } from '@/providers/antigravity/upstream/executor';
 import { parseQuotaResponse } from '@/providers/antigravity/api/quota';
 import type { AntigravityAccount } from '@/providers/antigravity/auth/types';
 
@@ -154,5 +154,17 @@ describe('quota groups report the figure conservatively', () => {
     });
 
     expect(parsed).toHaveLength(2);
+  });
+});
+
+describe('moving on to the next account', () => {
+  test('pauses for a moment, never the seconds per attempt it used to', () => {
+    // The old sleep grew by half a second per attempt up to three: thirteen attempts spent half a
+    // minute asleep before a request was answered.
+    for (let i = 0; i < 200; i += 1) {
+      const gap = nextAccountGapMs();
+      expect(gap).toBeGreaterThanOrEqual(150);
+      expect(gap).toBeLessThan(450);
+    }
   });
 });

@@ -13,12 +13,16 @@ import { ModelUnavailableError, ProviderResponseError } from '@/core/upstream-er
  *
  * The wait happens before `execute`, so a provider's own per-model timeout
  * starts counting after the delay rather than being eaten by it.
+ *
+ * `jitter: false` is for a failover: the request was spaced before its first
+ * attempt, and the next provider carrying it on is the same request, not a new one.
  */
 export async function executeProviderRequest(
   provider: IProvider,
   params: ProviderExecuteParams,
+  options: { jitter?: boolean } = {},
 ): Promise<Response> {
-  await applyJitter(provider.getJitterConfig());
+  if (options.jitter !== false) await applyJitter(provider.getJitterConfig());
   return provider.execute(params);
 }
 
@@ -62,6 +66,12 @@ function worthAnotherProvider(status: number): boolean {
  * The first failure is the one handed back if every candidate fails: it comes from the provider the
  * operator ordered first, so the error a caller sees does not change depending on how far down the
  * list the fan-out happened to get.
+ *
+ * ## Spaced once
+ *
+ * The jitter is paid before the first candidate only. Each failover used to wait a whole window again,
+ * so a request that met a spent quota cost two jitters and one that went three providers deep cost
+ * three — the delay meant to make requests look unhurried was making failures slow.
  */
 export async function executeWithFailover(
   candidates: RoutingCandidate[],
@@ -75,7 +85,7 @@ export async function executeWithFailover(
     const next = remaining > 0 ? `, trying ${candidates[index + 1]!.provider.id}` : '';
 
     try {
-      const response = await executeProviderRequest(candidate.provider, buildParams(candidate));
+      const response = await executeProviderRequest(candidate.provider, buildParams(candidate), { jitter: index === 0 });
       const result = { response, provider: candidate.provider, modelSpec: candidate.modelSpec };
 
       if (response.ok || !worthAnotherProvider(response.status)) {
