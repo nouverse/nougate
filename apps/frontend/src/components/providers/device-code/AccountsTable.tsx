@@ -28,7 +28,7 @@ export function AccountsTable({
         <thead>
           <tr className="border-b border-base-300 text-base-content/50">
             <th className="w-8"></th>
-            <th>GitHub Username</th>
+            <th>Account</th>
             <th>Health</th>
             <th>Last Active</th>
             <th className="text-right">Actions</th>

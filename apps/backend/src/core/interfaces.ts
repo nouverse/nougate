@@ -209,9 +209,25 @@ export interface IProvider {
   resetAccount?(accountId: string): Promise<void>;
   markAccountCooldown?(accountId: string, pool: string, duration?: string): Promise<void>;
   getCooldowns?(): Record<string, number>;
+  /**
+   * Accounts are added through `addAccount`. A `device-code` provider answers an empty body with
+   * `{ step: 'device_flow', device_code, user_code, verification_uri, … }`, and a body of
+   * `{ token }` with the stored account — the pasted-credential path every device-code provider
+   * offers beside the login.
+   */
   addAccount?(body: any): Promise<any>;
+  /**
+   * Poll a device login started by `addAccount({})`. Required by `accountFlow: 'device-code'`, and
+   * reached through the provider-agnostic `/api/providers/:id/device-status` route.
+   */
+  completeDeviceFlow?(deviceCode: string): Promise<DeviceFlowPollResult>;
   handleAccountAction?(accountId: string, action: string, payload?: any): Promise<any>;
 }
+
+/** What a device-login poll reports back to the dashboard. */
+export type DeviceFlowPollResult =
+  | { status: 'success'; account: IAccount }
+  | { status: 'pending' | 'expired'; error?: string };
 
 export interface ProviderExecuteParams {
   protocol: 'openai' | 'anthropic';

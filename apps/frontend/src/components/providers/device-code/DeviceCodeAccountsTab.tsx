@@ -9,11 +9,21 @@ import { AccountCard } from './AccountCard';
 import { Plus, Shield } from 'lucide-react';
 
 interface Props {
+  providerId: string;
+  displayName: string;
   accounts: Account[];
   refreshQueries: () => void;
 }
 
-export function CopilotAccountsTab({ accounts, refreshQueries }: Props) {
+/**
+ * Accounts tab for any provider declaring `accountFlow: 'device-code'`.
+ *
+ * The provider answers an empty add-account body with a device code, is polled through
+ * `/api/providers/:id/device-status`, and takes a pasted credential as `{ token }`. Nothing here
+ * knows which provider it is talking to beyond the id and the name it displays.
+ */
+export function DeviceCodeAccountsTab({ providerId, displayName, accounts, refreshQueries }: Props) {
+  const base = `/api/providers/${encodeURIComponent(providerId)}`;
   const [toast, setToast] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
@@ -44,7 +54,7 @@ export function CopilotAccountsTab({ accounts, refreshQueries }: Props) {
 
     try {
       const res = await api.get<{ status: string; error?: string; account?: any }>(
-        `/api/providers/copilot/device-status?device_code=${deviceFlowData.device_code}`
+        `${base}/device-status?device_code=${encodeURIComponent(deviceFlowData.device_code)}`
       );
 
       if (res?.status === 'success') {
@@ -53,7 +63,7 @@ export function CopilotAccountsTab({ accounts, refreshQueries }: Props) {
         setDeviceFlowData(null);
         refreshQueries();
       } else if (res?.status === 'pending') {
-        setAuthError('Authentication is still pending on GitHub. Please make sure you have approved the activation code in your browser first.');
+        setAuthError('Sign-in is still pending. Approve the activation code in your browser first, then verify again.');
       } else {
         setAuthError(res.error || 'Device flow expired or failed.');
       }
@@ -71,7 +81,7 @@ export function CopilotAccountsTab({ accounts, refreshQueries }: Props) {
       setPastedUrl('');
       setIsAuthenticating(true);
 
-      const res = await api.post<any>(`/api/providers/copilot/accounts/add`, {});
+      const res = await api.post<any>(`${base}/accounts/add`, {});
       if (res?.step === 'device_flow') {
         setDeviceFlowData(res);
         setShowAuthModal(true);
@@ -91,8 +101,8 @@ export function CopilotAccountsTab({ accounts, refreshQueries }: Props) {
 
     try {
       const res = await api.post<any>(
-        `/api/providers/copilot/accounts/add`,
-        { personalToken: pastedUrl.trim() }
+        `${base}/accounts/add`,
+        { token: pastedUrl.trim() }
       );
 
       if (res?.id) {
@@ -112,7 +122,7 @@ export function CopilotAccountsTab({ accounts, refreshQueries }: Props) {
   };
 
   const cooldownMutation = useMutation({
-    mutationFn: (id: string) => api.post(`/api/providers/copilot/accounts/${id}/action`, { action: 'cooldown', payload: { pool: 'cli' } }),
+    mutationFn: (id: string) => api.post(`${base}/accounts/${encodeURIComponent(id)}/action`, { action: 'cooldown', payload: { pool: 'cli' } }),
     onSuccess: () => {
       showToast('Cooldown triggered for account!');
       refreshQueries();
@@ -120,7 +130,7 @@ export function CopilotAccountsTab({ accounts, refreshQueries }: Props) {
   });
 
   const resetMutation = useMutation({
-    mutationFn: (id: string) => api.post(`/api/providers/copilot/accounts/${id}/action`, { action: 'reset' }),
+    mutationFn: (id: string) => api.post(`${base}/accounts/${encodeURIComponent(id)}/action`, { action: 'reset' }),
     onSuccess: () => {
       showToast('Account state reset successfully!');
       refreshQueries();
@@ -128,7 +138,7 @@ export function CopilotAccountsTab({ accounts, refreshQueries }: Props) {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => api.delete(`/api/providers/copilot/accounts/${id}`),
+    mutationFn: (id: string) => api.delete(`${base}/accounts/${encodeURIComponent(id)}`),
     onSuccess: () => {
       showToast('Account deleted successfully!');
       setDeleteId(null);
@@ -203,24 +213,24 @@ export function CopilotAccountsTab({ accounts, refreshQueries }: Props) {
         <div className="modal-box rounded-2xl border border-base-300 shadow-xl bg-base-100 max-w-md text-base-content">
           <h3 className="font-extrabold text-lg flex items-center gap-2">
             <Shield className="w-5 h-5 text-primary animate-pulse" />
-            Add GitHub Copilot Account
+            Add {displayName} Account
           </h3>
           <p className="text-xs text-base-content/50 mt-1 font-sans">
-            Authorize via GitHub Device Flow or paste personal token manually.
+            Sign in with a device code, or paste a credential manually.
           </p>
 
           <div className="mt-5 space-y-5 font-sans">
             {deviceFlowData && (
               <div className="bg-base-200 p-4 rounded-xl border border-base-300 space-y-3">
                 <div className="text-center space-y-1">
-                  <span className="text-[10px] text-base-content/40 font-bold uppercase tracking-wider">GitHub Activation Code</span>
+                  <span className="text-[10px] text-base-content/40 font-bold uppercase tracking-wider">Activation Code</span>
                   <div className="text-2xl font-mono font-black text-primary tracking-widest bg-base-300 py-2 px-4 rounded-lg select-all border border-base-300">
                     {deviceFlowData.user_code}
                   </div>
                 </div>
 
                 <a
-                  href={deviceFlowData.verification_uri}
+                  href={deviceFlowData.verification_uri_complete || deviceFlowData.verification_uri}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="btn btn-sm btn-primary rounded-xl font-bold w-full gap-1.5 flex items-center justify-center shadow shadow-primary/20 hover:scale-[1.02] transition-transform mt-2"
@@ -253,10 +263,10 @@ export function CopilotAccountsTab({ accounts, refreshQueries }: Props) {
             )}
 
             <div className="border-t border-base-300 pt-4 space-y-3">
-              <span className="text-xs font-bold block mb-1 text-base-content/75">Or paste GitHub Copilot token manually:</span>
+              <span className="text-xs font-bold block mb-1 text-base-content/75">Or paste a token manually:</span>
               <textarea
                 className="textarea textarea-bordered bg-base-300 font-mono text-xs w-full h-24 focus:outline-none placeholder-base-content/30 leading-relaxed border-base-300"
-                placeholder="Paste ghu_... token here"
+                placeholder="Paste a token here"
                 value={pastedUrl}
                 onChange={(e) => setPastedUrl(e.target.value)}
               />

@@ -19,7 +19,7 @@ process.env.INITIAL_ADMIN_PASSWORD = ADMIN_PASSWORD;
 
 const { loadProxyConfig } = await import("@/config/manager");
 const { initDb, closeDb } = await import("@/core/db");
-const { getSessionSecret } = await import("@/auth/config");
+const { getSessionSecret, resetSessionSecretForTesting } = await import("@/auth/config");
 const { enforceDashboardAuth } = await import("@/auth/guard");
 const { handleAuthRoute } = await import("@/router/auth");
 const { handleUsersRoute } = await import("@/router/users");
@@ -74,6 +74,7 @@ let owner: { id: string; username: string };
 let ownerCookie: string;
 
 beforeAll(async () => {
+  await closeDb();
   await loadProxyConfig();
   await initDb();
   await users.initUsers();
@@ -373,6 +374,7 @@ describe("Session cookie", () => {
 
   test("generates and reuses a signing secret when SESSION_SECRET is unset", async () => {
     delete process.env.SESSION_SECRET;
+    resetSessionSecretForTesting();
 
     const generated = getSessionSecret();
     expect(generated).toBeTruthy();
@@ -384,6 +386,7 @@ describe("Session cookie", () => {
     expect(getSessionSecret()).toBe(generated!);
 
     process.env.SESSION_SECRET = SESSION_SECRET;
+    resetSessionSecretForTesting();
     expect(getSessionSecret()).toBe(SESSION_SECRET);
   });
 });

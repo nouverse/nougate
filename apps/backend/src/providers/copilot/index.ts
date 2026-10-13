@@ -1,5 +1,6 @@
 import type {
   AccountRequestOptions,
+  DeviceFlowPollResult,
   IAccount,
   IModelRegistry,
   IProvider,
@@ -235,14 +236,16 @@ export class CopilotProvider implements IProvider {
       };
     }
 
-    if (body.personalToken) {
-      const profile = await getGitHubProfile(body.personalToken);
+    // `token` is the pasted-credential field every device-code provider shares.
+    if (typeof body.token === 'string' && body.token.trim()) {
+      const personalToken = body.token.trim();
+      const profile = await getGitHubProfile(personalToken);
       const id = profile.login;
       
       const account: CopilotAccount = {
         id,
         providerId: 'copilot',
-        personalToken: body.personalToken,
+        personalToken,
         githubUsername: profile.login,
         email: profile.email || undefined,
         healthScore: 100,
@@ -254,10 +257,10 @@ export class CopilotProvider implements IProvider {
       return this.mapAccount(account);
     }
 
-    throw new Error('Invalid request body. Expected empty body to start device flow or personalToken for manual add.');
+    throw new Error('Invalid request body. Expected an empty body to start device flow, or { token } to add a pasted token.');
   }
 
-  async completeDeviceFlow(deviceCode: string): Promise<any> {
+  async completeDeviceFlow(deviceCode: string): Promise<DeviceFlowPollResult> {
     const result = await pollDeviceFlow(deviceCode);
     if ('error' in result) {
       return {

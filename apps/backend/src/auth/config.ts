@@ -4,11 +4,17 @@ import { dataPath } from "@/core/paths";
 
 // Overridable so tests (and unusual deployments) can keep the secret out of the
 // shared data directory.
-const SECRET_PATH = process.env.SESSION_SECRET_FILE || dataPath(".session-secret");
+export function getSecretPath(): string {
+  return process.env.SESSION_SECRET_FILE || dataPath(".session-secret");
+}
 
 const DEFAULT_SESSION_TTL_HOURS = 168;
 
 let cachedSecret: string | null = null;
+
+export function resetSessionSecretForTesting(): void {
+  cachedSecret = null;
+}
 
 /**
  * How long an issued session cookie stays valid.
@@ -35,9 +41,11 @@ export function getSessionSecret(): string | null {
     return cachedSecret;
   }
 
+  const secretPath = getSecretPath();
+
   try {
-    if (existsSync(SECRET_PATH)) {
-      const stored = readFileSync(SECRET_PATH, "utf8").trim();
+    if (existsSync(secretPath)) {
+      const stored = readFileSync(secretPath, "utf8").trim();
       if (stored) {
         cachedSecret = stored;
         return cachedSecret;
@@ -45,17 +53,17 @@ export function getSessionSecret(): string | null {
     }
 
     const generated = randomBytes(32).toString("base64");
-    writeFileSync(SECRET_PATH, `${generated}\n`, { mode: 0o600 });
+    writeFileSync(secretPath, `${generated}\n`, { mode: 0o600 });
     cachedSecret = generated;
-    console.log(`[Auth] Generated a session signing secret at ${SECRET_PATH}`);
+    console.log(`[Auth] Generated a session signing secret at ${secretPath}`);
     return cachedSecret;
   } catch (error) {
     console.error(
-      `[Auth] Could not read or create ${SECRET_PATH}. Set SESSION_SECRET instead:`,
+      `[Auth] Could not read or create ${secretPath}. Set SESSION_SECRET instead:`,
       error,
     );
     return null;
   }
 }
 
-export { SECRET_PATH };
+export const SECRET_PATH = getSecretPath();

@@ -6,7 +6,7 @@ import { api } from '@/lib/api';
 import { QuotaGrid } from '@/components/providers/shared/QuotaGrid';
 import { ModelRegistryTable } from '@/components/providers/shared/ModelRegistryTable';
 import { OAuthAccountsTab } from '@/components/providers/shared/OAuthAccountsTab';
-import { CopilotAccountsTab } from '@/components/providers/copilot/CopilotAccountsTab';
+import { DeviceCodeAccountsTab } from '@/components/providers/device-code/DeviceCodeAccountsTab';
 import { ApiKeyAccountsTab } from '@/components/providers/shared/ApiKeyAccountsTab';
 import { ProviderOverviewTab } from '@/components/providers/shared/ProviderOverviewTab';
 import { JsonEditor } from '@/components/shared/JsonEditor';
@@ -158,7 +158,12 @@ function ProviderPage() {
               flow={accountFlow}
             />
           ) : accountFlow === 'device-code' ? (
-            <CopilotAccountsTab accounts={detail.accounts} refreshQueries={refreshQueries} />
+            <DeviceCodeAccountsTab
+              providerId={detail.id}
+              displayName={detail.displayName}
+              accounts={detail.accounts}
+              refreshQueries={refreshQueries}
+            />
           ) : accountFlow === 'oauth-redirect' ? (
             <OAuthAccountsTab
               providerId={detail.id}

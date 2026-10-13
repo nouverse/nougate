@@ -530,13 +530,13 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
 
   if (url.pathname.startsWith("/api/providers/") && req.method === "GET") {
     const parts = url.pathname.split("/");
-    // GET /api/providers/copilot/device-status
-    if (parts.length === 5 && parts[3] === "copilot" && parts[4] === "device-status") {
+    // GET /api/providers/:id/device-status — any provider with the capability, none by name.
+    if (parts.length === 5 && parts[4] === "device-status") {
       const deviceCode = url.searchParams.get("device_code");
       if (!deviceCode) {
         return new Response("Missing device_code", { status: 400 });
       }
-      const p = getProvider("copilot") as any;
+      const p = getProvider(parts[3]!);
       if (!p || typeof p.completeDeviceFlow !== "function") {
         return new Response("Device flow not supported on this provider", { status: 400 });
       }
@@ -544,7 +544,7 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
         const result = await p.completeDeviceFlow(deviceCode);
         return createJsonResponse(result);
       } catch (error: any) {
-        // The device flow can succeed at GitHub and still be refused here — the
+        // The device flow can succeed upstream and still be refused here — the
         // account cap is checked when the account is stored, not when the code
         // is issued — so the status has to carry through.
         return createJsonResponse({ error: error.message || error }, error?.status ?? 400);

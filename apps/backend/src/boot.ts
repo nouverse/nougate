@@ -24,6 +24,7 @@ import { AntigravityProvider } from "@/providers/antigravity";
 import { CopilotProvider } from "@/providers/copilot";
 import { ClaudeCodeProvider } from "@/providers/claudecode";
 import { CodexProvider } from "@/providers/codex";
+import { KiroProvider } from "@/providers/kiro";
 import { registerOpenAIProtocol } from "@/protocols/openai";
 import { registerAnthropicProtocol } from "@/protocols/anthropic";
 import { handleRequest } from "@/router";
@@ -73,6 +74,10 @@ export async function boot(): Promise<(req: Request) => Response | Promise<Respo
   const copilotProvider = new CopilotProvider();
   await copilotProvider.init();
   registerProvider(copilotProvider);
+
+  const kiroProvider = new KiroProvider();
+  await kiroProvider.init();
+  registerProvider(kiroProvider);
 
   // Registered last so a custom provider can never shadow a built-in ID.
   await initCustomProviders();
