@@ -1,5 +1,5 @@
 import { cacheSignature, cacheSignatureByCallId, cacheSessionSignature, cacheThinkingFamily, cacheSessionReasoning } from "@/providers/antigravity/utils/signature-cache";
-import { anthropicCacheUsage, cacheReadTokens } from "@/core/usage-cache";
+import { anthropicUsageFromTotal, cacheReadTokens } from "@/core/usage-cache";
 import { getFamilyName } from "@/providers/antigravity/auth/manager";
 
 /**
@@ -145,9 +145,9 @@ export function createAnthropicStreamTransformer(model: string, messageId: strin
               type: "message_delta",
               delta: { stop_reason: stopReason, stop_sequence: null },
               usage: {
-                input_tokens: usage?.promptTokenCount ?? 0,
+                // `promptTokenCount` includes `cachedContentTokenCount`; Anthropic's `input_tokens` does not.
+                ...anthropicUsageFromTotal(usage?.promptTokenCount ?? 0, cacheReadTokens(usage)),
                 output_tokens: usage?.candidatesTokenCount ?? 0,
-                ...anthropicCacheUsage(cacheReadTokens(usage)),
               },
             })));
           }
@@ -265,9 +265,9 @@ export function createAnthropicStreamTransformer(model: string, messageId: strin
                 type: "message_delta",
                 delta: { stop_reason: stopReason, stop_sequence: null },
                 usage: {
-                  input_tokens: usage?.promptTokenCount ?? 0,
+                  // `promptTokenCount` includes `cachedContentTokenCount`; Anthropic's `input_tokens` does not.
+                  ...anthropicUsageFromTotal(usage?.promptTokenCount ?? 0, cacheReadTokens(usage)),
                   output_tokens: usage?.candidatesTokenCount ?? 0,
-                  ...anthropicCacheUsage(cacheReadTokens(usage)),
                 },
               })));
             }
@@ -401,9 +401,8 @@ export async function aggregateAnthropicResponse(
     stop_reason: toolUses.length > 0 ? "tool_use" : stopReason,
     stop_sequence: null,
     usage: {
-      input_tokens: inputTokens,
+      ...anthropicUsageFromTotal(inputTokens, cachedTokens),
       output_tokens: outputTokens,
-      ...anthropicCacheUsage(cachedTokens),
     },
   };
 }

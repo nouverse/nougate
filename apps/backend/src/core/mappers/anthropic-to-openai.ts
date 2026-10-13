@@ -5,7 +5,7 @@
  * dialect (GitHub Copilot, and any user-defined custom provider set to the
  * "openai" API style).
  */
-import { anthropicCacheUsage, cacheReadTokens } from "@/core/usage-cache";
+import { anthropicUsageFromTotal, cacheReadTokens } from "@/core/usage-cache";
 import { getCavemanPrompt } from '@/core/caveman';
 
 /**
@@ -214,11 +214,11 @@ export function createOpenAIToAnthropicStreamTransformer(model: string, messageI
       type: 'message_delta',
       delta: { stop_reason: stopReason, stop_sequence: null },
       usage: {
-        input_tokens: inputTokens,
-        output_tokens: outputTokens,
         // A real OpenAI upstream caches automatically and reports the hit under
-        // `prompt_tokens_details`; an Anthropic client only understands `cache_read_input_tokens`.
-        ...anthropicCacheUsage(cachedTokens),
+        // `prompt_tokens_details`, as a subset of `prompt_tokens`; an Anthropic client expects
+        // `input_tokens` to exclude it and `cache_read_input_tokens` beside it.
+        ...anthropicUsageFromTotal(inputTokens, cachedTokens),
+        output_tokens: outputTokens,
       },
     })));
     controller.enqueue(encoder.encode(sseEvent('message_stop', { type: 'message_stop' })));
@@ -432,7 +432,8 @@ export async function finalizeOpenAIToAnthropicResponse(openaiRes: Response, mod
     stop_reason: stopReason,
     stop_sequence: null,
     usage: {
-      input_tokens: data.usage?.prompt_tokens || 0,
+      // Same split as the streaming path — see `anthropicUsageFromTotal`.
+      ...anthropicUsageFromTotal(data.usage?.prompt_tokens || 0, cacheReadTokens(data.usage)),
       output_tokens: data.usage?.completion_tokens || 0,
     }
   };

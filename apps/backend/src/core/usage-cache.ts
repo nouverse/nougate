@@ -109,3 +109,21 @@ export function promptTokens(usage: any): number | undefined {
   }
   return undefined;
 }
+
+/**
+ * An Anthropic `usage` block built from a prompt **total** — the inverse of `promptTokens`.
+ *
+ * Every upstream that reaches an Anthropic-shaped client through a mapper (OpenAI, Gemini / Cloud
+ * Code) reports the whole prompt and names the cached part as a subset of it. Anthropic does not:
+ * `input_tokens` is only what the cache did *not* serve. Copying the total into `input_tokens` and
+ * then adding `cache_read_input_tokens` beside it counted every hit twice — once at full price in
+ * `input_tokens`, again in the cache field — and `promptTokens` on the way into the metrics summed
+ * the two, so a 10,000-token prompt with 8,000 cached was logged and billed as 18,000.
+ *
+ * Clamped at zero because the total and the cached count come from different fields, and an
+ * upstream that rounds them differently must not produce a negative `input_tokens`.
+ */
+export function anthropicUsageFromTotal(promptTotal: number, cached: number | undefined) {
+  const uncached = typeof cached === 'number' ? Math.max(0, promptTotal - cached) : promptTotal;
+  return { input_tokens: uncached, ...anthropicCacheUsage(cached) };
+}

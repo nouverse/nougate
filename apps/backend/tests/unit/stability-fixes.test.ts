@@ -166,8 +166,10 @@ describe('usage figures say when they were guessed', () => {
     // Matched on the field rather than on the whole one-line literal it used to be. The usage block
     // now also spreads a cache-read count (`core/usage-cache.ts`), which moved it onto several lines
     // and broke a regex that was only ever standing in for "input_tokens is emitted here".
+    // It is now emitted by `anthropicUsageFromTotal`, which splits the cached part back out of the
+    // total; the numbers themselves are pinned in `anthropic-cache-double-count.test.ts`.
     const text = src('core/mappers/anthropic-to-openai.ts');
-    const deltas = text.match(/input_tokens: inputTokens/g) ?? [];
+    const deltas = text.match(/anthropicUsageFromTotal\(inputTokens/g) ?? [];
     expect(deltas.length).toBeGreaterThanOrEqual(1);
     expect(text).not.toContain('usage: { output_tokens: outputTokens },');
     // And still only one place emits it, so the two exit paths cannot drift apart again.
