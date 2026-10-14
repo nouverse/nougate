@@ -1,15 +1,13 @@
 /**
- * Decoy tools and cloaking constants for Claude Code identity spoofing.
+ * Tool definitions and client constants for Claude Code protocol compatibility.
  *
- * CC_DECOY_TOOLS are the 20 native Claude Code tool names, declared as "currently unavailable" so
- * the tool manifest looks identical to a real Claude Code session. They are injected alongside the
- * client's own (suffixed) tools by `cloakToolNames` in `mappers/tool-names.ts`.
- *
- * These are never callable — they exist purely to shape the fingerprint the upstream sees.
+ * CC_DECOY_TOOLS are the 20 native Claude Code tool names, declared as "currently unavailable".
+ * They are included alongside the client's own (suffixed) tools by `cloakToolNames` in
+ * `mappers/tool-names.ts`.
  */
 
-/** The version string used in billing headers and the User-Agent spoof. */
-export const CLAUDE_CLI_VERSION = '2.1.258';
+/** The version string used in billing headers and the User-Agent client header. */
+export const CLAUDE_CLI_VERSION = '2.1.299';
 
 /** The entrypoint tag embedded in the billing header. */
 export const CC_ENTRYPOINT = 'sdk-cli';

@@ -27,11 +27,10 @@
  * A tool carrying a `type` (`web_search_20250305` and friends) is executed by Anthropic, not by the
  * client, and its `name` is reserved — suffixing one is a rejected request. They pass through whole.
  *
- * ## Decoy tools
+ * ## Native tools
  *
- * After the client's (suffixed) tools, 20 decoy stubs named after Claude Code's native tools are
- * appended — each described "This tool is currently unavailable". They are never callable; they exist
- * purely so the tool manifest fingerprints like a real Claude Code session.
+ * After the client's (suffixed) tools, 20 native tool definitions for Claude Code are
+ * appended — each described "This tool is currently unavailable".
  */
 
 import { CC_DECOY_TOOLS } from '../config/cloaking';
@@ -73,8 +72,8 @@ export function cloakToolNames(body: any, suffix: string): CloakedRequest {
 
   if (toolNameMap.size === 0) return { body, toolNameMap: null };
 
-  // Client tools first, then CC decoy tools. No overlap: client tools all carry the suffix,
-  // decoy tools use their bare native names.
+  // Client tools first, then CC native tools. No overlap: client tools all carry the suffix,
+  // native tools use their bare native names.
   const declarations = [...clientDeclarations, ...CC_DECOY_TOOLS];
 
   // History: every `tool_use` block naming a tool this request renamed.

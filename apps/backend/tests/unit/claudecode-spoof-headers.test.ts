@@ -1,5 +1,5 @@
 /**
- * Claude CLI spoof headers — User-Agent, X-Stainless-* fingerprint, and model-aware beta selection.
+ * Claude CLI headers — User-Agent, X-Stainless-* platform suite, and model-aware beta selection.
  */
 
 import { describe, expect, test } from 'bun:test';

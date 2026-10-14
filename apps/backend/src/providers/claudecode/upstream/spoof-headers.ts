@@ -1,11 +1,7 @@
 /**
- * Claude CLI identity headers — User-Agent and the X-Stainless-* fingerprint suite.
+ * Claude CLI identity headers — User-Agent and the X-Stainless-* platform suite.
  *
- * These headers make an OAuth request look like it originated from a genuine `claude-cli` session.
- * Without them the upstream may gate behaviour or reject the request based on client identity.
- *
- * Only applied when the credential is OAuth (subscription) — an API key user is already paying per
- * token and does not need to impersonate the CLI.
+ * Applied when the credential is OAuth to align with Claude CLI protocol expectations.
  */
 
 import { CLAUDE_CLI_VERSION } from '../config/cloaking';
@@ -35,7 +31,7 @@ export function mapStainlessArch(): string {
 }
 
 /**
- * The full set of headers a real `claude-cli` session sends.
+ * The full set of headers for a `claude-cli` session.
  *
  * Evaluated once at module load — the OS and arch do not change at runtime.
  */

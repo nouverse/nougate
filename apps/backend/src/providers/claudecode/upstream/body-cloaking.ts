@@ -1,14 +1,14 @@
 /**
- * Body-level Claude cloaking — billing header injection and fake metadata.
+ * Body-level Claude transformations — billing header injection and client metadata.
  *
- * These transformations make the request body look like it came from a real Claude Code session:
+ * Formats the request body according to Claude Code protocol specifications:
  *
  *   1. **Billing header** — injected as `system[0]`, a text block containing the
- *      `x-anthropic-billing-header` string the upstream expects.
- *   2. **Fake user ID** — injected into `metadata.user_id`, a JSON blob with `device_id`,
- *      `account_uuid`, and `session_id` that fingerprints like a real device.
+ *      `x-anthropic-billing-header` string expected by the upstream.
+ *   2. **User ID metadata** — injected into `metadata.user_id`, a JSON blob with `device_id`,
+ *      `account_uuid`, and `session_id`.
  *
- * Only applied for OAuth credentials — API key users are already paying per token.
+ * Applied for OAuth credentials.
  */
 
 import { createHash, randomBytes, randomUUID } from 'crypto';
@@ -31,14 +31,14 @@ export function generateBillingHeader(payload: unknown): string {
 }
 
 // ---------------------------------------------------------------------------
-// Fake user ID
+// User ID metadata
 // ---------------------------------------------------------------------------
 
 /**
  * Derive a deterministic UUID-v4-shaped string from a seed.
  *
- * Stable per seed — the same API key always produces the same UUID, which is what makes the
- * device fingerprint consistent across requests.
+ * Stable per seed — the same API key always produces the same UUID, ensuring
+ * consistency across requests.
  */
 export function deriveUuid(seed: string): string {
   const h = createHash('sha256').update(seed).digest('hex');
@@ -46,7 +46,7 @@ export function deriveUuid(seed: string): string {
 }
 
 /**
- * Generate a fake user ID in the Claude Code JSON format.
+ * Generate user ID metadata in the Claude Code JSON format.
  *
  * ```json
  * {"device_id":"<64hex>","account_uuid":"<uuid>","session_id":"<uuid>"}
@@ -69,13 +69,13 @@ export function generateFakeUserID(sessionId: string | undefined, apiKey: string
 // ---------------------------------------------------------------------------
 
 /**
- * Apply Claude cloaking to a request body.
+ * Apply Claude request body transformations.
  *
  * 1. Injects the billing header as `system[0]` (preserving existing system blocks).
- * 2. Injects a fake `metadata.user_id` (skipped if one is already present).
+ * 2. Injects `metadata.user_id` (skipped if one is already present).
  *
  * @param body     - The Anthropic Messages API request body.
- * @param isOAuth  - Whether the credential is OAuth. Cloaking is skipped for API keys.
+ * @param isOAuth  - Whether the credential is OAuth.
  * @param sessionId - Session ID to align with `X-Claude-Code-Session-Id` header.
  * @param credential - The credential string, used to derive stable device fingerprints.
  */
@@ -104,7 +104,7 @@ export function applyCloaking(
     result.system = [billingBlock];
   }
 
-  // --- Fake user ID in metadata ---
+  // --- User ID in metadata ---
   if (!result.metadata?.user_id) {
     result.metadata = { ...result.metadata, user_id: generateFakeUserID(sessionId, credential) };
   }

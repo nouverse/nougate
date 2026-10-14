@@ -159,7 +159,7 @@ export class ClaudeCodeProvider implements IProvider {
           upstreamModelId,
         ),
       );
-      // Body-level cloaking (billing header + fake user_id) runs after tool cloaking so the billing
+      // Body-level transformations (billing header + user_id metadata) run after tool name mapping so the billing
       // hash covers the final payload shape. Gated on OAuth credential via the executor's account.
       const upstreamBody = this.applyBodyCloaking(cloakedBody, ctx);
 
@@ -206,12 +206,11 @@ export class ClaudeCodeProvider implements IProvider {
   }
 
   /**
-   * Apply body-level cloaking: billing header as system[0] + fake metadata.user_id.
+   * Apply body-level transformations: billing header as system[0] + metadata.user_id.
    *
    * Always runs (the function itself gates on OAuth), so both protocol paths get it without drift.
    * The credential for the "is this OAuth?" check comes from the best account in the pool — the same
-   * one the executor will pick. When no accounts exist, cloaking is skipped (there is nothing to
-   * impersonate with).
+   * one the executor will pick. When no accounts exist, transformation is skipped.
    */
   private applyBodyCloaking(body: unknown, ctx: { clientId?: string; sessionId?: string }): unknown {
     const accounts = getAccounts();

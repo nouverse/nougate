@@ -92,8 +92,7 @@ export function buildRequestHeaders(credential: string, model?: string): Record<
     ...(betas.size > 0 ? { 'anthropic-beta': [...betas].join(',') } : {}),
   };
 
-  // OAuth credentials get the full Claude CLI spoof headers (User-Agent, X-Stainless-*, etc.).
-  // API key users should not impersonate the CLI — they are already paying per token.
+  // OAuth credentials get the full Claude CLI client headers (User-Agent, X-Stainless-*, etc.).
   if (isOAuth) {
     return { ...CLAUDE_CLI_SPOOF_HEADERS, ...base };
   }

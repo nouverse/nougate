@@ -1,5 +1,5 @@
 /**
- * Body-level Claude cloaking — billing header injection, fake user ID, and applyCloaking.
+ * Body-level Claude transformations — billing header injection, user ID metadata, and applyCloaking.
  */
 
 import { describe, expect, test } from 'bun:test';
@@ -13,7 +13,7 @@ import {
 describe('generateBillingHeader', () => {
   test('format matches cc_version=<ver>.<build>; cc_entrypoint=sdk-cli; cch=<hash>;', () => {
     const header = generateBillingHeader({ model: 'claude-sonnet-4-20250514' });
-    expect(header).toStartWith('x-anthropic-billing-header: cc_version=2.1.258.');
+    expect(header).toStartWith('x-anthropic-billing-header: cc_version=2.1.299.');
     expect(header).toContain('cc_entrypoint=sdk-cli');
     expect(header).toMatch(/cch=[a-f0-9]{5};$/);
   });
