@@ -1,4 +1,4 @@
-import { getImpersonationHeaders, generateFingerprint } from "@/providers/antigravity/upstream/headers.ts";
+import { getClientHeaders, generateFingerprint } from "@/providers/antigravity/upstream/headers.ts";
 import { getAccounts, saveAccounts } from "@/providers/antigravity/auth/manager";
 import { refreshAccessToken } from "@/providers/antigravity/auth/oauth";
 import { type AntigravityAccount } from "@/providers/antigravity/auth/types";
@@ -14,7 +14,7 @@ export async function fetchQuota(account: AntigravityAccount, retry = true): Pro
     const res = await fetch("https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels", {
       method: "POST",
       headers: {
-        ...getImpersonationHeaders(account.accessToken, account.fingerprint),
+        ...getClientHeaders(account.accessToken, account.fingerprint),
         "User-Agent": "antigravity",
       },
       body: JSON.stringify({

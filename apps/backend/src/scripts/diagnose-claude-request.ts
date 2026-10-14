@@ -13,7 +13,7 @@
 import { initManager, getAccounts } from '@/providers/claudecode/auth/manager';
 import { loadClaudeCodeConfig, getClaudeCodeConfig } from '@/providers/claudecode/config/provider-config';
 import { buildRequestHeaders, DEFAULT_BETA_FEATURES } from '@/providers/claudecode/upstream/headers';
-import { cloakToolNames } from '@/providers/claudecode/mappers/tool-names';
+import { adaptToolNames } from '@/providers/claudecode/mappers/tool-names';
 
 const withTools = process.argv.includes('--tools');
 
@@ -45,8 +45,8 @@ if (withTools) {
   ];
 }
 
-const { body, toolNameMap } = config.cloakToolNames
-  ? cloakToolNames(baseBody, config.toolNameSuffix)
+const { body, toolNameMap } = config.adaptToolNames
+  ? adaptToolNames(baseBody, config.toolNameSuffix)
   : { body: baseBody, toolNameMap: null };
 
 if (toolNameMap) console.log(`renamed    : ${[...toolNameMap.keys()].join(', ')}`);

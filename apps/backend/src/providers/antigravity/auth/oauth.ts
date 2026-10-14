@@ -1,5 +1,5 @@
 import { type GoogleTokenResponse } from "@/providers/antigravity/auth/types";
-import { OAUTH_CONFIG, getImpersonationHeaders } from "@/providers/antigravity/upstream/headers";
+import { OAUTH_CONFIG, getClientHeaders } from "@/providers/antigravity/upstream/headers";
 
 export function generateAuthUrl(): string {
   const params = new URLSearchParams({
@@ -61,7 +61,7 @@ export async function getProjectId(accessToken: string): Promise<string> {
     try {
       const res = await fetch("https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist", {
         method: "POST",
-        headers: getImpersonationHeaders(accessToken),
+        headers: getClientHeaders(accessToken),
         body: JSON.stringify({
           metadata: { ideType: ideType, platform: "PLATFORM_UNSPECIFIED", pluginType: "GEMINI" }
         })

@@ -19,7 +19,7 @@ import {
   type AntigravityEndpoints,
 } from "@/providers/antigravity/upstream/endpoints";
 import { parseGoogleError } from "@/providers/antigravity/upstream/errors";
-import { getGeminiCliHeaders, getImpersonationHeaders } from "@/providers/antigravity/upstream/headers";
+import { getGeminiCliHeaders, getClientHeaders } from "@/providers/antigravity/upstream/headers";
 import { parseRetryDelay } from "@/providers/antigravity/utils/retry";
 
 /**
@@ -360,7 +360,7 @@ export class AntigravityExecutor {
       const headers =
         useCliPool && !isClaudeTarget
           ? getGeminiCliHeaders(account.accessToken, account.fingerprint!)
-          : getImpersonationHeaders(account.accessToken, account.fingerprint!, googleBody.model);
+          : getClientHeaders(account.accessToken, account.fingerprint!, googleBody.model);
 
       console.log(
         `[Request] Model: ${options.model} | Account: ${account.email} | Project: ${account.projectId} | Attempt: ${attempts}/${maxAttempts} | Pool: ${pool === "cli" ? "CLI" : "Sandbox"} | Endpoint: ${googleUrl.split("/")[2]} | Target Model: ${googleBody.model}`,

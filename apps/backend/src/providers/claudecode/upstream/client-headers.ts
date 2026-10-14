@@ -4,7 +4,7 @@
  * Applied when the credential is OAuth to align with Claude CLI protocol expectations.
  */
 
-import { CLAUDE_CLI_VERSION } from '../config/cloaking';
+import { CLAUDE_CLI_VERSION } from '../config/constants';
 
 // ---------------------------------------------------------------------------
 // Stainless OS/Arch fingerprint — maps the host to the strings the real SDK emits.
@@ -35,7 +35,7 @@ export function mapStainlessArch(): string {
  *
  * Evaluated once at module load — the OS and arch do not change at runtime.
  */
-export const CLAUDE_CLI_SPOOF_HEADERS: Readonly<Record<string, string>> = {
+export const CLAUDE_CLI_HEADERS: Readonly<Record<string, string>> = {
   'User-Agent': `claude-cli/${CLAUDE_CLI_VERSION} (external, sdk-cli)`,
   'Anthropic-Dangerous-Direct-Browser-Access': 'true',
   'X-App': 'cli',

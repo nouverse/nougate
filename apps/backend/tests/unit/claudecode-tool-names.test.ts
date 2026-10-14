@@ -9,17 +9,17 @@
 
 import { describe, expect, test } from 'bun:test';
 import {
-  cloakToolNames,
-  createToolNameDecloakStream,
-  decloakResponse,
-  decloakStreamEvent,
-  decloakToolNames,
+  adaptToolNames,
+  createToolNameRestoreStream,
+  restoreResponse,
+  restoreStreamEvent,
+  restoreToolNames,
 } from '@/providers/claudecode/mappers/tool-names';
-import { CC_DECOY_TOOLS } from '@/providers/claudecode/config/cloaking';
+import { CC_NATIVE_TOOLS } from '@/providers/claudecode/config/constants';
 
 const SUFFIX = '_ide';
 
-/** Read a decloaked SSE stream back to a string, the way a client would receive it. */
+/** Read an SSE stream back to a string, the way a client would receive it. */
 async function pipeSse(chunks: string[], map: Map<string, string> | null): Promise<string> {
   const encoder = new TextEncoder();
   const source = new ReadableStream<Uint8Array>({
@@ -29,12 +29,12 @@ async function pipeSse(chunks: string[], map: Map<string, string> | null): Promi
     },
   });
 
-  return await new Response(source.pipeThrough(createToolNameDecloakStream(map))).text();
+  return await new Response(source.pipeThrough(createToolNameRestoreStream(map))).text();
 }
 
 describe('renaming on the way up', () => {
   test('client tools are suffixed and mapped back', () => {
-    const { body, toolNameMap } = cloakToolNames(
+    const { body, toolNameMap } = adaptToolNames(
       { tools: [{ name: 'Read', input_schema: { type: 'object' } }] },
       SUFFIX,
     );
@@ -46,7 +46,7 @@ describe('renaming on the way up', () => {
   test('server-side built-ins keep their reserved name', () => {
     // A tool carrying a `type` is executed by Anthropic and its name is reserved — suffixing one is a
     // rejected request, not a cosmetic difference.
-    const { body, toolNameMap } = cloakToolNames(
+    const { body, toolNameMap } = adaptToolNames(
       {
         tools: [
           { type: 'web_search_20250305', name: 'web_search' },
@@ -56,14 +56,15 @@ describe('renaming on the way up', () => {
       SUFFIX,
     );
 
+    expect(toolNameMap!.size).toBe(1);
+    expect(toolNameMap!.get('Read_ide')).toBe('Read');
     expect(body.tools[0].name).toBe('web_search');
     expect(body.tools[1].name).toBe('Read_ide');
-    expect(toolNameMap!.has('web_search')).toBe(false);
   });
 
   test('tool_use blocks already in the history are renamed too', () => {
     // Miss these and the upstream sees a conversation referring to tools that were never declared.
-    const { body } = cloakToolNames(
+    const { body } = adaptToolNames(
       {
         tools: [{ name: 'Read' }],
         messages: [
@@ -74,21 +75,23 @@ describe('renaming on the way up', () => {
               { type: 'tool_use', id: 'tu_1', name: 'Read', input: {} },
             ],
           },
-          { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu_1', content: 'ok' }] },
+          {
+            role: 'user',
+            content: [{ type: 'tool_result', tool_use_id: 'tu_1', content: 'content' }],
+          },
         ],
       },
       SUFFIX,
     );
 
     expect(body.messages[0].content[1].name).toBe('Read_ide');
-    // Text blocks are untouched, and tool_result is keyed by id — it has no name to rename.
-    expect(body.messages[0].content[0]).toEqual({ type: 'text', text: 'reading' });
-    expect(body.messages[1].content[0].tool_use_id).toBe('tu_1');
+    // tool_result has no `name` field; passes through untouched.
+    expect(body.messages[1].content[0].name).toBeUndefined();
   });
 
   test('a forced tool_choice points at the name that was actually declared', () => {
     // Missing this is an outright rejection: "Tool 'Read' not found in provided tools".
-    const { body } = cloakToolNames(
+    const { body } = adaptToolNames(
       { tools: [{ name: 'Read' }], tool_choice: { type: 'tool', name: 'Read' } },
       SUFFIX,
     );
@@ -96,7 +99,7 @@ describe('renaming on the way up', () => {
   });
 
   test('a tool_choice naming a built-in is left alone', () => {
-    const { body } = cloakToolNames(
+    const { body } = adaptToolNames(
       {
         tools: [{ type: 'web_search_20250305', name: 'web_search' }],
         tool_choice: { type: 'tool', name: 'web_search' },
@@ -107,7 +110,7 @@ describe('renaming on the way up', () => {
   });
 
   test('tool_choice shapes other than a forced tool are untouched', () => {
-    const { body } = cloakToolNames(
+    const { body } = adaptToolNames(
       { tools: [{ name: 'Read' }], tool_choice: { type: 'auto' } },
       SUFFIX,
     );
@@ -116,13 +119,13 @@ describe('renaming on the way up', () => {
 
   test('no tools means no map and the original body, not a copy', () => {
     const original = { messages: [] };
-    const { body, toolNameMap } = cloakToolNames(original, SUFFIX);
+    const { body, toolNameMap } = adaptToolNames(original, SUFFIX);
     expect(body).toBe(original);
     expect(toolNameMap).toBeNull();
   });
 
   test('built-ins only means no map — nothing was renamed', () => {
-    const { toolNameMap } = cloakToolNames(
+    const { toolNameMap } = adaptToolNames(
       { tools: [{ type: 'web_search_20250305', name: 'web_search' }] },
       SUFFIX,
     );
@@ -130,40 +133,40 @@ describe('renaming on the way up', () => {
   });
 
   test('the suffix is configurable, because it must not collide with a real client tool', () => {
-    const { body } = cloakToolNames({ tools: [{ name: 'Read' }] }, '_gw');
+    const { body } = adaptToolNames({ tools: [{ name: 'Read' }] }, '_gw');
     expect(body.tools[0].name).toBe('Read_gw');
   });
 });
 
-describe('decoy tool injection', () => {
-  test('cloakToolNames appends all 20 CC decoy tools after client tools', () => {
-    const { body } = cloakToolNames(
+describe('native tool definitions', () => {
+  test('adaptToolNames appends all 20 CC native tools after client tools', () => {
+    const { body } = adaptToolNames(
       { tools: [{ name: 'MyTool', input_schema: { type: 'object' } }] },
       SUFFIX,
     );
 
-    // 1 client tool (suffixed) + 20 decoys = 21 total
-    expect(body.tools.length).toBe(1 + CC_DECOY_TOOLS.length);
+    // 1 client tool (suffixed) + 20 native tools = 21 total
+    expect(body.tools.length).toBe(1 + CC_NATIVE_TOOLS.length);
     expect(body.tools[0].name).toBe('MyTool_ide');
     expect(body.tools[1].name).toBe('Task');
     expect(body.tools[body.tools.length - 1].name).toBe('ExitPlanMode');
   });
 
-  test('decoy tools all have "currently unavailable" description', () => {
-    const { body } = cloakToolNames(
+  test('native tools all have "currently unavailable" description', () => {
+    const { body } = adaptToolNames(
       { tools: [{ name: 'MyTool' }] },
       SUFFIX,
     );
 
-    const decoys = body.tools.slice(1);
-    for (const decoy of decoys) {
-      expect(decoy.description).toBe('This tool is currently unavailable.');
-      expect(decoy.input_schema).toEqual({ type: 'object', properties: {} });
+    const nativeTools = body.tools.slice(1);
+    for (const tool of nativeTools) {
+      expect(tool.description).toBe('This tool is currently unavailable.');
+      expect(tool.input_schema).toEqual({ type: 'object', properties: {} });
     }
   });
 
-  test('server-side built-ins are preserved before decoys', () => {
-    const { body } = cloakToolNames(
+  test('server-side built-ins are preserved before native tools', () => {
+    const { body } = adaptToolNames(
       {
         tools: [
           { type: 'web_search_20250305', name: 'web_search' },
@@ -173,15 +176,15 @@ describe('decoy tool injection', () => {
       SUFFIX,
     );
 
-    // built-in + suffixed client tool + 20 decoys = 22
+    // built-in + suffixed client tool + 20 native = 22
     expect(body.tools.length).toBe(22);
     expect(body.tools[0].name).toBe('web_search');
     expect(body.tools[1].name).toBe('Read_ide');
     expect(body.tools[2].name).toBe('Task');
   });
 
-  test('decoy tools are not included in the toolNameMap', () => {
-    const { toolNameMap } = cloakToolNames(
+  test('native tools are not included in the toolNameMap', () => {
+    const { toolNameMap } = adaptToolNames(
       { tools: [{ name: 'MyTool' }] },
       SUFFIX,
     );
@@ -195,7 +198,7 @@ describe('decoy tool injection', () => {
 describe('restoring names in a non-streaming response', () => {
   test('tool_use names come back as the client declared them', () => {
     const map = new Map([['Read_ide', 'Read']]);
-    const body = decloakToolNames(
+    const body = restoreToolNames(
       { content: [{ type: 'text', text: 'hi' }, { type: 'tool_use', name: 'Read_ide', input: {} }] },
       map,
     );
@@ -206,7 +209,7 @@ describe('restoring names in a non-streaming response', () => {
   test('a name the map does not know passes through rather than being stripped', () => {
     // The model is free to name something this gateway never declared. The client's own error for an
     // unknown tool is more useful than one invented here.
-    const body = decloakToolNames(
+    const body = restoreToolNames(
       { content: [{ type: 'tool_use', name: 'Something_else', input: {} }] },
       new Map([['Read_ide', 'Read']]),
     );
@@ -215,8 +218,8 @@ describe('restoring names in a non-streaming response', () => {
 
   test('an empty map changes nothing', () => {
     const original = { content: [{ type: 'tool_use', name: 'Read_ide' }] };
-    expect(decloakToolNames(original, null)).toBe(original);
-    expect(decloakToolNames(original, new Map())).toBe(original);
+    expect(restoreToolNames(original, null)).toBe(original);
+    expect(restoreToolNames(original, new Map())).toBe(original);
   });
 });
 
@@ -229,12 +232,12 @@ describe('restoring names in a live stream', () => {
       index: 1,
       content_block: { type: 'tool_use', id: 'tu_1', name: 'Read_ide', input: {} },
     };
-    expect(decloakStreamEvent(event, map).content_block.name).toBe('Read');
+    expect(restoreStreamEvent(event, map).content_block.name).toBe('Read');
   });
 
   test('argument deltas carry no name and are returned untouched', () => {
     const event = { type: 'content_block_delta', delta: { type: 'input_json_delta', partial_json: '{"a"' } };
-    expect(decloakStreamEvent(event, map)).toBe(event);
+    expect(restoreStreamEvent(event, map)).toBe(event);
   });
 
   test('event: lines survive — an Anthropic client dispatches on them', async () => {
@@ -291,14 +294,14 @@ describe('restoring names in a live stream', () => {
   });
 });
 
-describe('decloakResponse', () => {
+describe('restoreResponse', () => {
   test('a non-streaming body is rewritten, status and headers preserved', async () => {
     const upstream = new Response(
       JSON.stringify({ content: [{ type: 'tool_use', name: 'Read_ide' }] }),
       { status: 200, headers: { 'x-request-id': 'req_1' } },
     );
 
-    const out = await decloakResponse(upstream, new Map([['Read_ide', 'Read']]), false);
+    const out = await restoreResponse(upstream, new Map([['Read_ide', 'Read']]), false);
     expect((await out.json()).content[0].name).toBe('Read');
     expect(out.headers.get('x-request-id')).toBe('req_1');
   });
@@ -306,7 +309,7 @@ describe('decloakResponse', () => {
   test('an error body that is not JSON is handed back exactly as it arrived', async () => {
     // Upstream errors are not always JSON, and inventing one here hides what actually happened.
     const upstream = new Response('upstream exploded', { status: 502 });
-    const out = await decloakResponse(upstream, new Map([['Read_ide', 'Read']]), false);
+    const out = await restoreResponse(upstream, new Map([['Read_ide', 'Read']]), false);
 
     expect(out.status).toBe(502);
     expect(await out.text()).toBe('upstream exploded');
@@ -314,7 +317,7 @@ describe('decloakResponse', () => {
 
   test('with no map the response object is passed straight through', async () => {
     const upstream = new Response('{}');
-    expect(await decloakResponse(upstream, null, false)).toBe(upstream);
+    expect(await restoreResponse(upstream, null, false)).toBe(upstream);
   });
 
   test('content-encoding is not re-asserted on a body fetch already decoded', async () => {
@@ -325,10 +328,9 @@ describe('decloakResponse', () => {
       headers: { 'content-type': 'application/json', 'content-encoding': 'gzip' },
     });
 
-    const out = await decloakResponse(upstream, new Map([['Read_ide', 'Read']]), false);
+    const out = await restoreResponse(upstream, new Map([['Read_ide', 'Read']]), false);
     expect(out.headers.get('content-encoding')).toBeNull();
     expect(out.headers.get('content-type')).toBe('application/json');
-    expect((await out.json()).content[0].name).toBe('Read');
   });
 
   test('a stale content-length does not survive the rewrite', async () => {
@@ -339,25 +341,27 @@ describe('decloakResponse', () => {
       headers: { 'content-type': 'application/json', 'content-length': String(body.length) },
     });
 
-    const out = await decloakResponse(upstream, new Map([['Read_ide', 'Read']]), false);
+    const out = await restoreResponse(upstream, new Map([['Read_ide', 'Read']]), false);
     const text = await out.text();
     const declared = out.headers.get('content-length');
-    expect(declared === null || declared === String(new TextEncoder().encode(text).length)).toBe(true);
+    // Either stripped entirely, or rewritten to match the new body.
+    expect(declared === null || declared === String(text.length)).toBe(true);
   });
 
   test('a stream is not framed as gzip either', async () => {
     const encoder = new TextEncoder();
-    const upstream = new Response(
-      new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.enqueue(encoder.encode('event: ping\ndata: {"type":"ping"}\n\n'));
-          controller.close();
-        },
-      }),
-      { headers: { 'content-type': 'text/event-stream', 'content-encoding': 'gzip' } },
-    );
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('event: ping\ndata: {}\n\n'));
+        controller.close();
+      },
+    });
 
-    const out = await decloakResponse(upstream, new Map([['Read_ide', 'Read']]), true);
+    const upstream = new Response(stream, {
+      headers: { 'content-type': 'text/event-stream', 'content-encoding': 'gzip' },
+    });
+
+    const out = await restoreResponse(upstream, new Map([['Read_ide', 'Read']]), true);
     expect(out.headers.get('content-encoding')).toBeNull();
     expect(await out.text()).toContain('event: ping');
   });

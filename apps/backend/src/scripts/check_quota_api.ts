@@ -1,6 +1,6 @@
 import { readFileSync } from "fs";
 import { join } from "path";
-import { getImpersonationHeaders } from "@/providers/antigravity/upstream/headers";
+import { getClientHeaders } from "@/providers/antigravity/upstream/headers";
 
 // Usage: bun run src/scripts/check_quota_api.ts <email>
 
@@ -38,7 +38,7 @@ try {
     const res = await fetch(url, {
         method: "POST",
         headers: {
-            ...getImpersonationHeaders(account.accessToken),
+            ...getClientHeaders(account.accessToken),
             "User-Agent": "antigravity", 
         },
         body: JSON.stringify({

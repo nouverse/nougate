@@ -1,14 +1,14 @@
 /**
- * Body-level Claude transformations — billing header injection, user ID metadata, and applyCloaking.
+ * Body-level Claude transformations — billing header injection, user ID metadata, and applyEnvelope.
  */
 
 import { describe, expect, test } from 'bun:test';
 import {
-  applyCloaking,
+  applyEnvelope,
   deriveUuid,
   generateBillingHeader,
-  generateFakeUserID,
-} from '@/providers/claudecode/upstream/body-cloaking';
+  generateUserIDMetadata,
+} from '@/providers/claudecode/upstream/body-envelope';
 
 describe('generateBillingHeader', () => {
   test('format matches cc_version=<ver>.<build>; cc_entrypoint=sdk-cli; cch=<hash>;', () => {
@@ -42,9 +42,9 @@ describe('deriveUuid', () => {
   });
 });
 
-describe('generateFakeUserID', () => {
+describe('generateUserIDMetadata', () => {
   test('produces valid JSON with device_id, account_uuid, session_id', () => {
-    const result = JSON.parse(generateFakeUserID('sess-1', 'sk-ant-oat-test'));
+    const result = JSON.parse(generateUserIDMetadata('sess-1', 'sk-ant-oat-test'));
     expect(result.device_id).toMatch(/^[a-f0-9]{64}$/);
     expect(result.account_uuid).toMatch(
       /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/,
@@ -53,24 +53,24 @@ describe('generateFakeUserID', () => {
   });
 
   test('device_id is stable per API key', () => {
-    const a = JSON.parse(generateFakeUserID(undefined, 'key-1'));
-    const b = JSON.parse(generateFakeUserID(undefined, 'key-1'));
+    const a = JSON.parse(generateUserIDMetadata(undefined, 'key-1'));
+    const b = JSON.parse(generateUserIDMetadata(undefined, 'key-1'));
     expect(a.device_id).toBe(b.device_id);
     expect(a.account_uuid).toBe(b.account_uuid);
   });
 
   test('without an API key, device_id is random', () => {
-    const a = JSON.parse(generateFakeUserID(undefined, undefined));
-    const b = JSON.parse(generateFakeUserID(undefined, undefined));
+    const a = JSON.parse(generateUserIDMetadata(undefined, undefined));
+    const b = JSON.parse(generateUserIDMetadata(undefined, undefined));
     // Extremely unlikely to collide
     expect(a.device_id).not.toBe(b.device_id);
   });
 });
 
-describe('applyCloaking', () => {
+describe('applyEnvelope', () => {
   test('skips everything for non-OAuth (isOAuth = false)', () => {
     const body = { model: 'test', system: 'hello' };
-    expect(applyCloaking(body, false)).toBe(body);
+    expect(applyEnvelope(body, false)).toBe(body);
   });
 
   test('injects billing header as system[0] when system is an array', () => {
@@ -78,7 +78,7 @@ describe('applyCloaking', () => {
       model: 'test',
       system: [{ type: 'text', text: 'You are helpful.' }],
     };
-    const result = applyCloaking(body, true, 'sess', 'key');
+    const result = applyEnvelope(body, true, 'sess', 'key');
     expect(result.system.length).toBe(2);
     expect(result.system[0].text).toStartWith('x-anthropic-billing-header:');
     expect(result.system[1].text).toBe('You are helpful.');
@@ -86,7 +86,7 @@ describe('applyCloaking', () => {
 
   test('injects billing header when system is a string', () => {
     const body = { model: 'test', system: 'Be concise.' };
-    const result = applyCloaking(body, true, 'sess', 'key');
+    const result = applyEnvelope(body, true, 'sess', 'key');
     expect(result.system.length).toBe(2);
     expect(result.system[0].text).toStartWith('x-anthropic-billing-header:');
     expect(result.system[1].text).toBe('Be concise.');
@@ -94,7 +94,7 @@ describe('applyCloaking', () => {
 
   test('injects billing header when system is absent', () => {
     const body = { model: 'test' };
-    const result = applyCloaking(body, true, 'sess', 'key');
+    const result = applyEnvelope(body, true, 'sess', 'key');
     expect(result.system.length).toBe(1);
     expect(result.system[0].text).toStartWith('x-anthropic-billing-header:');
   });
@@ -104,12 +104,12 @@ describe('applyCloaking', () => {
       model: 'test',
       system: [{ type: 'text', text: 'x-anthropic-billing-header: already here' }],
     };
-    const result = applyCloaking(body, true, 'sess', 'key');
+    const result = applyEnvelope(body, true, 'sess', 'key');
     expect(result.system.length).toBe(1);
   });
 
-  test('injects fake user_id into metadata', () => {
-    const result = applyCloaking({ model: 'test' }, true, 'sess-1', 'key-1');
+  test('injects user_id into metadata', () => {
+    const result = applyEnvelope({ model: 'test' }, true, 'sess-1', 'key-1');
     expect(result.metadata.user_id).toBeDefined();
     const parsed = JSON.parse(result.metadata.user_id);
     expect(parsed.session_id).toBe('sess-1');
@@ -117,7 +117,7 @@ describe('applyCloaking', () => {
 
   test('does not overwrite existing user_id', () => {
     const body = { model: 'test', metadata: { user_id: 'already-set' } };
-    const result = applyCloaking(body, true, 'sess', 'key');
+    const result = applyEnvelope(body, true, 'sess', 'key');
     expect(result.metadata.user_id).toBe('already-set');
   });
 });

@@ -122,9 +122,9 @@ export function generateFingerprint(email?: string): DeviceFingerprint {
 }
 
 /**
- * Menyusun header impersonation untuk endpoint web IDE.
+ * Menyusun header client untuk endpoint web IDE.
  */
-export function getImpersonationHeaders(accessToken: string, fingerprint?: DeviceFingerprint, model?: string): Record<string, string> {
+export function getClientHeaders(accessToken: string, fingerprint?: DeviceFingerprint, model?: string): Record<string, string> {
   const activeFingerprint = fingerprint || generateFingerprint();
   const headers: Record<string, string> = {
     Authorization: `Bearer ${accessToken}`,

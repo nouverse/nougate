@@ -27,7 +27,7 @@
 ### Account Management
 - **Hybrid Intelligent Routing**: Sticky by default (preserves prompt cache), auto-failover on rate limit/error.
 - **Health Scoring & Cooldowns**: Health moves on a 0–100 scale shared by every provider; a spent quota cools the model, not the whole account. A 4xx caused by the *request* costs an account nothing, because every credential would refuse it identically.
-- **Device Fingerprinting**: Full impersonation headers + CLI pool variant per account.
+- **Device Fingerprinting**: Standard client headers + CLI pool variant per account.
 
 ### Token Optimization
 - **RTK (Tool Result Compression)**: Inline, zero-network compression of tool_result content (git diff, grep, file reads). Runs before Headroom.
@@ -326,7 +326,7 @@ differ because the settings do. A few worth knowing:
 |---|---|---|
 | `codex` | `cliVersion` | The Codex CLI version the gateway claims to be. The upstream **gates models on it** — newer models answer *"requires a newer version of Codex"* until it is raised |
 | `claudecode` | `betaFeatures` | Replaces the default `anthropic-beta` gate list wholesale. A gate that graduates to GA is sometimes rejected as unknown, and waiting for a release to drop one is not an option |
-| `claudecode` | `cloakToolNames` / `toolNameSuffix` | Suffixes client tool names so they cannot collide with the ones an OAuth session already knows. Off is for diagnosing whether a tool problem is this mechanic's fault |
+| `claudecode` | `adaptToolNames` / `toolNameSuffix` | Suffixes client tool names so they cannot collide with reserved names. Off is for diagnosing whether a tool problem is this mechanic's fault |
 | `claudecode` | `refreshCommand` | A command that prints a fresh OAuth access token. Empty by default, deliberately: shelling out to an arbitrary string is a capability, not a convenience |
 
 ### Model Spec Overrides (`data/providers/antigravity/model-specs.json`)

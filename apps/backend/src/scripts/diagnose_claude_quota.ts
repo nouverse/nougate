@@ -1,6 +1,6 @@
 import { readFileSync } from "fs";
 import { join } from "path";
-import { getImpersonationHeaders } from "@/providers/antigravity/upstream/headers";
+import { getClientHeaders } from "@/providers/antigravity/upstream/headers";
 import { getModelSpec } from "@/providers/antigravity/config/model-specs";
 import { mapOpenAIToGoogle } from "@/protocols/openai";
 
@@ -72,7 +72,7 @@ const endpoints = [
 ];
 
 const headers = {
-    ...getImpersonationHeaders(account.accessToken),
+    ...getClientHeaders(account.accessToken),
     "User-Agent": "antigravity" // Test if this bypasses the ghost quota
 };
 

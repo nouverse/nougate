@@ -51,7 +51,7 @@ export interface ClaudeCodeConfig {
    * with one the upstream already knows produces a call the client cannot execute, with no error to
    * point at. Off is for diagnosing whether a tool problem is this mechanic's fault.
    */
-  cloakToolNames: boolean;
+  adaptToolNames: boolean;
   /**
    * The suffix itself. Configurable because it has to not collide with a real client tool name, and
    * only the operator knows what their clients declare.
@@ -64,7 +64,7 @@ const DEFAULTS: ClaudeCodeConfig = {
   features: DEFAULT_JITTER_CONFIG,
   refreshCommand: '',
   betaFeatures: [],
-  cloakToolNames: true,
+  adaptToolNames: true,
   toolNameSuffix: '_ide',
 };
 
@@ -75,7 +75,8 @@ export async function loadClaudeCodeConfig(): Promise<void> {
     // Reads may still come from the pre-rename directory; writes always go to CONFIG_FILE.
     const path = process.env.CLAUDE_CODE_CONFIG_FILE ?? (await resolveStatePath('config.json'));
     if (path) {
-      current = { ...DEFAULTS, ...(await Bun.file(path).json()) };
+      const raw = await Bun.file(path).json();
+      current = { ...DEFAULTS, ...raw };
     }
   } catch (error) {
     console.error('[claudecode] could not read config, using defaults:', error);

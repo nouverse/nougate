@@ -4,27 +4,27 @@
 
 import { describe, expect, test } from 'bun:test';
 import {
-  CLAUDE_CLI_SPOOF_HEADERS,
+  CLAUDE_CLI_HEADERS,
   mapStainlessArch,
   mapStainlessOs,
   selectAnthropicBeta,
-} from '@/providers/claudecode/upstream/spoof-headers';
+} from '@/providers/claudecode/upstream/client-headers';
 
-describe('CLAUDE_CLI_SPOOF_HEADERS', () => {
+describe('CLAUDE_CLI_HEADERS', () => {
   test('User-Agent matches claude-cli/<version> pattern', () => {
-    expect(CLAUDE_CLI_SPOOF_HEADERS['User-Agent']).toMatch(/^claude-cli\/\d+\.\d+\.\d+ \(external, sdk-cli\)$/);
+    expect(CLAUDE_CLI_HEADERS['User-Agent']).toMatch(/^claude-cli\/\d+\.\d+\.\d+ \(external, sdk-cli\)$/);
   });
 
   test('contains all X-Stainless-* headers', () => {
-    expect(CLAUDE_CLI_SPOOF_HEADERS['X-Stainless-Lang']).toBe('js');
-    expect(CLAUDE_CLI_SPOOF_HEADERS['X-Stainless-Runtime']).toBe('node');
-    expect(CLAUDE_CLI_SPOOF_HEADERS['X-Stainless-Retry-Count']).toBe('0');
-    expect(CLAUDE_CLI_SPOOF_HEADERS['X-Stainless-Timeout']).toBe('600');
-    expect(CLAUDE_CLI_SPOOF_HEADERS['X-Stainless-Helper-Method']).toBe('stream');
+    expect(CLAUDE_CLI_HEADERS['X-Stainless-Lang']).toBe('js');
+    expect(CLAUDE_CLI_HEADERS['X-Stainless-Runtime']).toBe('node');
+    expect(CLAUDE_CLI_HEADERS['X-Stainless-Retry-Count']).toBe('0');
+    expect(CLAUDE_CLI_HEADERS['X-Stainless-Timeout']).toBe('600');
+    expect(CLAUDE_CLI_HEADERS['X-Stainless-Helper-Method']).toBe('stream');
   });
 
   test('X-App is set to cli', () => {
-    expect(CLAUDE_CLI_SPOOF_HEADERS['X-App']).toBe('cli');
+    expect(CLAUDE_CLI_HEADERS['X-App']).toBe('cli');
   });
 });
 

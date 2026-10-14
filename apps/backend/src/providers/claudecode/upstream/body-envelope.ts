@@ -12,7 +12,7 @@
  */
 
 import { createHash, randomBytes, randomUUID } from 'crypto';
-import { CLAUDE_CLI_VERSION, CC_ENTRYPOINT } from '../config/cloaking';
+import { CLAUDE_CLI_VERSION, CC_ENTRYPOINT } from '../config/constants';
 
 // ---------------------------------------------------------------------------
 // Billing header
@@ -55,7 +55,7 @@ export function deriveUuid(seed: string): string {
  * `device_id` and `account_uuid` are derived from the API key (stable per account).
  * `session_id` is per-conversation, aligned with `X-Claude-Code-Session-Id`.
  */
-export function generateFakeUserID(sessionId: string | undefined, apiKey: string | undefined): string {
+export function generateUserIDMetadata(sessionId: string | undefined, apiKey: string | undefined): string {
   const deviceId = apiKey
     ? createHash('sha256').update(`device:${apiKey}`).digest('hex')
     : randomBytes(32).toString('hex');
@@ -79,7 +79,7 @@ export function generateFakeUserID(sessionId: string | undefined, apiKey: string
  * @param sessionId - Session ID to align with `X-Claude-Code-Session-Id` header.
  * @param credential - The credential string, used to derive stable device fingerprints.
  */
-export function applyCloaking(
+export function applyEnvelope(
   body: any,
   isOAuth: boolean,
   sessionId?: string,
@@ -106,7 +106,7 @@ export function applyCloaking(
 
   // --- User ID in metadata ---
   if (!result.metadata?.user_id) {
-    result.metadata = { ...result.metadata, user_id: generateFakeUserID(sessionId, credential) };
+    result.metadata = { ...result.metadata, user_id: generateUserIDMetadata(sessionId, credential) };
   }
 
   return result;

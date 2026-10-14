@@ -1,6 +1,6 @@
 import { readFileSync } from "fs";
 import { join } from "path";
-import { getImpersonationHeaders } from "@/providers/antigravity/upstream/headers";
+import { getClientHeaders } from "@/providers/antigravity/upstream/headers";
 import { getModelSpec } from "@/providers/antigravity/config/model-specs";
 import { mapOpenAIToGoogle } from "@/protocols/openai";
 
@@ -68,7 +68,7 @@ console.log("Modified Body Model:", googleBody.model);
 // URL
 const url = "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:streamGenerateContent?alt=sse";
 
-const headers = getImpersonationHeaders(account.accessToken);
+const headers = getClientHeaders(account.accessToken);
 headers["anthropic-beta"] = "interleaved-thinking-2025-05-14";
 
 async function test() {

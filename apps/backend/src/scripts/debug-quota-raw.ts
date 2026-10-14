@@ -1,7 +1,7 @@
 
 import { initManager, getAccounts } from "@/providers/antigravity/auth/manager";
 import { refreshAccessToken } from "@/providers/antigravity/auth/oauth";
-import { getImpersonationHeaders } from "@/providers/antigravity/upstream/headers";
+import { getClientHeaders } from "@/providers/antigravity/upstream/headers";
 
 async function debugQuota() {
     await initManager();
@@ -26,7 +26,7 @@ async function debugQuota() {
     const res = await fetch(`https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels`, {
       method: "POST",
       headers: {
-        ...getImpersonationHeaders(account.accessToken || ""),
+        ...getClientHeaders(account.accessToken || ""),
         "User-Agent": "antigravity", 
       },
       body: JSON.stringify({

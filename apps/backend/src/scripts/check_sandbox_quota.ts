@@ -1,6 +1,6 @@
 import { readFileSync } from "fs";
 import { join } from "path";
-import { getImpersonationHeaders } from "@/providers/antigravity/upstream/headers";
+import { getClientHeaders } from "@/providers/antigravity/upstream/headers";
 
 const email = process.argv[2];
 if (!email) {
@@ -22,7 +22,7 @@ const url = "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:fetchA
 try {
     const res = await fetch(url, {
         method: "POST",
-        headers: getImpersonationHeaders(account.accessToken),
+        headers: getClientHeaders(account.accessToken),
         body: JSON.stringify({ project: account.projectId || "rising-fact-p41fc" })
     });
 

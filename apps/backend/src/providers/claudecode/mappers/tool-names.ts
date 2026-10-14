@@ -33,13 +33,13 @@
  * appended — each described "This tool is currently unavailable".
  */
 
-import { CC_DECOY_TOOLS } from '../config/cloaking';
+import { CC_NATIVE_TOOLS } from '../config/constants';
 import { reframedHeaders } from '@/core/response-framing';
 
 /** Suffixed name → the name the client actually used. Built on the way up, spent on the way down. */
 export type ToolNameMap = Map<string, string>;
 
-export interface CloakedRequest {
+export interface AdaptedRequest {
   body: any;
   /** `null` when nothing was renamed, which is the common case — no tools, or built-ins only. */
   toolNameMap: ToolNameMap | null;
@@ -52,7 +52,7 @@ export interface CloakedRequest {
  * one request/response pair and holding it anywhere else would apply one request's renames to
  * another's stream.
  */
-export function cloakToolNames(body: any, suffix: string): CloakedRequest {
+export function adaptToolNames(body: any, suffix: string): AdaptedRequest {
   const tools = body?.tools;
   if (!Array.isArray(tools) || tools.length === 0) return { body, toolNameMap: null };
 
@@ -74,7 +74,7 @@ export function cloakToolNames(body: any, suffix: string): CloakedRequest {
 
   // Client tools first, then CC native tools. No overlap: client tools all carry the suffix,
   // native tools use their bare native names.
-  const declarations = [...clientDeclarations, ...CC_DECOY_TOOLS];
+  const declarations = [...clientDeclarations, ...CC_NATIVE_TOOLS];
 
   // History: every `tool_use` block naming a tool this request renamed.
   const messages = Array.isArray(body.messages)
@@ -91,15 +91,15 @@ export function cloakToolNames(body: any, suffix: string): CloakedRequest {
       })
     : body.messages;
 
-  const cloaked: any = { ...body, tools: declarations, messages };
+  const adapted: any = { ...body, tools: declarations, messages };
 
   // A forced choice must point at the name that was actually declared. Only rewritten when it names
   // a tool this request renamed — a built-in went up unsuffixed and must stay that way.
   if (body.tool_choice?.type === 'tool' && renamedClientTools.has(body.tool_choice.name)) {
-    cloaked.tool_choice = { ...body.tool_choice, name: `${body.tool_choice.name}${suffix}` };
+    adapted.tool_choice = { ...body.tool_choice, name: `${body.tool_choice.name}${suffix}` };
   }
 
-  return { body: cloaked, toolNameMap };
+  return { body: adapted, toolNameMap };
 }
 
 /**
@@ -109,7 +109,7 @@ export function cloakToolNames(body: any, suffix: string): CloakedRequest {
  * model is free to name something this gateway never declared, and the client's own error for an
  * unknown tool is more useful than one invented here.
  */
-export function decloakToolNames(body: any, toolNameMap: ToolNameMap | null): any {
+export function restoreToolNames(body: any, toolNameMap: ToolNameMap | null): any {
   if (!toolNameMap?.size || !Array.isArray(body?.content)) return body;
 
   return {
@@ -129,7 +129,7 @@ export function decloakToolNames(body: any, toolNameMap: ToolNameMap | null): an
  * that opens the `tool_use` block. The `input_json_delta` events that follow carry arguments and no
  * name, so this is the only event that needs touching.
  */
-export function decloakStreamEvent(event: any, toolNameMap: ToolNameMap | null): any {
+export function restoreStreamEvent(event: any, toolNameMap: ToolNameMap | null): any {
   if (!toolNameMap?.size || !event || typeof event !== 'object') return event;
   if (event.type !== 'content_block_start') return event;
 
@@ -162,7 +162,7 @@ export function decloakStreamEvent(event: any, toolNameMap: ToolNameMap | null):
  *   - **The trailing partial line.** SSE arrives in arbitrary chunks; the buffer holds the remainder
  *     between calls, and `flush` emits whatever is left.
  */
-export function createToolNameDecloakStream(
+export function createToolNameRestoreStream(
   toolNameMap: ToolNameMap | null,
 ): TransformStream<Uint8Array, Uint8Array> {
   const decoder = new TextDecoder();
@@ -178,11 +178,11 @@ export function createToolNameDecloakStream(
 
     try {
       const event = JSON.parse(payload);
-      const decloaked = decloakStreamEvent(event, toolNameMap);
+      const restored = restoreStreamEvent(event, toolNameMap);
       // Unchanged events keep their original bytes — no reformatting of whitespace or key order for
       // the overwhelming majority of events, which are text deltas.
-      if (decloaked === event) return line;
-      return `data: ${JSON.stringify(decloaked)}`;
+      if (restored === event) return line;
+      return `data: ${JSON.stringify(restored)}`;
     } catch {
       return line;
     }
@@ -212,7 +212,7 @@ export function createToolNameDecloakStream(
  * Status is carried across unchanged. Headers are carried across *minus* the framing ones — see
  * `core/response-framing`, which is the difference between this working and every tool request failing.
  */
-export async function decloakResponse(
+export async function restoreResponse(
   response: Response,
   toolNameMap: ToolNameMap | null,
   isStreaming: boolean,
@@ -222,7 +222,7 @@ export async function decloakResponse(
   if (!toolNameMap?.size || !response.body) return response;
 
   if (isStreaming) {
-    return new Response(response.body.pipeThrough(createToolNameDecloakStream(toolNameMap)), {
+    return new Response(response.body.pipeThrough(createToolNameRestoreStream(toolNameMap)), {
       status: response.status,
       statusText: response.statusText,
       headers: reframedHeaders(response),
@@ -231,7 +231,7 @@ export async function decloakResponse(
 
   const text = await response.text();
   try {
-    const body = decloakToolNames(JSON.parse(text), toolNameMap);
+    const body = restoreToolNames(JSON.parse(text), toolNameMap);
     return new Response(JSON.stringify(body), {
       status: response.status,
       statusText: response.statusText,

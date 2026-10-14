@@ -1,8 +1,8 @@
 /**
  * Tool definitions and client constants for Claude Code protocol compatibility.
  *
- * CC_DECOY_TOOLS are the 20 native Claude Code tool names, declared as "currently unavailable".
- * They are included alongside the client's own (suffixed) tools by `cloakToolNames` in
+ * CC_NATIVE_TOOLS are the 20 native Claude Code tool names, declared as "currently unavailable".
+ * They are included alongside the client's own (suffixed) tools by `adaptToolNames` in
  * `mappers/tool-names.ts`.
  */
 
@@ -12,7 +12,7 @@ export const CLAUDE_CLI_VERSION = '2.1.299';
 /** The entrypoint tag embedded in the billing header. */
 export const CC_ENTRYPOINT = 'sdk-cli';
 
-/** Tool schema used by every decoy — an empty object, accepting nothing. */
+/** Tool schema used by unavailable tools — an empty object, accepting nothing. */
 const UNAVAILABLE_SCHEMA = { type: 'object' as const, properties: {} };
 
 /**
@@ -21,7 +21,7 @@ const UNAVAILABLE_SCHEMA = { type: 'object' as const, properties: {} };
  * Order matches the reference implementation. The names must be exact — they are what the upstream
  * expects to see in a real Claude Code session.
  */
-export const CC_DECOY_TOOLS: ReadonlyArray<{
+export const CC_NATIVE_TOOLS: ReadonlyArray<{
   name: string;
   description: string;
   input_schema: { type: 'object'; properties: Record<string, never> };

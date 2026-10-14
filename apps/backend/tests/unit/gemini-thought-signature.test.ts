@@ -14,7 +14,7 @@ import type { IModelSpec } from "@/core/interfaces";
  *
  * The earlier answer was to rewrite those turns as `[Tool Call: …]` /
  * `[Tool Result: …]` prose. That made the model *answer in that format*: clients
- * got a text block containing a fake tool result instead of a tool call, and the
+ * got a text block containing a placeholder tool result instead of a tool call, and the
  * real result was truncated to 500 characters on the way in. The signature
  * placeholder keeps the wire shape intact instead.
  */

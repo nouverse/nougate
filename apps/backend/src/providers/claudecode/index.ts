@@ -52,8 +52,8 @@ import { ClaudeCodeExecutor } from './upstream/executor';
 import { sanitizeAnthropicBody } from './mappers/anthropic';
 import { dropUnusableThinking } from './mappers/thinking';
 import { dropDeprecatedSampling } from './mappers/sampling';
-import { cloakToolNames, decloakResponse, type ToolNameMap } from './mappers/tool-names';
-import { applyCloaking } from './upstream/body-cloaking';
+import { adaptToolNames, restoreResponse, type ToolNameMap } from './mappers/tool-names';
+import { applyEnvelope } from './upstream/body-envelope';
 import { credentialKind } from './auth/credential';
 import {
   createAnthropicToOpenAIStreamTransformer,
@@ -153,7 +153,7 @@ export class ClaudeCodeProvider implements IProvider {
     if (protocol === 'anthropic') {
       // `dropUnusableThinking` first: a replayed thinking block with a signature the upstream will
       // not accept rejects the whole request, and the error names a block index rather than a cause.
-      const { body: cloakedBody, toolNameMap } = this.cloak(
+      const { body: adaptedBody, toolNameMap } = this.adaptTools(
         dropDeprecatedSampling(
           dropUnusableThinking(sanitizeAnthropicBody(body, upstreamModelId)),
           upstreamModelId,
@@ -161,7 +161,7 @@ export class ClaudeCodeProvider implements IProvider {
       );
       // Body-level transformations (billing header + user_id metadata) run after tool name mapping so the billing
       // hash covers the final payload shape. Gated on OAuth credential via the executor's account.
-      const upstreamBody = this.applyBodyCloaking(cloakedBody, ctx);
+      const upstreamBody = this.applyBodyEnvelope(adaptedBody, ctx);
 
       const result = await executor.execute({
         body: upstreamBody,
@@ -169,17 +169,17 @@ export class ClaudeCodeProvider implements IProvider {
         clientId: ctx.clientId,
       });
 
-      return await decloakResponse(result.response, toolNameMap, isStreaming);
+      return await restoreResponse(result.response, toolNameMap, isStreaming);
     }
 
     if (protocol === 'openai') {
-      const { body: cloakedBody, toolNameMap } = this.cloak(
+      const { body: adaptedBody, toolNameMap } = this.adaptTools(
         dropDeprecatedSampling(
           mapOpenAIToAnthropic(body, upstreamModelId, modelSpec.maxOutputTokens, this.id),
           upstreamModelId,
         ),
       );
-      const upstreamBody = this.applyBodyCloaking(cloakedBody, ctx);
+      const upstreamBody = this.applyBodyEnvelope(adaptedBody, ctx);
 
       const result = await executor.execute({
         body: upstreamBody,
@@ -187,19 +187,19 @@ export class ClaudeCodeProvider implements IProvider {
         clientId: ctx.clientId,
       });
 
-      // Decloaking runs *before* the protocol translation, not after: it is an Anthropic-shaped
+      // Name restoration runs *before* the protocol translation, not after: it is an Anthropic-shaped
       // rewrite, and doing it here means the OpenAI mappers never need to know this mechanic exists.
-      const decloaked = await decloakResponse(result.response, toolNameMap, isStreaming);
+      const restored = await restoreResponse(result.response, toolNameMap, isStreaming);
 
       if (isStreaming) {
-        if (!decloaked.body) throw new Error('No response body from upstream Anthropic');
+        if (!restored.body) throw new Error('No response body from upstream Anthropic');
         return new Response(
-          decloaked.body.pipeThrough(createAnthropicToOpenAIStreamTransformer(responseModelId)),
+          restored.body.pipeThrough(createAnthropicToOpenAIStreamTransformer(responseModelId)),
           { status: 200, headers: { ...STREAM_HEADERS, 'X-Claude-Code-Attempts': String(result.attempts) } },
         );
       }
 
-      return await finalizeAnthropicToOpenAIResponse(decloaked, responseModelId);
+      return await finalizeAnthropicToOpenAIResponse(restored, responseModelId);
     }
 
     throw new Error(`Unsupported protocol: ${protocol}`);
@@ -212,7 +212,7 @@ export class ClaudeCodeProvider implements IProvider {
    * The credential for the "is this OAuth?" check comes from the best account in the pool — the same
    * one the executor will pick. When no accounts exist, transformation is skipped.
    */
-  private applyBodyCloaking(body: unknown, ctx: { clientId?: string; sessionId?: string }): unknown {
+  private applyBodyEnvelope(body: unknown, ctx: { clientId?: string; sessionId?: string }): unknown {
     const accounts = getAccounts();
     if (accounts.length === 0) return body;
     // Use the first healthy account's credential to determine kind. The executor will pick the best
@@ -220,7 +220,7 @@ export class ClaudeCodeProvider implements IProvider {
     const bestAccount = accounts.find((a) => !a.invalidatedAt);
     if (!bestAccount) return body;
     const isOAuth = credentialKind(bestAccount.credential) === 'oauth';
-    return applyCloaking(body, isOAuth, ctx.sessionId, bestAccount.credential);
+    return applyEnvelope(body, isOAuth, ctx.sessionId, bestAccount.credential);
   }
 
   /**
@@ -375,10 +375,10 @@ export class ClaudeCodeProvider implements IProvider {
    * and not the other is exactly the kind of asymmetry that shows up as "tools work on the OpenAI
    * endpoint but not the Anthropic one".
    */
-  private cloak(body: unknown): { body: unknown; toolNameMap: ToolNameMap | null } {
+  private adaptTools(body: unknown): { body: unknown; toolNameMap: ToolNameMap | null } {
     const config = getClaudeCodeConfig();
-    if (!config.cloakToolNames) return { body, toolNameMap: null };
-    return cloakToolNames(body, config.toolNameSuffix);
+    if (!config.adaptToolNames) return { body, toolNameMap: null };
+    return adaptToolNames(body, config.toolNameSuffix);
   }
 
   /**

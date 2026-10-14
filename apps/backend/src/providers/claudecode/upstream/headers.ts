@@ -31,7 +31,7 @@
 
 import { ANTHROPIC_VERSION, authHeaders, credentialKind } from '../auth/credential';
 import { getClaudeCodeConfig } from '../config/provider-config';
-import { CLAUDE_CLI_SPOOF_HEADERS, selectAnthropicBeta } from './spoof-headers';
+import { CLAUDE_CLI_HEADERS, selectAnthropicBeta } from './client-headers';
 
 /**
  * The gates this provider asks for when the operator has not said otherwise.
@@ -65,7 +65,7 @@ export function buildRequestHeaders(credential: string, model?: string): Record<
   const isOAuth = credentialKind(credential) === 'oauth';
   const configured = getClaudeCodeConfig().betaFeatures;
 
-  // For OAuth credentials, use the model-aware beta builder from the spoof-headers module.
+  // For OAuth credentials, use the model-aware beta builder from the client-headers module.
   // For API keys, fall back to the static default list (or operator override).
   const features = configured.length > 0
     ? configured
@@ -94,7 +94,7 @@ export function buildRequestHeaders(credential: string, model?: string): Record<
 
   // OAuth credentials get the full Claude CLI client headers (User-Agent, X-Stainless-*, etc.).
   if (isOAuth) {
-    return { ...CLAUDE_CLI_SPOOF_HEADERS, ...base };
+    return { ...CLAUDE_CLI_HEADERS, ...base };
   }
 
   return base;
