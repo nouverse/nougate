@@ -84,6 +84,15 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
     upstreamModelId: 'gpt-6-astra',
     timeoutMs: 60000,
   },
+  'claude-haiku-5.5': {
+    modelId: 'claude-haiku-5.5',
+    displayName: 'Claude Haiku 5.5',
+    pool: 'cli',
+    isThinking: false,
+    maxOutputTokens: 8192,
+    upstreamModelId: 'claude-haiku-5.5',
+    timeoutMs: 60000,
+  },
   'claude-haiku-4.5': {
     modelId: 'claude-haiku-4.5',
     displayName: 'Claude Haiku 4.5',
@@ -91,6 +100,15 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
     isThinking: false,
     maxOutputTokens: 8192,
     upstreamModelId: 'claude-haiku-4.5',
+    timeoutMs: 60000,
+  },
+  'claude-sonnet-5.5': {
+    modelId: 'claude-sonnet-5.5',
+    displayName: 'Claude Sonnet 5.5',
+    pool: 'cli',
+    isThinking: false,
+    maxOutputTokens: 8192,
+    upstreamModelId: 'claude-sonnet-5.5',
     timeoutMs: 60000,
   },
   'claude-sonnet-5': {

@@ -19,6 +19,7 @@ describe('which models refuse sampling parameters', () => {
     expect(deprecatesSamplingParams('claude-sonnet-5')).toBe(true);
     expect(deprecatesSamplingParams('claude-sonnet-4-6')).toBe(false);
     expect(deprecatesSamplingParams('claude-opus-5')).toBe(true);
+    expect(deprecatesSamplingParams('claude-haiku-5-5')).toBe(true);
     expect(deprecatesSamplingParams('claude-haiku-4-5')).toBe(false);
   });
 
@@ -28,7 +29,14 @@ describe('which models refuse sampling parameters', () => {
       // Just asserting the registry resolves them; the point is the loop below.
       expect(claudeCodeModelRegistry.getSpec(modelId)).not.toBeNull();
     }
-    for (const modelId of ['claude-opus-5', 'claude-opus-4-8', 'claude-sonnet-5', 'claude-fable-5-1']) {
+    for (const modelId of [
+      'claude-opus-5',
+      'claude-opus-4-8',
+      'claude-sonnet-5-5',
+      'claude-sonnet-5',
+      'claude-haiku-5-5',
+      'claude-fable-5-1',
+    ]) {
       expect(deprecatesSamplingParams(modelId)).toBe(true);
       expect(claudeCodeModelRegistry.getSpec(modelId)).not.toBeNull();
     }

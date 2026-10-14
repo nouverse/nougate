@@ -50,8 +50,12 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
   'claude-opus-4-8': spec('claude-opus-4-8', 'Claude Opus 4.8', 128_000, 5, 25),
   'claude-opus-4-7': spec('claude-opus-4-7', 'Claude Opus 4.7', 128_000, 5, 25),
   'claude-opus-4-6': spec('claude-opus-4-6', 'Claude Opus 4.6', 128_000, 5, 25),
+  'claude-sonnet-5-5': spec('claude-sonnet-5-5', 'Claude Sonnet 5.5', 128_000, 2, 10),
   'claude-sonnet-5': spec('claude-sonnet-5', 'Claude Sonnet 5', 128_000, 2, 10),
   'claude-sonnet-4-6': spec('claude-sonnet-4-6', 'Claude Sonnet 4.6', 128_000, 3, 15),
+  // List rate for prompts up to 100K tokens; above that Anthropic charges 0.5 / 2.5, which a flat
+  // per-model rate cannot express, so long-prompt Haiku traffic is under-reported.
+  'claude-haiku-5-5': spec('claude-haiku-5-5', 'Claude Haiku 5.5', 128_000, 0.1, 0.5),
   'claude-haiku-4-5': spec('claude-haiku-4-5', 'Claude Haiku 4.5', 64_000, 1, 5),
   'claude-fable-5-1': spec('claude-fable-5-1', 'Claude Fable 5.1', 128_000, 10, 50),
   'claude-fable-5': spec('claude-fable-5', 'Claude Fable 5', 128_000, 10, 50),
@@ -77,7 +81,9 @@ const SAMPLING_DEPRECATED = new Set([
   'claude-opus-5',
   'claude-opus-4-8',
   'claude-opus-4-7',
+  'claude-sonnet-5-5',
   'claude-sonnet-5',
+  'claude-haiku-5-5',
   'claude-fable-5',
   'claude-fable-5-1',
 ]);
