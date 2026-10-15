@@ -1,5 +1,7 @@
 import { createRootRoute, Outlet, Link } from '@tanstack/react-router';
 import { AppShell } from '@/components/layout/AppShell';
+import { EmbeddedShell } from '@/components/layout/EmbeddedShell';
+import { host } from '@/lib/host';
 import { Compass } from 'lucide-react';
 
 /**
@@ -27,11 +29,14 @@ function NotFound() {
   );
 }
 
+/** Inside a host's dashboard the host draws the frame (`lib/host.ts`); on its own port, this does. */
+const Shell = host.embedded ? EmbeddedShell : AppShell;
+
 export const Route = createRootRoute({
   component: () => (
-    <AppShell>
+    <Shell>
       <Outlet />
-    </AppShell>
+    </Shell>
   ),
   notFoundComponent: NotFound,
 });

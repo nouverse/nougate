@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { withBase } from '@/lib/host';
 import { useState } from 'react';
 import { useTokenUsage, useRecentUsage } from '@/hooks/useQueries';
 import { Lookback } from '@/lib/types';
@@ -116,9 +117,10 @@ function TokensPage() {
    */
   const cacheHitPercent =
     summary.inputTokens > 0 ? (summary.cachedInputTokens / summary.inputTokens) * 100 : 0;
-  const exportUrl =
+  const exportUrl = withBase(
     `/api/metrics/export?lookback=${lookback}&clientId=${encodeURIComponent(clientId)}` +
-    `&provider=${encodeURIComponent(provider)}&apiKeyId=${encodeURIComponent(apiKeyId)}`;
+    `&provider=${encodeURIComponent(provider)}&apiKeyId=${encodeURIComponent(apiKeyId)}`,
+  );
 
   return (
     <div className="space-y-6 text-base-content">

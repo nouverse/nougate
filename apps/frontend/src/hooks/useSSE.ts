@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { withBase } from '@/lib/host';
 import { useQueryClient } from '@tanstack/react-query';
 
 type LogSubscriber = (message: { timestamp: string; message: string }) => void;
@@ -29,7 +30,7 @@ export function useSSE() {
     let reconnectTimeout: any = null;
 
     function connect() {
-      eventSource = new EventSource('/api/sse');
+      eventSource = new EventSource(withBase('/api/sse'));
 
       eventSource.addEventListener('init', (e) => {
         try {

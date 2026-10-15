@@ -4,6 +4,7 @@ import { RouterProvider, createRouter } from '@tanstack/react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { routeTree } from '@/routeTree.gen';
 import { AuthGate } from '@/components/auth/AuthGate';
+import { host } from '@/lib/host';
 import '@/styles/main.css';
 
 const queryClient = new QueryClient({
@@ -20,7 +21,8 @@ const router = createRouter({
   context: {
     queryClient,
   },
-  basepath: '/frontend',
+  // Under the host's prefix when a host serves this page (`lib/host.ts`).
+  basepath: `${host.basePath}/frontend`,
 });
 
 declare module '@tanstack/react-router' {

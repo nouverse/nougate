@@ -1,6 +1,8 @@
+import { withBase } from '@/lib/host';
+
 class ApiClient {
   private async request<T>(path: string, options?: RequestInit): Promise<T> {
-    const res = await fetch(path, {
+    const res = await fetch(withBase(path), {
       ...options,
       headers: {
         'Content-Type': 'application/json',

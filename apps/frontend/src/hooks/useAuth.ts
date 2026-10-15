@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { withBase } from '@/lib/host';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 export interface SessionUser {
@@ -20,7 +21,7 @@ export const AUTH_QUERY_KEY = ['auth', 'session'];
  * error, so it resolves instead of throwing.
  */
 async function fetchSession(): Promise<AuthState> {
-  const res = await fetch('/api/auth/me');
+  const res = await fetch(withBase('/api/auth/me'));
 
   if (res.status === 401) {
     return { user: null };
@@ -58,7 +59,7 @@ export function useAuth() {
  * Exchange credentials for a session cookie.
  */
 export async function login(username: string, password: string): Promise<void> {
-  const res = await fetch('/api/auth/login', {
+  const res = await fetch(withBase('/api/auth/login'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password }),
@@ -86,7 +87,7 @@ export interface ProfileUpdate {
  * Update the signed-in user's own username and/or password.
  */
 export async function updateProfile(update: ProfileUpdate): Promise<SessionUser> {
-  const res = await fetch('/api/auth/profile', {
+  const res = await fetch(withBase('/api/auth/profile'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(update),
@@ -105,6 +106,6 @@ export async function updateProfile(update: ProfileUpdate): Promise<SessionUser>
  * Drop the session cookie and reload into the login screen.
  */
 export async function logout() {
-  await fetch('/api/auth/logout', { method: 'POST' });
+  await fetch(withBase('/api/auth/logout'), { method: 'POST' });
   window.location.reload();
 }

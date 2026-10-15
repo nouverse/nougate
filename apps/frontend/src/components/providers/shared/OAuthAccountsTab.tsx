@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { withBase } from '@/lib/host';
 import { Account } from '@/lib/types';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ConfirmModal } from '@/components/shared/ConfirmModal';
@@ -101,7 +102,9 @@ export function OAuthAccountsTab({ providerId, accounts, refreshQueries }: Props
     try {
       const res = await api.post<{ redirectUrl: string }>(`/api/providers/${providerId}/accounts/add`);
       if (res?.redirectUrl) {
-        setAuthUrl(res.redirectUrl);
+        // Antigravity answers with a path of this gateway's (`/oauth/start`), which inside a host has
+        // to carry the host's prefix like every other call this page makes.
+        setAuthUrl(withBase(res.redirectUrl));
         setPastedUrl('');
         setShowAuthModal(true);
       } else {

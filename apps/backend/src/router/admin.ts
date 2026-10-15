@@ -1,5 +1,4 @@
-import { dirname, join } from "path";
-import { existsSync } from "fs";
+import { join } from "path";
 import { getProxyConfig, updateProxyConfig } from "@/config/manager";
 import { adminEventBus } from "@/core/events";
 import { getBaseUrl } from "@/core/base-url";
@@ -17,8 +16,10 @@ import { handleUsersRoute } from "@/router/users";
 import { CustomProvider } from "@/providers/custom";
 import { resolvePricing } from "@/core/metrics/pricing";
 import { smartRoutableModels } from "@/core/smart-routing";
-import { projectPath } from "@/core/paths";
 import { NOUGATE_VERSION } from "@/core/version";
+import { basePathFor, hostRequest } from "@/core/host";
+import { renderEntryDocument } from "@/router/entry-document";
+import { findFrontendDist, frontendDistCandidates } from "@/router/frontend-dist";
 
 const APP_VERSION = NOUGATE_VERSION;
 
@@ -120,36 +121,14 @@ function createAdminEventStream(): Response {
  * and a stale copy keeps serving an old dashboard after a rebuild — which shows
  * up as a route that "does not exist" rather than as an obvious caching problem.
  */
-function serveFrontendAsset(pathname: string): Response {
+async function serveFrontendAsset(pathname: string, req: Request): Promise<Response> {
   const relativePath = pathname.replace("/frontend/", "") || "index.html";
   const lastSegment = relativePath.split("/").pop() || "";
   const isFile = lastSegment.includes(".");
 
-  /**
-   * Where the built dashboard is, checked in order and remembered by nobody — this runs per request,
-   * and `existsSync` on four paths is cheaper than the file read that follows it.
-   *
-   * The last entry is the compiled-binary layout: `bun build --compile` leaves `import.meta.dir`
-   * pointing into a virtual filesystem, so the first three resolve to paths that are not on disk.
-   * A release stages the dashboard as a sibling of the executable, the same way `nouride` does.
-   *
-   * ## The candidate is the entry document, not the directory
-   *
-   * It used to be `existsSync(dir)`, and an **empty** `dist` satisfies that. Vite builds with
-   * `emptyOutDir: true`, so it clears the directory before it writes — a build that fails partway
-   * leaves the directory in place with nothing in it. The check passed, the read did not, and the
-   * dashboard answered `ENOENT: … /dist/index.html` with a 500.
-   *
-   * Testing for `index.html` makes an empty directory fall through to the next candidate, which in
-   * a container is often a perfectly good copy at another path.
-   */
-  const candidates = [
-    join(import.meta.dir, "../../../frontend/dist"),
-    projectPath("apps/frontend/dist"),
-    projectPath("frontend/dist"),
-    join(dirname(process.execPath), "frontend"),
-  ];
-  const distDir = candidates.find((dir) => existsSync(join(dir, "index.html")));
+  // Looked up per request: an update can replace the bundle under a running gateway.
+  const candidates = frontendDistCandidates();
+  const distDir = findFrontendDist();
 
   /**
    * No dashboard anywhere — said out loud, with where it looked.
@@ -169,10 +148,26 @@ function serveFrontendAsset(pathname: string): Response {
     );
   }
 
-  if (!isFile) {
-    return new Response(Bun.file(join(distDir, "index.html")), {
-      headers: { "Cache-Control": "no-store, must-revalidate" },
-    });
+  // The entry document is addressed per request — the gateway's own port and a host's mount point
+  // serve the same build under different prefixes (`entry-document.ts`). By name as well as by route:
+  // `/frontend/` itself resolves to `index.html`, which has a dot in it and would otherwise be served
+  // raw — without the prefix, and without the tag that tells the page it is inside a host.
+  if (!isFile || relativePath === "index.html") {
+    const html = await Bun.file(join(distDir, "index.html")).text();
+    const host = hostRequest(req);
+    return new Response(
+      renderEntryDocument(html, {
+        basePath: host?.basePath ?? "",
+        embedded: host !== null,
+        ...(host?.apiOrigin ? { apiOrigin: host.apiOrigin } : {}),
+      }),
+      {
+        headers: {
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "no-store, must-revalidate",
+        },
+      },
+    );
   }
 
   const isFingerprinted = relativePath.startsWith("assets/");
@@ -523,6 +518,9 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
         modelCount: p.getSupportedModels().length,
         // Lets the dashboard route custom providers to their own editor.
         isCustom: p instanceof CustomProvider,
+        // How an account is added, read off the contract like the detail route does — so a list of
+        // sign-in buttons (a host's setup wizard) needs no request per provider, and no guess per id.
+        accountFlow: p.accountFlow ?? null,
       };
     });
     return createJsonResponse(results);
@@ -672,20 +670,22 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
     }
   }
 
+  // Under the host's prefix when there is one: a redirect to `/frontend/` from inside a host's mount
+  // lands on the host's own routes, not on this dashboard.
   if (url.pathname === "/frontend/index.html") {
-    return Response.redirect("/frontend/");
+    return Response.redirect(`${basePathFor(req)}/frontend/`);
   }
 
   if (url.pathname.startsWith("/frontend/")) {
     try {
-      return serveFrontendAsset(url.pathname);
+      return await serveFrontendAsset(url.pathname, req);
     } catch {
       return new Response("Not Found", { status: 404 });
     }
   }
 
   if (url.pathname === "/") {
-    return Response.redirect("/frontend/");
+    return Response.redirect(`${basePathFor(req)}/frontend/`);
   }
 
   return null;

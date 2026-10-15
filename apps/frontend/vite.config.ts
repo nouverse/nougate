@@ -5,7 +5,7 @@ import { TanStackRouterVite } from '@tanstack/router-plugin/vite';
 import { fileURLToPath } from 'node:url';
 
 // https://vite.dev/config/
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, '../../', '');
   const BACKEND_URL = env.VITE_BACKEND_URL || env.BASE_URL || 'http://localhost:3000';
 
@@ -23,7 +23,15 @@ export default defineConfig(({ mode }) => {
       react(),
       tailwindcss(),
     ],
-    base: '/frontend/',
+    /**
+     * Relative in a build, so one bundle serves the gateway's own `/frontend/` and a host that mounts
+     * it under a prefix of its own (Nouride's `/llm-gateway/frontend/`). The server makes the entry
+     * document's references absolute per request (`backend/src/router/entry-document.ts`), which a
+     * deep link needs; the bundle resolves its own chunks from where it was loaded.
+     *
+     * The dev server keeps the absolute base: it serves the page itself, at `/frontend/`.
+     */
+    base: command === 'build' ? './' : '/frontend/',
     envDir: '../../',
     build: {
       outDir: 'dist',

@@ -3,6 +3,7 @@ import { AlertTriangle } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { LoginScreen } from '@/components/auth/LoginScreen';
 import { AccountSetupScreen } from '@/components/auth/AccountSetupScreen';
+import { host } from '@/lib/host';
 
 interface Props {
   children: React.ReactNode;
@@ -41,6 +42,28 @@ export function AuthGate({ children }: Props) {
   }
 
   if (!data?.user) {
+    // Inside a host the sign-in is the host's, and a login form here would ask for a password the
+    // person may never have had — the host vouches for them, or nobody does. The host's own session
+    // has ended, so send the whole page back to it rather than this frame.
+    if (host.embedded) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-base-100 font-sans p-6">
+          <div className="w-full max-w-sm text-center">
+            <AlertTriangle className="w-8 h-8 text-warning mx-auto mb-4" />
+            <h1 className="text-sm font-bold text-base-content mb-2">Signed out</h1>
+            <p className="text-xs text-base-content/60 leading-relaxed mb-6">
+              Your session has ended. Sign in again to manage the LLM Gateway.
+            </p>
+            <button
+              onClick={() => (window.top ?? window).location.reload()}
+              className="btn btn-sm btn-primary font-semibold"
+            >
+              Sign in
+            </button>
+          </div>
+        </div>
+      );
+    }
     return <LoginScreen />;
   }
 

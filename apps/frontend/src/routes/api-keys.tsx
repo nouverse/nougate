@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { apiOrigin } from '@/lib/host';
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useApiKeys, useConfig } from '@/hooks/useQueries';
@@ -139,7 +140,7 @@ function ApiKeysPage() {
     );
   }
 
-  const baseUrl = config?.baseUrl || window.location.origin;
+  const baseUrl = config?.baseUrl || apiOrigin();
   const activeKeys = data.keys.filter((key) => !key.revoked);
 
   return (

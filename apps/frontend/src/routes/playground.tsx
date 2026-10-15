@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { apiOrigin, withBase } from '@/lib/host';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useModelCatalog, useApiKeys, useConfig } from '@/hooks/useQueries';
 import { CopyButton } from '@/components/shared/CopyButton';
@@ -126,7 +127,7 @@ function PlaygroundPage() {
       ),
     [apiKeys],
   );
-  const baseUrl = config?.baseUrl || window.location.origin;
+  const baseUrl = config?.baseUrl || apiOrigin();
   // Preselect, and drop a selection that stops being usable — a revoked key left sitting in the
   // dropdown would fail with an auth error that looks like the gateway is broken.
   useEffect(() => {
@@ -288,7 +289,7 @@ function PlaygroundPage() {
     }
 
     try {
-      const response = await fetch(endpoint, {
+      const response = await fetch(withBase(endpoint), {
         method: 'POST',
         headers,
         body: JSON.stringify(buildBody()),

@@ -18,7 +18,7 @@
  * after everything they dispatch into exists.
  */
 
-import { registerProvider } from "@/core/registry";
+import { getAllProviders, registerProvider } from "@/core/registry";
 import { loadProxyConfig } from "@/config/manager";
 import { AntigravityProvider } from "@/providers/antigravity";
 import { CopilotProvider } from "@/providers/copilot";
@@ -30,11 +30,25 @@ import { registerAnthropicProtocol } from "@/protocols/anthropic";
 import { handleRequest } from "@/router";
 import { setupLogCapture } from "@/router/middleware";
 import { initDb } from "@/core/db";
-import { initApiKeys } from "@/auth/api-keys";
+import { createApiKey, initApiKeys, verifyApiKey } from "@/auth/api-keys";
 import { clearUsers, initUsers } from "@/auth/users";
 import { initCustomProviders } from "@/providers/custom/manager";
 import { startMetricsMaintenance } from "@/core/metrics/maintenance";
 import { initCalibration } from "@/core/metrics/calibrator";
+import { type HostResolver, setHostResolver } from "@/core/host";
+import { formatModelId } from "@/core/model-resolver";
+
+export type { HostRequest, HostResolver } from "@/core/host";
+/** Whether the dashboard on disk can be shown inside a host — see `router/frontend-dist.ts`. */
+export { dashboardEmbeddable } from "@/router/frontend-dist";
+
+export interface BootOptions {
+  /**
+   * A host that runs this gateway inside itself and vouches for its own signed-in users — see
+   * `core/host.ts`. Absent for a standalone gateway, which is its own sign-in.
+   */
+  host?: HostResolver;
+}
 
 /**
  * Bring the gateway up, without binding a port.
@@ -47,7 +61,9 @@ import { initCalibration } from "@/core/metrics/calibrator";
  * calling this twice in one process would register every provider a second time. There is one
  * gateway per process; the host is expected to know that.
  */
-export async function boot(): Promise<(req: Request) => Response | Promise<Response>> {
+export async function boot(options: BootOptions = {}): Promise<(req: Request) => Response | Promise<Response>> {
+  // First, so nothing that answers a request can run before the host is known.
+  setHostResolver(options.host ?? null);
   await loadProxyConfig();
   setupLogCapture();
   await initDb();
@@ -106,3 +122,48 @@ export async function resetAccounts(): Promise<number> {
  * it before `boot()`.
  */
 export { adoptStateFrom } from "@/core/paths";
+
+/**
+ * A gateway key for the host itself — the one its own model calls carry. After `boot()`.
+ *
+ * The host stores the key and hands back what it stored as `current`. A key that still verifies is
+ * returned as it is and nothing is minted, so asking twice — a wizard button pressed twice, a daemon
+ * restarted mid-setup — does not leave a trail of keys on the API Keys page. Anything else (none
+ * stored, revoked from the dashboard, expired, from a gateway that was reset) mints a new one.
+ *
+ * The plaintext leaves this function exactly once per key, as `createApiKey` promises: only the hash
+ * is kept here.
+ */
+export async function ensureHostKey(
+  name: string,
+  current?: string | null,
+): Promise<{ key: string; minted: boolean }> {
+  if (current && verifyApiKey(current).ok) {
+    return { key: current, minted: false };
+  }
+  const created = await createApiKey({ name });
+  return { key: created.key, minted: true };
+}
+
+/**
+ * Every model that can be called right now, prefixed the way a client sends it. After `boot()`.
+ *
+ * `/openai/v1/models` lists every model of every provider, signed in or not, which is right for a
+ * client that wants the catalogue and wrong for a host picking a first model: the alphabetical first
+ * entry is usually a provider nobody has signed in to, and the first message then fails. This is the
+ * catalogue narrowed to providers that hold at least one account — a custom provider's keys count.
+ */
+export function connectedModels(): string[] {
+  return getAllProviders()
+    .filter((provider) => {
+      try {
+        return provider.getAccounts().length > 0;
+      } catch {
+        return false;
+      }
+    })
+    .flatMap((provider) =>
+      provider.getModelRegistry().listModelIds().map((modelId) => formatModelId(provider.id, modelId)),
+    )
+    .sort((a, b) => a.localeCompare(b));
+}

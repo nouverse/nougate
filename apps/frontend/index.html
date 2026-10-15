@@ -9,7 +9,11 @@
          a bookmark or a pinned shortcut asks for. -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/favicon.svg" />
-    <meta name="theme-color" content="#0AC48D" />
+    <meta name="theme-color" content="#0BAF90" />
+    <!-- This bundle knows how to be shown inside a host's dashboard (src/lib/host.ts). A host checks
+         for this line before offering the page: an update that replaced the gateway but not this
+         bundle would otherwise frame a dashboard that calls the host's API instead of the gateway's. -->
+    <meta name="nougate-embeddable" content="1" />
     <!-- Google Fonts for premium typography -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
