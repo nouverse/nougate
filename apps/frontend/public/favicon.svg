@@ -1,41 +1,43 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="Nougate">
   <title>Nougate</title>
   <!--
-    The mark carries its own background on purpose.
+    The Nougate mark: a gateway, seen head-on.
 
-    A glyph that inherits the page colour has to be redrawn, re-tinted or
-    duplicated for every surface it lands on — the dark dashboard, the light
-    dashboard, a browser tab, a README rendered on either theme. A self-contained
-    tile has one appearance everywhere, so there is no theme to detect and
-    nothing to keep in sync.
+    The arches are the Nouverse "n" — the same round-capped stroke the nou mark is drawn
+    with — set one inside the other, so the n becomes a doorway with depth. The dot is the
+    nou mark's planet, passing through it: a request on its way through the gate. Family
+    resemblance on purpose; this is the Nouverse gateway, not a generic one.
 
-    The glyph is the product: one node, and everything passing straight through
-    it. Earlier attempts drew the routing fan literally and every one of them
-    resolved into a letter at small sizes — "K", "E", "A" — because an
-    asymmetric cluster of strokes is read as type before it is read as a
-    picture. This shape has no such reading.
+    It carries its own background, so it looks the same on a dark dashboard, a light one
+    and a browser tab, with nothing to re-tint per surface.
 
-    Keep it to these two elements. The hexagon is the gateway; the arrow is the
-    traffic. Anything else added inside collapses into a blob at 16px.
+    Rules that keep it legible at 16px, learned the hard way:
+    - Symmetric only. An asymmetric cluster of strokes is read as a letter before it is
+      read as a picture; the old routing-fan drafts all became "K", "E" or "A".
+    - The planet keeps clear of the inner arch's legs. Touching them, it becomes the
+      crossbar of an A.
+    - Three elements and no more. Anything added inside collapses into a blob.
+
+    Kept identical to `src/components/brand/NougateMark.tsx`, and to the copy Nouride's
+    dashboard draws for its LLM Gateway page. Change one, change all three.
   -->
   <defs>
-    <linearGradient id="nougate-tile" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#3BE9B4"/>
-      <stop offset=".45" stop-color="#0AC48D"/>
-      <stop offset="1" stop-color="#3D34C9"/>
+    <linearGradient id="nougate-tile" x1="6" y1="2" x2="42" y2="46" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2EE6B0"/>
+      <stop offset=".5" stop-color="#0BAF90"/>
+      <stop offset="1" stop-color="#4338CA"/>
     </linearGradient>
   </defs>
 
   <rect width="48" height="48" rx="11.5" fill="url(#nougate-tile)"/>
-  <!-- Hairline edge: invisible on a light surface, and what keeps the tile's
-       deep indigo corner from dissolving into a dark one. -->
+  <!-- Hairline edge: invisible on a light surface, and what keeps the tile's deep indigo
+       corner from dissolving into a dark one. -->
   <rect x=".75" y=".75" width="46.5" height="46.5" rx="10.75"
-        fill="none" stroke="#fff" stroke-opacity=".2" stroke-width="1.5"/>
+        fill="none" stroke="#fff" stroke-opacity=".18" stroke-width="1.5"/>
 
-  <path d="M24 9.2l12.8 7.4v14.8L24 38.8l-12.8-7.4V16.6z"
-        fill="none" stroke="#fff" stroke-width="3.4" stroke-linejoin="round"/>
-  <g fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M18 24h8.5"/>
-    <path d="M24.8 19.6l4.6 4.4-4.6 4.4"/>
-  </g>
+  <path d="M11 36.5V22a13 13 0 0 1 26 0v14.5"
+        fill="none" stroke="#fff" stroke-opacity=".42" stroke-width="3.2" stroke-linecap="round"/>
+  <path d="M17 36.5V24.5a7 7 0 0 1 14 0v12"
+        fill="none" stroke="#fff" stroke-width="4.2" stroke-linecap="round"/>
+  <circle cx="24" cy="30.8" r="3.2" fill="#fff"/>
 </svg>
