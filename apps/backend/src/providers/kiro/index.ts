@@ -10,15 +10,7 @@
  * credential — a desktop refresh token, an API key, or an enterprise token set. See `auth/`.
  */
 
-import type {
-  AccountRequestOptions,
-  DeviceFlowPollResult,
-  IAccount,
-  IModelRegistry,
-  IProvider,
-  IProviderQuota,
-  ProviderExecuteParams,
-} from '@/core/interfaces';
+import type { AccountRequestOptions, DeviceFlowPollResult, IAccount, IModelRegistry, IProvider, IProviderQuota, ProviderExecuteParams, AccountCopy } from '@/core/interfaces';
 import { normalizeJitterConfig, type JitterConfig } from '@/core/jitter';
 import { ACCOUNT_WIDE, initKiroAccounts, kiroAccounts, type NewKiroAccount } from './auth/manager';
 import { pollDeviceFlow, startDeviceFlow } from './auth/device-flow';
@@ -40,6 +32,13 @@ export class KiroProvider implements IProvider {
   readonly id = 'kiro';
   readonly displayName = 'Kiro AI';
   readonly accountFlow = 'device-code' as const;
+
+  readonly accountCopy: AccountCopy = {
+    label: 'Kiro',
+    hint: 'AWS Builder ID, by device code',
+    order: 5,
+    button: 'Sign In with AWS Builder ID',
+  };
 
   async init(): Promise<void> {
     await loadKiroConfig();

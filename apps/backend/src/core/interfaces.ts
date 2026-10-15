@@ -125,6 +125,37 @@ export interface IProviderQuota {
 export type AccountFlow = 'oauth-redirect' | 'device-code' | 'api-key' | 'oauth-token';
 
 /**
+ * What a sign-in screen says about a provider, in the provider's own words.
+ *
+ * `accountFlow` decides what a screen *does*; this decides what it *says*. Both come from the
+ * provider, so no screen has to know which provider it is drawing — not this gateway's dashboard,
+ * and not a host's setup wizard (Nouride's "Use Nougate LLM Gateway"), which lists every provider
+ * with a sign-in flow and knows none of them by name. A provider added next month brings its own
+ * words with it.
+ *
+ * Copy used to sit in the dashboard keyed by provider id, which kept behaviour out of it but put
+ * knowledge of every provider into a component that was supposed to be generic — and a host had no
+ * way to read it at all.
+ */
+export interface AccountCopy {
+  /** What a person calls it — "Claude", "ChatGPT". `displayName` is often the product's own name. */
+  label: string;
+  /** One line under the label: which account this takes — "Claude Pro or Max subscription". */
+  hint: string;
+  /** Where a list of sign-ins puts it, lower first. Ties sort by label. */
+  order: number;
+  /** The sign-in dialog's title, its opening sentence, and the button that starts it. */
+  title?: string;
+  intro?: string;
+  button?: string;
+  /** `oauth-redirect`: what happens after approving — where the tab lands, and what to bring back. */
+  consent?: string;
+  /** `oauth-redirect`, `oauth-token`: the field the person pastes into, and what goes in it. */
+  pasteLabel?: string;
+  pastePlaceholder?: string;
+}
+
+/**
  * `oauth-token` is the paste-a-token flow, and it is not the same thing as `api-key`.
  *
  * Both render one field, which is why it was tempting to reuse `api-key` — and why doing so was
@@ -157,6 +188,12 @@ export interface IProvider {
    * has no way to add an account from the UI, and the list renders read-only.
    */
   readonly accountFlow?: AccountFlow;
+
+  /**
+   * What sign-in screens say about this provider (`AccountCopy`). Optional: a provider without it is
+   * listed under its `displayName` with neutral wording, never another provider's.
+   */
+  readonly accountCopy?: AccountCopy;
 
   init(): Promise<void>;
 

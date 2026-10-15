@@ -11,6 +11,10 @@ export interface Provider {
   modelCount: number;
   /** True for user-defined providers managed from the Custom Providers page. */
   isCustom?: boolean;
+  /** How an account is added — the provider's declaration. */
+  accountFlow?: AccountFlow | null;
+  /** What sign-in screens call it and say about it, in the provider's own words. */
+  accountCopy?: AccountCopy | null;
 }
 
 // ─── Token usage & cost metrics ──────────────────────────────────────────────
@@ -262,6 +266,22 @@ export interface Account {
 
 /** Which credential flow a provider offers, so the dashboard renders the right form. */
 export type AccountFlow = 'oauth-redirect' | 'device-code' | 'api-key' | 'oauth-token';
+
+/**
+ * What a sign-in screen says about a provider — `AccountCopy` in the backend's `core/interfaces.ts`,
+ * which has why. Every field but the first three is optional; a form falls back to neutral words.
+ */
+export interface AccountCopy {
+  label: string;
+  hint: string;
+  order: number;
+  title?: string;
+  intro?: string;
+  button?: string;
+  consent?: string;
+  pasteLabel?: string;
+  pastePlaceholder?: string;
+}
 
 /**
  * One upstream usage limit, already normalised by the provider that owns it —

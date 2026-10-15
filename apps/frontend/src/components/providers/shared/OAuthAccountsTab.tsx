@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { withBase } from '@/lib/host';
-import { Account } from '@/lib/types';
+import { Account, type AccountCopy } from '@/lib/types';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ConfirmModal } from '@/components/shared/ConfirmModal';
 import { AccountsTable } from './AccountsTable';
@@ -10,55 +10,17 @@ import { AccountCard } from './AccountCard';
 import { Plus, Shield } from 'lucide-react';
 
 /**
- * What the sign-in modal says, per provider.
+ * What the sign-in modal says comes from the provider (`accountCopy`), not from this file.
  *
  * The mechanics are identical — open an authorize URL, come back with a code, exchange it — so the
- * component is shared. The *words* are not, and hardcoding them is a bug that has now been made
- * twice in this directory: a Claude Code provider whose OAuth pointed correctly at
- * `claude.ai/oauth/authorize` while the modal above it said "Add Google Account" and told the
- * operator to wait for a failed `localhost:3000` redirect that was never going to happen.
- *
- * Keyed by provider id, which is the one place that is legitimate: this is presentation copy, not
- * behaviour. Everything the component *does* still comes from the provider's declared `accountFlow`.
+ * component is shared. The *words* are not, and hardcoding them here was a bug made twice: a Claude
+ * Code provider whose OAuth pointed correctly at `claude.ai/oauth/authorize` while the modal said
+ * "Add Google Account". Keeping them in a map keyed by provider id fixed that and still put every
+ * provider's name into a component that is meant to know none — and left a host's setup wizard,
+ * which draws the same sign-in, with no way to read them at all. The provider owns its words now.
  */
-const COPY: Record<string, {
-  title: string;
-  intro: string;
-  button: string;
-  consent: string;
-  pasteLabel: string;
-  pastePlaceholder: string;
-}> = {
-  antigravity: {
-    title: 'Add Google Account',
-    intro: 'Google OAuth requires a local port redirect. Follow these manual steps to authenticate.',
-    button: 'Sign In with Google',
-    consent:
-      'Log in to your Google Account. Once finished, your browser will attempt to load a failed local URL (e.g. `http://localhost:3000/oauth-callback?code=...`).',
-    pasteLabel: 'Paste Redirect URL',
-    pastePlaceholder: 'Paste the entire redirected localhost URL here...',
-  },
-  codex: {
-    title: 'Add ChatGPT Account',
-    intro: 'Signs in with your ChatGPT subscription. Open the link in a new tab, approve, then paste the URL you land on.',
-    button: 'Sign In with ChatGPT',
-    consent:
-      'OpenAI redirects to `http://localhost:1455/auth/callback`, a port this gateway does not listen on — so the tab will fail to load, which is expected. Copy its full URL and paste it below.',
-    pasteLabel: 'Paste Redirect URL',
-    pastePlaceholder: 'Paste the entire redirected localhost:1455 URL here...',
-  },
-  'claudecode': {
-    title: 'Add Claude Account',
-    intro: 'Signs in with your Claude subscription. Open the link in a new tab, approve, and bring the result back here.',
-    button: 'Sign In with Claude',
-    consent:
-      'Approve in the new tab. Anthropic redirects to a localhost address, so on a local gateway it lands back here and the account is added for you. On a deployed one that address is your own machine, not the server, and the tab will fail to load — that is expected. Copy its full URL and paste it below.',
-    pasteLabel: 'Paste Redirect URL',
-    pastePlaceholder: 'Paste the entire redirected URL, or just the code, here...',
-  },
-};
 
-/** A provider with no entry gets neutral wording rather than another vendor's. */
+/** A provider that says nothing gets neutral wording rather than another vendor's. */
 const FALLBACK_COPY = {
   title: 'Add Account',
   intro: 'Sign in with the provider, then bring the authorization code back here.',
@@ -73,16 +35,25 @@ interface Props {
    * Which provider this is acting on.
    *
    * Passed in rather than named in here: this component serves any provider that declares
-   * `accountFlow: 'oauth-redirect'` — Antigravity and Claude Code today — and the codebase has
-   * already been burned once by UI that guessed a provider from its id.
+   * `accountFlow: 'oauth-redirect'`, and the codebase has already been burned once by UI that
+   * guessed a provider from its id.
    */
   providerId: string;
+  /** The provider's own words for this dialog (`ProviderDetail.accountCopy`). */
+  accountCopy?: AccountCopy | null;
   accounts: Account[];
   refreshQueries: () => void;
 }
 
-export function OAuthAccountsTab({ providerId, accounts, refreshQueries }: Props) {
-  const copy = COPY[providerId] ?? FALLBACK_COPY;
+export function OAuthAccountsTab({ providerId, accountCopy, accounts, refreshQueries }: Props) {
+  const copy = {
+    title: accountCopy?.title ?? FALLBACK_COPY.title,
+    intro: accountCopy?.intro ?? FALLBACK_COPY.intro,
+    button: accountCopy?.button ?? FALLBACK_COPY.button,
+    consent: accountCopy?.consent ?? FALLBACK_COPY.consent,
+    pasteLabel: accountCopy?.pasteLabel ?? FALLBACK_COPY.pasteLabel,
+    pastePlaceholder: accountCopy?.pastePlaceholder ?? FALLBACK_COPY.pastePlaceholder,
+  };
   // A Google concept. Antigravity has a cloudaicompanion project to look up; nothing else here does.
   const supportsRediscover = providerId === 'antigravity';
   const [toast, setToast] = useState<string | null>(null);

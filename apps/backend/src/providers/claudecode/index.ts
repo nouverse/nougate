@@ -17,14 +17,7 @@
  * see `auth/credential.ts`.
  */
 
-import type {
-  AccountRequestOptions,
-  IAccount,
-  IModelRegistry,
-  IProvider,
-  IProviderQuota,
-  ProviderExecuteParams,
-} from '@/core/interfaces';
+import type { AccountRequestOptions, IAccount, IModelRegistry, IProvider, IProviderQuota, ProviderExecuteParams, AccountCopy } from '@/core/interfaces';
 import { normalizeJitterConfig, type JitterConfig } from '@/core/jitter';
 import {
   addAccount,
@@ -103,6 +96,19 @@ export class ClaudeCodeProvider implements IProvider {
   readonly displayName = 'Claude Code';
 
   readonly accountFlow = 'oauth-redirect' as const;
+
+  readonly accountCopy: AccountCopy = {
+    label: 'Claude',
+    hint: 'Claude Pro or Max subscription',
+    order: 1,
+    title: 'Add Claude Account',
+    intro: 'Signs in with your Claude subscription. Open the link in a new tab, approve, and bring the result back here.',
+    button: 'Sign In with Claude',
+    consent:
+      'Approve in the new tab. Anthropic redirects to a localhost address, so on a local gateway it lands back here and the account is added for you. On a deployed one that address is your own machine, not the server, and the tab will fail to load — that is expected. Copy its full URL and paste it below.',
+    pasteLabel: 'Paste Redirect URL',
+    pastePlaceholder: 'Paste the entire redirected URL, or just the code, here...',
+  };
 
   /** The in-flight authorization, if the operator has started one. See `addAccount`. */
   private pending: { url: string; state: string; codeVerifier: string; redirectUri: string } | null =

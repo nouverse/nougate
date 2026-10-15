@@ -156,6 +156,7 @@ function ProviderPage() {
               accounts={detail.accounts}
               refreshQueries={refreshQueries}
               flow={accountFlow}
+              accountCopy={detail.accountCopy}
             />
           ) : accountFlow === 'device-code' ? (
             <DeviceCodeAccountsTab
@@ -167,6 +168,7 @@ function ProviderPage() {
           ) : accountFlow === 'oauth-redirect' ? (
             <OAuthAccountsTab
               providerId={detail.id}
+              accountCopy={detail.accountCopy}
               accounts={detail.accounts}
               refreshQueries={refreshQueries}
             />

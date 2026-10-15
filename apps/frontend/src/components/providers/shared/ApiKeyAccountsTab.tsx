@@ -5,7 +5,7 @@ import { KeyRound, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { formatTimestamp } from '@/lib/format';
 import { ConfirmModal } from '@/components/shared/ConfirmModal';
-import type { Account } from '@/lib/types';
+import type { Account, AccountCopy } from '@/lib/types';
 
 interface Props {
   providerId: string;
@@ -13,6 +13,8 @@ interface Props {
   refreshQueries: () => void;
   /** Which credential this provider actually wants. Decides the wording, not the mechanics. */
   flow?: 'api-key' | 'oauth-token';
+  /** The provider's own words, which win over the flow's defaults below (`accountCopy`). */
+  accountCopy?: AccountCopy | null;
 }
 
 /**
@@ -32,8 +34,9 @@ const COPY = {
   },
   'oauth-token': {
     title: 'ADD A SUBSCRIPTION TOKEN',
-    hint: 'Run `claude setup-token` and paste the token here — it draws on your Claude subscription rather than API credits. An API key works too, and is billed as credits. Tokens rotate like accounts: the healthiest wins, a 429 puts it in cooldown.',
-    placeholder: 'paste the token from `claude setup-token`',
+    // Neutral on purpose: how to get the token is the provider's to say (`accountCopy.hint`).
+    hint: 'Paste a token issued for your subscription. Tokens rotate like accounts: the healthiest wins, a 429 puts it in cooldown.',
+    placeholder: 'paste the token',
     button: 'Add token',
   },
 } as const;
@@ -51,8 +54,14 @@ export function ApiKeyAccountsTab({
   accounts,
   refreshQueries,
   flow = 'api-key',
+  accountCopy,
 }: Props) {
-  const copy = COPY[flow];
+  const copy = {
+    ...COPY[flow],
+    ...(accountCopy?.hint ? { hint: accountCopy.hint } : {}),
+    ...(accountCopy?.pastePlaceholder ? { placeholder: accountCopy.pastePlaceholder } : {}),
+    ...(accountCopy?.button ? { button: accountCopy.button } : {}),
+  };
   const [draft, setDraft] = useState({ apiKey: '', label: '' });
   const [error, setError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Account | null>(null);

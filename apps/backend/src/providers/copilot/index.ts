@@ -1,12 +1,4 @@
-import type {
-  AccountRequestOptions,
-  DeviceFlowPollResult,
-  IAccount,
-  IModelRegistry,
-  IProvider,
-  IProviderQuota,
-  ProviderExecuteParams,
-} from '@/core/interfaces';
+import type { AccountRequestOptions, DeviceFlowPollResult, IAccount, IModelRegistry, IProvider, IProviderQuota, ProviderExecuteParams, AccountCopy } from '@/core/interfaces';
 import { type JitterConfig, normalizeJitterConfig } from '@/core/jitter';
 import {
   ACCOUNT_WIDE,
@@ -38,6 +30,13 @@ export class CopilotProvider implements IProvider {
   readonly displayName = 'GitHub Copilot';
 
   readonly accountFlow = 'device-code' as const;
+
+  readonly accountCopy: AccountCopy = {
+    label: 'GitHub Copilot',
+    hint: 'Any Copilot plan, by device code',
+    order: 3,
+    button: 'Sign In with GitHub',
+  };
 
   async init(): Promise<void> {
     await loadCopilotConfig();

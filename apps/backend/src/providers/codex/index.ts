@@ -12,14 +12,7 @@
  * - Proactive stale refresh via maxRefreshAgeMs (8 days)
  */
 
-import type {
-  AccountRequestOptions,
-  IAccount,
-  IModelRegistry,
-  IProvider,
-  IProviderQuota,
-  ProviderExecuteParams,
-} from '@/core/interfaces';
+import type { AccountRequestOptions, IAccount, IModelRegistry, IProvider, IProviderQuota, ProviderExecuteParams, AccountCopy } from '@/core/interfaces';
 import { normalizeJitterConfig, type JitterConfig } from '@/core/jitter';
 import {
   addOAuthAccount,
@@ -79,6 +72,19 @@ export class CodexProvider implements IProvider {
   readonly displayName = 'OpenAI Codex';
 
   readonly accountFlow = 'oauth-redirect' as const;
+
+  readonly accountCopy: AccountCopy = {
+    label: 'ChatGPT',
+    hint: 'Plus, Pro or Team — through Codex',
+    order: 2,
+    title: 'Add ChatGPT Account',
+    intro: 'Signs in with your ChatGPT subscription. Open the link in a new tab, approve, then paste the URL you land on.',
+    button: 'Sign In with ChatGPT',
+    consent:
+      'OpenAI redirects to `http://localhost:1455/auth/callback`, a port this gateway does not listen on — so the tab will fail to load, which is expected. Copy its full URL and paste it below.',
+    pasteLabel: 'Paste Redirect URL',
+    pastePlaceholder: 'Paste the entire redirected localhost:1455 URL here...',
+  };
 
   private pending: { url: string; state: string; codeVerifier: string; redirectUri: string } | null =
     null;

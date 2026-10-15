@@ -518,9 +518,11 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
         modelCount: p.getSupportedModels().length,
         // Lets the dashboard route custom providers to their own editor.
         isCustom: p instanceof CustomProvider,
-        // How an account is added, read off the contract like the detail route does — so a list of
-        // sign-in buttons (a host's setup wizard) needs no request per provider, and no guess per id.
+        // How an account is added, and what to call it while adding one — read off the contract like
+        // the detail route does, so a list of sign-in buttons (a host's setup wizard) needs no request
+        // per provider and knows none of them by name.
         accountFlow: p.accountFlow ?? null,
+        accountCopy: p.accountCopy ?? null,
       };
     });
     return createJsonResponse(results);
@@ -618,6 +620,7 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
         // renders as a plain count rather than an "n / m" meter.
         accountLimit: getMaxAccountMultiplexing(),
         capabilities: { quota: supportsQuota, accountFlow: p.accountFlow ?? null },
+        accountCopy: p.accountCopy ?? null,
         quotas,
       });
     }

@@ -1,11 +1,4 @@
-import type {
-  AccountRequestOptions,
-  IAccount,
-  IModelRegistry,
-  IProvider,
-  IProviderQuota,
-  ProviderExecuteParams,
-} from '@/core/interfaces';
+import type { AccountRequestOptions, IAccount, IModelRegistry, IProvider, IProviderQuota, ProviderExecuteParams, AccountCopy } from '@/core/interfaces';
 import { type JitterConfig, normalizeJitterConfig } from '@/core/jitter';
 import {
   getAccounts,
@@ -342,6 +335,19 @@ export class AntigravityProvider implements IProvider {
   readonly displayName = 'Google Antigravity';
 
   readonly accountFlow = 'oauth-redirect' as const;
+
+  readonly accountCopy: AccountCopy = {
+    label: 'Google Gemini',
+    hint: 'A Google account — through Antigravity',
+    order: 4,
+    title: 'Add Google Account',
+    intro: 'Google OAuth requires a local port redirect. Follow these manual steps to authenticate.',
+    button: 'Sign In with Google',
+    consent:
+      'Log in to your Google Account. Once finished, your browser will attempt to load a failed local URL (e.g. `http://localhost:3000/oauth-callback?code=...`).',
+    pasteLabel: 'Paste Redirect URL',
+    pastePlaceholder: 'Paste the entire redirected localhost URL here...',
+  };
 
   /**
    * Initialize provider-owned config, runtime model overrides, and account state.
