@@ -283,7 +283,9 @@ export class CustomProvider implements IProvider {
       'Cache-Control': 'no-cache',
       Connection: 'keep-alive',
       'Access-Control-Allow-Origin': '*',
-      'X-Nougate-Attempts': result.attempts.toString(),
+      // Keys tried within this provider, named for it as every provider names its own. `X-Nougate-Attempts` is the
+      // gateway's: the providers tried for the request (`core/provider-execute.ts`).
+      'X-Custom-Attempts': result.attempts.toString(),
     };
 
     // Same dialect on both sides: only the public model name needs restoring.

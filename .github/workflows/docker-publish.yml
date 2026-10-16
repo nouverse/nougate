@@ -5,7 +5,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }} # nouverse-tech/nougate
+  IMAGE_NAME: ${{ github.repository }} # nouverse/nougate
 
 jobs:
   build-and-push:

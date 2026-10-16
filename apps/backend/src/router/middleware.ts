@@ -1,5 +1,6 @@
 import { getProxyConfig } from "@/config/manager";
 import { adminEventBus } from "@/core/events";
+import { SERVED_HEADERS } from "@/core/provider-execute";
 
 const logBuffer: string[] = [];
 const originalConsole = {
@@ -105,6 +106,8 @@ export function withCorsHeaders(response: Response): Response {
   headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE");
   headers.set("Access-Control-Allow-Headers", "*");
   headers.set("Access-Control-Max-Age", "86400");
+  // Who served a request (`core/provider-execute.ts`), readable by a browser client too.
+  headers.set("Access-Control-Expose-Headers", SERVED_HEADERS.join(", "));
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,

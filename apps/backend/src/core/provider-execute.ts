@@ -1,5 +1,6 @@
 import type { IModelSpec, IProvider, ProviderExecuteParams } from '@/core/interfaces';
 import { applyJitter } from '@/core/jitter';
+import { reframedHeaders } from '@/core/response-framing';
 import type { RoutingCandidate } from '@/core/smart-routing';
 import { ModelUnavailableError, ProviderResponseError } from '@/core/upstream-errors';
 
@@ -31,6 +32,27 @@ export interface FailoverResult {
   response: Response;
   provider: IProvider;
   modelSpec: IModelSpec;
+}
+
+/**
+ * The headers that tell a client who served its request, on every response a provider gave.
+ *
+ * A client asks for a model; a bare id can be served by any provider that has it, the next one taking over when
+ * the first fails, and the body's `model` does not say which did on every provider. So the response says it, the
+ * same way whoever served: the provider, the model as that provider names it, and how many providers were tried
+ * for this request, the one that answered included. A client that keeps its own accounting (Nouride's
+ * `llm_usage`) can then split it by what actually ran.
+ */
+export const SERVED_HEADERS = ['x-nougate-provider', 'x-nougate-model', 'x-nougate-attempts'] as const;
+
+function served(result: FailoverResult, attempts: number): FailoverResult {
+  // Reframed: a provider may hand back the upstream's own response, whose encoding the body no longer has.
+  const headers = reframedHeaders(result.response);
+  headers.set('x-nougate-provider', result.provider.id);
+  headers.set('x-nougate-model', result.modelSpec.modelId);
+  headers.set('x-nougate-attempts', String(attempts));
+  const { status, statusText } = result.response;
+  return { ...result, response: new Response(result.response.body, { status, statusText, headers }) };
 }
 
 /**
@@ -94,7 +116,7 @@ export async function executeWithFailover(
             `[Routing] ${candidate.modelSpec.modelId} served by ${candidate.provider.id} after ${index} provider(s) failed`,
           );
         }
-        return result;
+        return served(result, index + 1);
       }
 
       console.warn(
@@ -120,6 +142,6 @@ export async function executeWithFailover(
     }
   }
 
-  if (firstFailure) return firstFailure;
+  if (firstFailure) return served(firstFailure, candidates.length);
   throw lastError ?? new Error('No provider could serve this request.');
 }

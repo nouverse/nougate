@@ -621,6 +621,21 @@ All models follow `provider:model-id` format.
 | `/anthropic/v1/models` | GET | List available models across every provider (Anthropic format) |
 | `/anthropic/v1/messages` | POST | Messages (Anthropic protocol) |
 
+Every response a provider gave — an answer, or the failure handed back when all of them failed — says who
+served it:
+
+| Header | Value |
+|--------|-------|
+| `x-nougate-provider` | The provider that served, e.g. `antigravity` |
+| `x-nougate-model` | The model as that provider names it, e.g. `claude-sonnet-4-6` |
+| `x-nougate-attempts` | Providers tried for this request, the one that served included: `1` unless it failed over |
+
+A bare model id can be served by any provider that declares it, the next taking over when one fails, and the
+body's `model` does not say which did on every provider — so a client that keeps its own accounting reads these.
+Browsers may read them too (`Access-Control-Expose-Headers`). Retries inside one provider, across its accounts,
+are that provider's own header: `X-Antigravity-Attempts`, `X-Copilot-Attempts`, `X-Claude-Code-Attempts`,
+`X-Kiro-Attempts`, and `X-Custom-Attempts` on a custom provider's stream.
+
 Admin endpoints (behind the dashboard guard):
 
 | Endpoint | Method | Description |

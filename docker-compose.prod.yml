@@ -2,7 +2,7 @@ name: nougate
 
 services:
   nougate:
-    image: ghcr.io/nouverse-tech/nougate:latest
+    image: ghcr.io/nouverse/nougate:latest
     container_name: nougate
     restart: unless-stopped
     ports:

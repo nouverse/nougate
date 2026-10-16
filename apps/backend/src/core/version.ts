@@ -13,4 +13,4 @@
  * against `package.json` and fails the build when they drift — which is the part that makes a
  * hardcoded version safe. Bump both together, or let the test tell you that you did not.
  */
-export const NOUGATE_VERSION = '1.0.0';
+export const NOUGATE_VERSION = '1.1.0';

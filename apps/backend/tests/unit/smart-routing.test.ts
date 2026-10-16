@@ -19,6 +19,7 @@ import { resolveModel } from '@/core/model-resolver';
 import { explainNoCandidate, routeCandidates, smartRoutableModels } from '@/core/smart-routing';
 import { executeWithFailover } from '@/core/provider-execute';
 import { ProviderResponseError } from '@/core/upstream-errors';
+import { withCorsHeaders } from '@/router/middleware';
 
 // The real field names: a mistyped config falls through to DEFAULT_JITTER_CONFIG, which is
 // deliberately non-zero, and every case here would sit through a second of it.
@@ -333,5 +334,58 @@ describe('failing over between providers', () => {
     await expect(executeWithFailover(routeCandidates(resolveModel('m')), params)).rejects.toThrow(
       /unreachable/,
     );
+  });
+});
+
+/**
+ * Who served, said on the response itself (x-nougate-provider, -model, -attempts). A bare model can be served by any
+ * provider that has it, the next taking over when one fails, and the body does not name the provider on every path —
+ * so a client keeping its own accounting could not split it by what ran.
+ */
+describe('saying who served', () => {
+  const params = (): any => ({ protocol: 'openai', body: {}, resolvedModel: resolveModel('m'), ctx: {} });
+  const said = (response: Response) =>
+    Object.fromEntries(['x-nougate-provider', 'x-nougate-model', 'x-nougate-attempts'].map((name) => [name, response.headers.get(name)]));
+
+  test('the provider, the model as it names it, and one attempt when the first answered', async () => {
+    fakeProvider('alpha', { models: ['m'], execute: async () => new Response('from alpha', { headers: { 'x-request-id': 'req_1' } }) });
+    const served = await executeWithFailover(routeCandidates(resolveModel('m')), params);
+    expect(said(served.response)).toEqual({ 'x-nougate-provider': 'alpha', 'x-nougate-model': 'm', 'x-nougate-attempts': '1' });
+    // What the provider said is kept, and so is the body.
+    expect(served.response.headers.get('x-request-id')).toBe('req_1');
+    expect(await served.response.text()).toBe('from alpha');
+  });
+
+  test('after a failover, the provider that answered and how many were tried', async () => {
+    fakeProvider('alpha', { models: ['m'], execute: async () => new Response('quota', { status: 429 }) });
+    fakeProvider('beta', { models: ['m'], execute: async () => { throw new Error('cooling down'); } });
+    fakeProvider('gamma', { models: ['m'], execute: async () => new Response('from gamma') });
+    const served = await executeWithFailover(routeCandidates(resolveModel('m')), params);
+    expect(said(served.response)).toEqual({ 'x-nougate-provider': 'gamma', 'x-nougate-model': 'm', 'x-nougate-attempts': '3' });
+  });
+
+  test('when every one failed, the failure handed back says whose it is and that all were tried', async () => {
+    fakeProvider('alpha', { models: ['m'], execute: async () => new Response('alpha said no', { status: 429 }) });
+    fakeProvider('beta', { models: ['m'], execute: async () => new Response('beta said no', { status: 503 }) });
+    const served = await executeWithFailover(routeCandidates(resolveModel('m')), params);
+    expect(served.response.status).toBe(429);
+    expect(said(served.response)).toEqual({ 'x-nougate-provider': 'alpha', 'x-nougate-model': 'm', 'x-nougate-attempts': '2' });
+  });
+
+  test("an upstream's own response handed back is reframed: its encoding is not the body's any more", async () => {
+    fakeProvider('alpha', {
+      models: ['m'],
+      execute: async () => new Response('plain text', { headers: { 'content-encoding': 'gzip', 'content-length': '999' } }),
+    });
+    const served = await executeWithFailover(routeCandidates(resolveModel('m')), params);
+    expect(served.response.headers.get('content-encoding')).toBeNull();
+    expect(served.response.headers.get('content-length')).not.toBe('999');
+    expect(served.response.headers.get('x-nougate-provider')).toBe('alpha');
+    expect(await served.response.text()).toBe('plain text');
+  });
+
+  test('a browser client may read them', () => {
+    const headers = withCorsHeaders(new Response('x')).headers.get('access-control-expose-headers') ?? '';
+    expect(headers.split(',').map((name) => name.trim())).toEqual(['x-nougate-provider', 'x-nougate-model', 'x-nougate-attempts']);
   });
 });
