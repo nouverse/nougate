@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { adoptStateFrom } from '../../src/boot';
+import { adoptStateFrom, forgetStateIn } from '../../src/boot';
 
 let dir: string;
 let hostData: string;
@@ -85,3 +85,32 @@ describe('adoptStateFrom', () => {
     expect(existsSync(target)).toBe(false);
   });
 });
+
+describe('forgetStateIn', () => {
+  test("deletes the old copy by name once the gateway's own folder has the state — and none of the host's files", () => {
+    stateIn(hostData, 'host');
+    adoptStateFrom([hostData, oldImage]);
+    const removed = forgetStateIn([hostData, oldImage]);
+    expect(removed.map((path) => path.slice(hostData.length + 1)).sort()).toEqual(['config.json', 'nougate.db', 'nougate.db-wal', 'providers']);
+    expect(existsSync(join(hostData, 'nougate.db'))).toBe(false);
+    expect(existsSync(join(hostData, 'providers'))).toBe(false);
+    // The host's own database, beside them, stays.
+    expect(read(join(hostData, 'nouride.db'))).toBe("the host's own");
+    // And the gateway's own copy is untouched.
+    expect(read(join(target, 'nougate.db'))).toBe('host');
+  });
+
+  test('deletes nothing while the gateway has no state of its own — the old copy is all there is', () => {
+    stateIn(hostData, 'host');
+    expect(forgetStateIn([hostData])).toEqual([]);
+    expect(read(join(hostData, 'nougate.db'))).toBe('host');
+  });
+
+  test("never deletes from the gateway's own data directory, even when named as a source", () => {
+    stateIn(hostData, 'host');
+    adoptStateFrom([hostData]);
+    forgetStateIn([target, hostData]);
+    expect(read(join(target, 'nougate.db'))).toBe('host');
+  });
+});
+

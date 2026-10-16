@@ -1,5 +1,5 @@
-import { cpSync, existsSync, mkdirSync, readFileSync } from 'fs';
-import { dirname, join } from 'path';
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync } from 'fs';
+import { dirname, join, resolve } from 'path';
 
 /**
  * Where runtime state lives.
@@ -192,4 +192,32 @@ export function adoptStateFrom(sources: readonly string[]): string | null {
     if (existsSync(from)) cpSync(from, join(target, name), { recursive: true, force: false, errorOnExist: false });
   }
   return source;
+}
+
+/**
+ * Delete this gateway's state from where a host kept it before — once its own folder has it, and the host knows
+ * nothing it can roll back to reads the old place.
+ *
+ * `adoptStateFrom` copies and never moves, for a rollback. The copy then stayed for good: old provider accounts
+ * and the session secret beside the host's own files, surviving the host's "reset sign-in" (which clears the live
+ * database), and copied back in by `adoptStateFrom` the day the live database is deleted. The host decides when no
+ * build of its own still reads there; this only does the deleting.
+ *
+ * By name, as the copy is — never the directory, which may be the host's own data directory — and never in this
+ * gateway's own data directory. Returns what it removed.
+ */
+export function forgetStateIn(sources: readonly string[]): string[] {
+  const target = resolve(getDataDir());
+  if (!existsSync(join(target, 'nougate.db'))) return [];
+  const removed: string[] = [];
+  for (const source of sources) {
+    if (resolve(source) === target) continue;
+    for (const name of STATE_FILES) {
+      const path = join(source, name);
+      if (!existsSync(path)) continue;
+      rmSync(path, { recursive: true, force: true });
+      removed.push(path);
+    }
+  }
+  return removed;
 }

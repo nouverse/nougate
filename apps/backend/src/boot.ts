@@ -124,6 +124,12 @@ export async function resetAccounts(): Promise<number> {
 export { adoptStateFrom } from "@/core/paths";
 
 /**
+ * Delete the copy `adoptStateFrom` left behind, once nothing the host can roll back to reads it — see
+ * `forgetStateIn`. Call it before `boot()`, as the adoption.
+ */
+export { forgetStateIn } from "@/core/paths";
+
+/**
  * A gateway key for the host itself — the one its own model calls carry. After `boot()`.
  *
  * The host stores the key and hands back what it stored as `current`. A key that still verifies is
