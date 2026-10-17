@@ -15,6 +15,7 @@ readonly id: string;            // lowercase, [a-z][a-z0-9_-]* — becomes the m
 readonly displayName: string;   // see the getter warning below
 
 init(): Promise<void>;
+getJitterConfig(): JitterConfig;   // see below — required, not a capability
 getBestAccount(options: AccountRequestOptions): Promise<IAccount | null>;
 updateAccountUsage(accountId, success, meta): Promise<void>;
 getAccounts(): IAccount[];
@@ -27,6 +28,32 @@ Everything else is optional and is a **capability**: implementing it is what tur
 the corresponding dashboard feature on. `getQuotas()` gives you the Quota tab.
 `getConfig()`/`updateConfig()` give you the Provider Config tab. `addAccount()`
 gives you the add-account button. No registration list, no switch statement.
+
+### `getJitterConfig()` is required, and you do not implement the waiting
+
+Jitter used to be three fields copied into each provider's config plus a
+`min + random * (max - min)` block next to `fetch`. That made it unenforceable:
+an operator could not set a minimum spacing for the whole deployment, and a new
+provider could ship with no delay at all.
+
+So the shape is `JitterConfig` from `core/jitter.ts`, and the sleep happens once
+in `executeProviderRequest` — the single path both protocol handlers use to reach
+a provider. Your job is only to declare the window:
+
+```ts
+getJitterConfig(): JitterConfig {
+  return normalizeJitterConfig(getYourConfig().features);
+}
+```
+
+Returning `DEFAULT_JITTER_CONFIG` is a fine answer. Omitting the method is not,
+and will not compile. **Do not put a jitter sleep in your executor** — it would
+stack on top of the one the gateway already applied, and it would sit below the
+`BOTTOM_JITTER` floor rather than above it.
+
+If your provider stores config in a JSON file, extend `JitterConfig` on its
+features interface (`AntigravityFeaturesConfig`, `CopilotFeaturesConfig`) so the
+three field names cannot drift.
 
 ### `displayName` must read through to live state
 
@@ -67,8 +94,16 @@ providers/<id>/
 
 Provider-local config belongs in `data/providers/<id>/config.json`, **never** in the
 global `data/config.json`. Global config holds only settings that apply to the whole
-gateway; endpoints, feature flags, polling intervals and blacklists are provider-local
-and are edited from that provider's Provider Config tab.
+gateway; feature flags, polling intervals and blacklists are provider-local and are
+edited from that provider's Provider Config tab.
+
+**Not everything a provider needs is config.** The Provider Config tab renders
+exactly what `getConfig()` returns, as a JSON editor with no validation beyond
+"is it JSON". So a value only belongs in the config shape if a wrong entry is
+*recoverable from that same screen*. Upstream URLs are the counter-example: they
+are code (`providers/antigravity/upstream/endpoints.ts`), because a typo there
+takes the provider down and the editor gives no way to say so. Same test for
+anything else structural — wire-format constants, retry ladders, header sets.
 
 ---
 
@@ -164,6 +199,23 @@ scale — the dashboard renders all providers with the same bars.
 cooldown, then pick the highest health score, breaking ties by least-recently-used.
 Return `null` when nothing is available; the protocol handler turns that into a
 protocol-shaped error.
+
+`MAX_ACCOUNT_MULTIPLEXING` bounds how many accounts a provider may hold, and it
+is your job to honour it in **two** places (`core/rotation-pool.ts`):
+
+- **Where you store a new account** — call `assertAccountSlotAvailable(subject, count)`
+  *before* pushing it. It throws `AccountLimitError` (status 409), which the
+  routers already map to a response. Put this in the function that actually
+  appends to your account list, not in the route handler: providers here have
+  three or four add paths (OAuth callback, device flow, manual token, API key
+  form) and guarding the storage point covers all of them at once.
+  Never block an update — if the account already exists, it is a re-auth.
+- **Where you rank candidates** — pass the sorted list through `capRotationPool()`
+  before selecting. It only trims the tail, so it never changes which account
+  wins, but the list must be sorted first or it will bench the wrong ones.
+
+The dashboard shows the count against the limit automatically, from `accountLimit`
+in the `/api/providers` payload. You do not add UI for it.
 
 ---
 
