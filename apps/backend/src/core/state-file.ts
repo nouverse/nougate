@@ -72,6 +72,14 @@ export function flushAllStateFiles(): void {
   }
 }
 
+/**
+ * A last flush when the process exits, whoever ends it.
+ *
+ * 'exit' only — never a signal. A handler for SIGINT or SIGTERM is the process owner's to install: a gateway on its
+ * own does in `standalone.ts`, and inside a host the host does. Installed here, one that called `process.exit` ran first in
+ * Nouride's router editions — it was registered when this module loaded, before the daemon's — and ended the daemon
+ * before its own shutdown could save a turn. `shutdown()` in `boot.ts` is what an owner calls.
+ */
 function installShutdownHook(): void {
   if (shutdownHooked) {
     return;
@@ -81,12 +89,6 @@ function installShutdownHook(): void {
   // 'exit' must stay synchronous, which is why the write path uses the sync fs
   // calls rather than Bun.write.
   process.on('exit', flushAllStateFiles);
-  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-    process.on(signal, () => {
-      flushAllStateFiles();
-      process.exit(0);
-    });
-  }
 }
 
 /**

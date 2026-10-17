@@ -29,7 +29,8 @@ import { registerOpenAIProtocol } from "@/protocols/openai";
 import { registerAnthropicProtocol } from "@/protocols/anthropic";
 import { handleRequest } from "@/router";
 import { setupLogCapture } from "@/router/middleware";
-import { initDb } from "@/core/db";
+import { closeDb, initDb } from "@/core/db";
+import { flushAllStateFiles } from "@/core/state-file";
 import { createApiKey, initApiKeys, verifyApiKey } from "@/auth/api-keys";
 import { clearUsers, initUsers } from "@/auth/users";
 import { initCustomProviders } from "@/providers/custom/manager";
@@ -103,6 +104,18 @@ export async function boot(options: BootOptions = {}): Promise<(req: Request) =>
   registerAnthropicProtocol();
 
   return handleRequest;
+}
+
+/**
+ * Write what the gateway holds and close its database — the end of its process, whoever owns it.
+ *
+ * The JSON state files hold a debounced write. A host calls this from its own shutdown, after it stops sending
+ * requests here; a gateway on its own calls it on SIGINT and SIGTERM (`standalone.ts`). Loading the gateway installs no
+ * signal handler: inside a host, one that exited the process ran before the host's and took its whole shutdown with it.
+ */
+export async function shutdown(): Promise<void> {
+  flushAllStateFiles();
+  await closeDb();
 }
 
 /**

@@ -9,8 +9,12 @@
 
 import { boot } from "@/boot";
 import { NOUGATE_VERSION } from "@/core/version";
+import { shutDownOnSignals } from "@/standalone";
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+
+// Before anything starts, so a signal while it boots is answered too.
+shutDownOnSignals();
 
 Bun.serve({
   port: PORT,

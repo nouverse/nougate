@@ -51,7 +51,9 @@ writer.flush();                        // force now — use when credentials cha
   failure. A crash mid-write leaves the previous file intact.
 - Debouncing matters: an unthrottled per-request save wrote ~6 MB for 500 rotations;
   coalescing brought the same run to a single 12 KB write.
-- `flushAllStateFiles()` is registered on `exit`, `SIGINT` and `SIGTERM`.
+- `flushAllStateFiles()` is registered on `exit` only. The signals are the process owner's: a gateway on its own
+  answers SIGINT and SIGTERM in `standalone.ts`, and a host (Nouride) calls `shutdown()` from `boot.ts`. A handler
+  installed here once ran before Nouride's and exited the daemon under its own shutdown.
 - Pass `{ immediate: true }` when a credential changed. Scoring updates can wait.
 
 ---
