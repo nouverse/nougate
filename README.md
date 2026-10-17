@@ -528,8 +528,9 @@ need the real secret.
 Every request through the gateway is recorded to SQLite (`data/nougate.db`, or
 `/app/data/nougate.db` in Docker) and charted on the **Token Metrics** page.
 
-- **Non-blocking** — rows are buffered in memory and batch-written every 5s, so a slow or
-  locked database can never stall an in-flight LLM response.
+- **Non-blocking** — rows are buffered in memory and batch-written on one heartbeat — every 5 s
+  on its own, every 30 s inside a host such as Nouride, where the database shares an SD card — so
+  a slow or locked database can never stall an in-flight LLM response.
 - **Real usage when available** — token counts come from the upstream's `usage` block for
   both streamed and non-streamed responses. When a provider reports nothing, counts are
   estimated from payload size and the row is flagged `est` in the dashboard.

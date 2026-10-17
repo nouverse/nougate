@@ -1,5 +1,6 @@
 import { eq, sql } from 'drizzle-orm';
 import { getDb, t } from '@/core/db';
+import { armBeat, onBeat } from '@/core/db/heartbeat';
 
 export interface ApiKeyRecord {
   id: string;
@@ -345,9 +346,8 @@ export function verifyApiKey(raw: string | null): ApiKeyVerification {
   return { ok: true, record };
 }
 
-/** Pending per-key usage counters, flushed on a timer instead of per request. */
+/** Pending per-key usage counters, written on the gateway's heartbeat (`core/db/heartbeat.ts`) instead of per request. */
 const pendingUsage = new Map<string, { count: number; lastUsedAt: number }>();
-let usageTimer: ReturnType<typeof setInterval> | null = null;
 
 /**
  * Write buffered key usage counters to SQLite.
@@ -401,8 +401,6 @@ export function touchApiKey(id: string): void {
     }
   }
 
-  if (!usageTimer) {
-    usageTimer = setInterval(() => void flushApiKeyUsage(), 30_000);
-    usageTimer.unref?.();
-  }
+  armBeat();
 }
+onBeat(flushApiKeyUsage);

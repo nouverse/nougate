@@ -30,6 +30,7 @@ import { registerAnthropicProtocol } from "@/protocols/anthropic";
 import { handleRequest } from "@/router";
 import { setupLogCapture } from "@/router/middleware";
 import { closeDb, initDb } from "@/core/db";
+import { beatNow, HOSTED_BEAT_MS, setBeatInterval, STANDALONE_BEAT_MS } from "@/core/db/heartbeat";
 import { flushAllStateFiles } from "@/core/state-file";
 import { createApiKey, initApiKeys, verifyApiKey } from "@/auth/api-keys";
 import { clearUsers, initUsers } from "@/auth/users";
@@ -65,6 +66,8 @@ export interface BootOptions {
 export async function boot(options: BootOptions = {}): Promise<(req: Request) => Response | Promise<Response>> {
   // First, so nothing that answers a request can run before the host is known.
   setHostResolver(options.host ?? null);
+  // A hosted gateway writes on a slower beat: its database shares the host's card (`core/db/heartbeat.ts`, E15).
+  setBeatInterval(options.host ? HOSTED_BEAT_MS : STANDALONE_BEAT_MS);
   await loadProxyConfig();
   setupLogCapture();
   await initDb();
@@ -109,11 +112,13 @@ export async function boot(options: BootOptions = {}): Promise<(req: Request) =>
 /**
  * Write what the gateway holds and close its database — the end of its process, whoever owns it.
  *
- * The JSON state files hold a debounced write. A host calls this from its own shutdown, after it stops sending
- * requests here; a gateway on its own calls it on SIGINT and SIGTERM (`standalone.ts`). Loading the gateway installs no
- * signal handler: inside a host, one that exited the process ran before the host's and took its whole shutdown with it.
+ * The heartbeat holds up to a beat of usage rows and key counters (30 s inside a host), and the JSON state files a
+ * debounce of their own. A host calls this from its own shutdown, after it stops sending requests here; a gateway on
+ * its own calls it on SIGINT and SIGTERM (`standalone.ts`). Loading the gateway installs no signal handler: inside a
+ * host, one that exited the process ran before the host's and took its whole shutdown with it.
  */
 export async function shutdown(): Promise<void> {
+  await beatNow();
   flushAllStateFiles();
   await closeDb();
 }

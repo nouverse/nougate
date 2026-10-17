@@ -93,6 +93,11 @@ function openSqlite(): Db {
   sqliteHandle.exec('PRAGMA synchronous = NORMAL');
   sqliteHandle.exec('PRAGMA foreign_keys = ON');
   sqliteHandle.exec('PRAGMA busy_timeout = 5000');
+  // The log's two bounds, as Nouride's own database has them (E4): a checkpoint at 2000 pages rather than 1000 folds
+  // more rewrites of the same pages into one write, and `journal_size_limit` gives the disk back after a burst. The
+  // ordinary fold is the heartbeat's (`heartbeat.ts`); this one is for a burst between two beats.
+  sqliteHandle.exec('PRAGMA wal_autocheckpoint = 2000');
+  sqliteHandle.exec('PRAGMA journal_size_limit = 8388608');
 
   target = path;
   return drizzleSqlite(sqliteHandle, { schema: sqliteSchema.schema });
@@ -118,9 +123,20 @@ export function getDb(): Db {
 }
 
 /**
- * The raw bun:sqlite handle, for the few places that need SQLite directly.
- * Null when Postgres is the backend.
+ * Fold the write-ahead log into the database file — `PASSIVE`: what no reader holds, without waiting for one. The
+ * heartbeat's, after its writes (`heartbeat.ts`). Null on Postgres, which keeps no such log here, and before the
+ * database is open.
  */
+export function checkpointWal(): { busy: boolean; log: number; checkpointed: number } | null {
+  if (!sqliteHandle) {
+    return null;
+  }
+  const row = sqliteHandle.query('PRAGMA wal_checkpoint(PASSIVE)').get() as
+    | { busy: number; log: number; checkpointed: number }
+    | null;
+  return { busy: (row?.busy ?? 0) !== 0, log: row?.log ?? 0, checkpointed: row?.checkpointed ?? 0 };
+}
+
 /**
  * Create any missing tables and indexes.
  *

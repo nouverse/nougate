@@ -1,4 +1,5 @@
 import { getDb, t } from '@/core/db';
+import { armBeat, onBeat } from '@/core/db/heartbeat';
 
 export interface TokenLogEntry {
   timestamp: number;
@@ -31,16 +32,17 @@ export interface TokenLogEntry {
 }
 
 const BATCH_LIMIT = 50;
-const FLUSH_INTERVAL_MS = 5000;
 const MAX_QUEUE_SIZE = 2000;
 
 /**
  * Buffers token usage rows in memory and flushes them to SQLite in batches so
  * that a slow or locked database can never stall an in-flight LLM response.
+ *
+ * Written on the gateway's one heartbeat (`core/db/heartbeat.ts`) — every 30 s inside a host, 5 s on its own — or
+ * at once when a batch fills.
  */
 class TokenMetricsLogger {
   private queue: TokenLogEntry[] = [];
-  private timer: ReturnType<typeof setInterval> | null = null;
   /** Guards against two flushes overlapping once writes became async. */
   private flushing = false;
 
@@ -50,7 +52,7 @@ class TokenMetricsLogger {
   log(entry: TokenLogEntry): void {
     try {
       this.queue.push(entry);
-      this.ensureTimer();
+      armBeat();
 
       if (this.queue.length >= BATCH_LIMIT) {
         void this.flush();
@@ -78,8 +80,9 @@ class TokenMetricsLogger {
       console.error('[Metrics] Failed to persist token usage batch:', error);
 
       // Put the batch back so a transient failure does not lose data, but cap
-      // the buffer so a permanently broken database cannot leak memory.
+      // the buffer so a permanently broken database cannot leak memory. The next beat tries again.
       this.queue = [...batch, ...this.queue].slice(-MAX_QUEUE_SIZE);
+      armBeat();
     } finally {
       this.flushing = false;
     }
@@ -90,16 +93,6 @@ class TokenMetricsLogger {
    */
   pendingCount(): number {
     return this.queue.length;
-  }
-
-  private ensureTimer(): void {
-    if (this.timer) {
-      return;
-    }
-
-    this.timer = setInterval(() => void this.flush(), FLUSH_INTERVAL_MS);
-    // Do not hold the process open just for the metrics flush loop.
-    this.timer.unref?.();
   }
 }
 
@@ -141,3 +134,4 @@ function toRow(entry: TokenLogEntry) {
 }
 
 export const tokenMetricsLogger = new TokenMetricsLogger();
+onBeat(() => tokenMetricsLogger.flush());

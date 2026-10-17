@@ -132,7 +132,7 @@ the README.
 | File | Role |
 |---|---|
 | `tracker.ts` | records one request; called from both protocol handlers |
-| `logger.ts` | buffers rows, batch-inserts every 5s |
+| `logger.ts` | buffers rows, batch-inserts on the heartbeat (`core/db/heartbeat.ts`): 30 s inside a host, 5 s on its own |
 | `queries.ts` | every dashboard read; `scopeLogs`/`scopeRollups` build the filters |
 | `maintenance.ts` | hourly rollup into daily aggregates + pruning |
 | `pricing.ts` | resolves a rate for a model |
