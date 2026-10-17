@@ -78,9 +78,21 @@ function assertValidPassword(password: string): void {
   }
 }
 
+/**
+ * argon2id at OWASP's recommended cost: 19 MiB, two passes. Bun's default is 64 MiB, which a first start and every
+ * sign-in paid at once — inside Nouride's daemon when the gateway is hosted there, where that one hash was most of a
+ * small box's memory. A stored hash carries its own cost, so an older one still verifies and is hashed again at this
+ * cost the next time it signs in.
+ */
+const PASSWORD_COST = { algorithm: 'argon2id', memoryCost: 19456, timeCost: 2 } as const;
+
 async function hashPassword(password: string): Promise<string> {
-  // argon2id is Bun's default and needs no dependency.
-  return Bun.password.hash(password);
+  return Bun.password.hash(password, PASSWORD_COST);
+}
+
+/** Whether a stored hash was made at another cost than today's. */
+function needsRehash(hash: string): boolean {
+  return !hash.includes(`m=${PASSWORD_COST.memoryCost},t=${PASSWORD_COST.timeCost},`);
 }
 
 /** Computed once, and only if an unknown username is ever submitted. */
@@ -294,7 +306,8 @@ export async function verifyCredentials(
 
   failedAttempts.delete(normalized);
   const now = Date.now();
-  await getDb().update(t.users).set({ lastLoginAt: now }).where(eq(t.users.id, row.id));
+  const rehashed = needsRehash(row.passwordHash) ? { passwordHash: await hashPassword(password) } : {};
+  await getDb().update(t.users).set({ lastLoginAt: now, ...rehashed }).where(eq(t.users.id, row.id));
 
   return rowToUser({ ...row, lastLoginAt: now });
 }
