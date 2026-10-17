@@ -51,6 +51,7 @@ function toModelSpec(model: CustomProviderModelRecord): IModelSpec {
     thinkingMode: model.thinkingMode ?? undefined,
     thinkingBudget: model.thinkingBudget ?? undefined,
     maxOutputTokens: model.maxOutputTokens,
+    ...(model.contextWindow !== null ? { contextWindow: model.contextWindow } : {}),
     upstreamModelId: model.upstreamModelId ?? model.modelId,
     timeoutMs: model.timeoutMs,
     inputPricePer1M: model.inputPricePer1M ?? undefined,

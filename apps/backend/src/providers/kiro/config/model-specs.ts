@@ -166,6 +166,8 @@ function toSpecs(def: KiroModelDef): IModelSpec[] {
     upstreamModelId: def.id,
     timeoutMs: KIRO_TIMEOUT_MS,
     inputModalities: inputModalities(def),
+    // Kiro's own catalogue states it (`tokenLimits.maxInputTokens`), and the static list carries the same figure.
+    ...(def.contextLength ? { contextWindow: def.contextLength } : {}),
   }));
 }
 

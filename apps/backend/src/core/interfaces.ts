@@ -57,6 +57,13 @@ export interface IModelSpec {
   thinkingMode?: 'budget' | 'level';
   thinkingLevel?: 'low' | 'medium' | 'high';
   maxOutputTokens: number;
+  /**
+   * How many tokens a request to this model may hold, input and output together — when this route knows it: the
+   * upstream's own catalogue said (Kiro's `tokenLimits`, a custom upstream's `/models`), or the operator wrote it down.
+   * Omitted means unknown, and a client falls back to its own table: a guessed window is indistinguishable from a real
+   * one, and a client budgets a whole conversation by it.
+   */
+  contextWindow?: number;
   upstreamModelId?: string;
   useCliPool?: boolean;
   timeoutMs?: number;

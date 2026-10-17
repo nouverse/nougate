@@ -186,6 +186,8 @@ const ADDED_COLUMNS: Array<{ table: string; column: string; type: string }> = [
   { table: 'custom_providers', column: 'jitter_enabled', type: 'INTEGER' },
   { table: 'custom_providers', column: 'jitter_min_ms', type: 'INTEGER' },
   { table: 'custom_providers', column: 'jitter_max_ms', type: 'INTEGER' },
+  // A custom model's context window, when its upstream's `/models` stated one or the operator wrote it down (G2).
+  { table: 'custom_provider_models', column: 'context_window', type: 'INTEGER' },
 ];
 
 async function addMissingColumns(): Promise<void> {

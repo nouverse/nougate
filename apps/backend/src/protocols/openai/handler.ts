@@ -1,5 +1,5 @@
 import { formatModelId } from "@/core/model-resolver";
-import { listedModalities } from "@/core/model-listing";
+import { listedSpec } from "@/core/model-listing";
 import type { IProtocolHandler } from "@/core/interfaces";
 import { ProviderResponseError } from "@/core/upstream-errors";
 import type { RequestContext } from "@/core/request-context";
@@ -63,7 +63,7 @@ function handleListModels(): Response {
         created: Math.floor(Date.now() / 1000),
         owned_by: provider.id,
         provider: provider.id,
-        ...listedModalities(provider, modelId),
+        ...listedSpec(provider, modelId),
       })),
     )
     .sort((a, b) => a.id.localeCompare(b.id));

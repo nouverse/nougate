@@ -152,6 +152,7 @@ export const customProviderModels = sqliteTable(
     thinkingMode: text('thinking_mode'),
     thinkingBudget: integer('thinking_budget'),
     maxOutputTokens: integer('max_output_tokens').notNull().default(8192),
+    contextWindow: integer('context_window'),
     timeoutMs: integer('timeout_ms').notNull().default(60000),
     inputPricePer1M: real('input_price_per_1m'),
     outputPricePer1M: real('output_price_per_1m'),

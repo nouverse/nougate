@@ -375,6 +375,7 @@ export async function handleAdminRoute(req: Request, url: URL): Promise<Response
           displayName: spec?.displayName || modelId,
           isThinking: spec?.isThinking ?? false,
           maxOutputTokens: spec?.maxOutputTokens ?? 8192,
+          contextWindow: spec?.contextWindow ?? null,
           inputPricePer1M: pricing.inputPricePer1M,
           outputPricePer1M: pricing.outputPricePer1M,
           /** False when no rate is known, so cost is reported as $0. */

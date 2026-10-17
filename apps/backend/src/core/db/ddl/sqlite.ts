@@ -126,6 +126,7 @@ export const ddl = [
     thinking_mode TEXT,
     thinking_budget INTEGER,
     max_output_tokens INTEGER NOT NULL DEFAULT 8192,
+    context_window INTEGER,
     timeout_ms INTEGER NOT NULL DEFAULT 60000,
     input_price_per_1m REAL,
     output_price_per_1m REAL,

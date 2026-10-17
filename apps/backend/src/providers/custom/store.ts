@@ -1,4 +1,4 @@
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { getDb, t } from '@/core/db';
 import { type JitterConfig, normalizeJitterConfig } from '@/core/jitter';
 import { getProvider } from '@/core/registry';
@@ -46,6 +46,8 @@ export interface CustomProviderModelRecord {
   thinkingMode: 'budget' | 'level' | null;
   thinkingBudget: number | null;
   maxOutputTokens: number;
+  /** Null: unknown — nothing stated it. Never a default (`IModelSpec.contextWindow`). */
+  contextWindow: number | null;
   timeoutMs: number;
   inputPricePer1M: number | null;
   outputPricePer1M: number | null;
@@ -125,6 +127,7 @@ function rowToModel(row: any): CustomProviderModelRecord {
     thinkingMode: row.thinkingMode ?? null,
     thinkingBudget: row.thinkingBudget ?? null,
     maxOutputTokens: row.maxOutputTokens,
+    contextWindow: row.contextWindow ?? null,
     timeoutMs: row.timeoutMs,
     inputPricePer1M: row.inputPricePer1M ?? null,
     outputPricePer1M: row.outputPricePer1M ?? null,
@@ -389,6 +392,7 @@ export interface UpsertModelInput {
   thinkingMode?: 'budget' | 'level' | null;
   thinkingBudget?: number | null;
   maxOutputTokens?: number;
+  contextWindow?: number | null;
   timeoutMs?: number;
   inputPricePer1M?: number | null;
   outputPricePer1M?: number | null;
@@ -426,6 +430,7 @@ export async function upsertProviderModels(
       thinkingMode: entry.thinkingMode ?? null,
       thinkingBudget: entry.thinkingBudget ?? null,
       maxOutputTokens: entry.maxOutputTokens ?? 8192,
+      contextWindow: windowOrNull(entry.contextWindow),
       timeoutMs: entry.timeoutMs ?? 60000,
       inputPricePer1M: entry.inputPricePer1M ?? null,
       outputPricePer1M: entry.outputPricePer1M ?? null,
@@ -450,6 +455,7 @@ export async function upsertProviderModels(
         thinkingMode: sql`excluded.thinking_mode`,
         thinkingBudget: sql`excluded.thinking_budget`,
         maxOutputTokens: sql`excluded.max_output_tokens`,
+        contextWindow: sql`excluded.context_window`,
         timeoutMs: sql`excluded.timeout_ms`,
         inputPricePer1M: sql`excluded.input_price_per_1m`,
         outputPricePer1M: sql`excluded.output_price_per_1m`,
@@ -458,6 +464,37 @@ export async function upsertProviderModels(
     });
 
   return rows.length;
+}
+
+/** A context window as stored: a whole number of at least 1024, else unknown. Never a default. */
+function windowOrNull(value: number | null | undefined): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1024 ? value : null;
+}
+
+/**
+ * Give models a sync found again the context window their upstream states — only where none is stored, so a window
+ * the operator corrected by hand stays. Returns how many rows took one.
+ */
+export async function fillMissingWindows(providerId: string, windows: ReadonlyMap<string, number>): Promise<number> {
+  const missing = new Set(
+    (
+      await getDb()
+        .select({ modelId: t.customProviderModels.modelId })
+        .from(t.customProviderModels)
+        .where(and(eq(t.customProviderModels.providerId, providerId), isNull(t.customProviderModels.contextWindow)))
+    ).map((row) => row.modelId),
+  );
+  let filled = 0;
+  for (const [modelId, window] of windows) {
+    const stored = windowOrNull(window);
+    if (stored === null || !missing.has(modelId)) continue;
+    await getDb()
+      .update(t.customProviderModels)
+      .set({ contextWindow: stored })
+      .where(and(eq(t.customProviderModels.providerId, providerId), eq(t.customProviderModels.modelId, modelId)));
+    filled += 1;
+  }
+  return filled;
 }
 
 export async function deleteProviderModel(providerId: string, modelId: string): Promise<boolean> {

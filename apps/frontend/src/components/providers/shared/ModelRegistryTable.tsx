@@ -94,6 +94,10 @@ export function ModelRegistryTable({ models, providerId }: Props) {
                   <span className="text-base-content/40 block">Timeout</span>
                   <span className="font-semibold">{m.timeoutMs ? `${m.timeoutMs / 1000}s` : '60s'}</span>
                 </div>
+                <div>
+                  <span className="text-base-content/40 block">Context</span>
+                  <span className="font-semibold">{m.contextWindow ? `${m.contextWindow.toLocaleString()} tokens` : 'unknown'}</span>
+                </div>
                 {m.isThinking && (
                   <div className="col-span-2 bg-primary/10 border border-primary/20 p-2 rounded-lg mt-1 text-base-content">
                     <span className="text-primary text-[10px] font-bold block uppercase tracking-wider">Extended Thinking Active</span>
@@ -124,6 +128,7 @@ export function ModelRegistryTable({ models, providerId }: Props) {
               <th>Display Name</th>
               <th>Pool</th>
               <th>Max Output</th>
+              <th title="Listed to clients as context_window; unknown means each client uses its own table">Context</th>
               <th>Timeout</th>
               <th>Thinking</th>
               <th>Upstream Model</th>
@@ -132,7 +137,7 @@ export function ModelRegistryTable({ models, providerId }: Props) {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={7} className="text-center py-8 text-base-content/30">No models found</td>
+                <td colSpan={8} className="text-center py-8 text-base-content/30">No models found</td>
               </tr>
             ) : (
               filtered.map((m) => (
@@ -147,6 +152,7 @@ export function ModelRegistryTable({ models, providerId }: Props) {
                     </span>
                   </td>
                   <td className="font-mono">{m.maxOutputTokens.toLocaleString()}</td>
+                  <td className="font-mono">{m.contextWindow ? m.contextWindow.toLocaleString() : <span className="text-base-content/30 italic">unknown</span>}</td>
                   <td className="font-mono">{m.timeoutMs ? `${m.timeoutMs / 1000}s` : '60s'}</td>
                   <td>
                     {m.isThinking ? (

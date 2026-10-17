@@ -915,6 +915,9 @@ function ModelEditor({
               <th className="min-w-[16rem]">Model ID (send this as `model`)</th>
               <th>Upstream ID</th>
               <th className="text-right">Max out</th>
+              <th className="text-right" title="Tokens a request to this model may hold. Listed to clients as context_window; empty means unknown, and each client uses its own table">
+                Context
+              </th>
               <th className="text-right">$ / 1M in</th>
               <th className="text-right">$ / 1M out</th>
               <th className="text-center">Think</th>
@@ -957,6 +960,20 @@ function ModelEditor({
                         maxOutputTokens: parseInt(event.target.value, 10) || 8192,
                       })
                     }
+                  />
+                </td>
+                <td className="text-right">
+                  <input
+                    type="number"
+                    min={1024}
+                    placeholder="unknown"
+                    aria-label={`Context window of ${model.modelId}`}
+                    className="input input-bordered input-xs w-28 bg-base-100 font-mono text-[11px] text-right"
+                    value={model.contextWindow ?? ''}
+                    onChange={(event) => {
+                      const tokens = parseInt(event.target.value, 10);
+                      patch(model.modelId, { contextWindow: Number.isInteger(tokens) && tokens >= 1024 ? tokens : null });
+                    }}
                   />
                 </td>
                 <td className="text-right">
@@ -1008,7 +1025,7 @@ function ModelEditor({
             ))}
             {visible.length === 0 && (
               <tr>
-                <td colSpan={7} className="text-center text-base-content/40 py-6 text-xs">
+                <td colSpan={8} className="text-center text-base-content/40 py-6 text-xs">
                   {draft.length === 0
                     ? 'No models yet. Use "Auto-load from upstream" or add one above.'
                     : `Nothing matches "${search}".`}

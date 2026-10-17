@@ -172,6 +172,8 @@ export interface CustomProviderModel {
   thinkingMode: 'budget' | 'level' | null;
   thinkingBudget: number | null;
   maxOutputTokens: number;
+  /** Tokens a request may hold, when the upstream stated it or someone wrote it down; null is unknown. */
+  contextWindow: number | null;
   timeoutMs: number;
   inputPricePer1M: number | null;
   outputPricePer1M: number | null;
@@ -223,6 +225,8 @@ export interface CatalogModel {
   displayName: string;
   isThinking: boolean;
   maxOutputTokens: number;
+  /** What `/models` tells clients the model's window is; null when this route does not know. */
+  contextWindow: number | null;
   /** Resolved price: the model's own, else the built-in price book. */
   inputPricePer1M: number;
   outputPricePer1M: number;
@@ -245,6 +249,8 @@ export interface ModelSpec {
   thinkingMode?: 'budget' | 'level';
   thinkingLevel?: 'low' | 'medium' | 'high';
   maxOutputTokens: number;
+  /** Absent: this route does not know the model's window, and clients use their own table. */
+  contextWindow?: number;
   upstreamModelId?: string;
   timeoutMs?: number;
 }
