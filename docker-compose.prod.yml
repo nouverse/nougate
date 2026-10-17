@@ -18,10 +18,12 @@ services:
       # Explicit entries win over env_file, so these are the values that must
       # differ inside Docker regardless of what .env says.
       - HEADROOM_URL=${HEADROOM_URL:-}
-      # Pinned, NOT read from .env: a checkout's .env usually holds a localhost
-      # BASE_URL for development, and silently inheriting it in production would
-      # drop the Secure flag from session cookies and break OAuth redirects.
-      # Change the value here when deploying to a different domain.
+      # Read from .env, with the public address when .env leaves it out: Compose
+      # fills ${...} here from .env, so a BASE_URL there wins (since a1d202c; it
+      # was pinned before). A checkout's .env usually holds a localhost BASE_URL
+      # for development, and carried to production it drops the Secure flag from
+      # session cookies and breaks OAuth redirects — so on the production host,
+      # .env names the public address or leaves BASE_URL out.
       - BASE_URL=${BASE_URL:-https://nougate.nouverse.tech}
       - PORT=${PORT:-3000}
       # The rest are listed rather than left to env_file so this file is the

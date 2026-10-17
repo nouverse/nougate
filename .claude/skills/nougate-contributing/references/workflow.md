@@ -28,19 +28,22 @@ its own `bun install`. Bind-mounting the host's `node_modules` produces
 
 `.env` is read by Compose for `${VAR}` **substitution in the compose file**. It does
 *not* reach the container unless listed under `environment:` or pulled in with
-`env_file:`. Both compose files declare:
+`env_file:`. Every compose file declares both:
 
 ```yaml
 env_file:
   - path: .env
     required: false
 environment:
-  - HEADROOM_URL=http://headroom:8787   # explicit entries win over env_file
+  - HEADROOM_URL=${HEADROOM_URL:-}   # explicit entries win over env_file
+  - BASE_URL=${BASE_URL:-http://localhost:3000}
 ```
 
-`docker-compose.prod.yml` **pins** `BASE_URL=https://nougate.nouverse.tech` rather
-than `${BASE_URL:-…}`, so a developer's `.env` cannot point production at localhost
-and break OAuth redirects.
+`BASE_URL` comes from `.env` in every one of them, `docker-compose.prod.yml` included,
+whose fallback is `https://nougate.nouverse.tech` (it was pinned there until `a1d202c`).
+So on the production host `.env` names the public address or leaves `BASE_URL` out:
+a developer's localhost value carried there drops the Secure flag from session cookies
+and breaks OAuth redirects.
 
 Never run `docker compose config` to inspect this — it prints every secret in the
 environment to the terminal.
