@@ -17,7 +17,7 @@ import type { JitterConfig } from '@/core/jitter';
 import { registerProvider, unregisterProvider } from '@/core/registry';
 import { resolveModel } from '@/core/model-resolver';
 import { explainNoCandidate, routeCandidates, smartRoutableModels } from '@/core/smart-routing';
-import { executeWithFailover } from '@/core/provider-execute';
+import { executeWithFailover, FailoverError, failoverHeaders, failureOf } from '@/core/provider-execute';
 import { ProviderResponseError } from '@/core/upstream-errors';
 import { withCorsHeaders } from '@/router/middleware';
 
@@ -335,6 +335,37 @@ describe('failing over between providers', () => {
       /unreachable/,
     );
   });
+
+  /**
+   * "Every provider failed" is the failure an operator most needs explained, and a throw said nothing about who was
+   * asked: `served()` sets the headers, and it ran only on a response. The throw now carries them.
+   */
+  test('every candidate throwing: what is thrown names each provider tried, in order, around the last error', async () => {
+    const beta = new Error('beta unreachable');
+    fakeProvider('alpha', { models: ['m'], execute: async () => { throw new Error('alpha unreachable'); } });
+    fakeProvider('beta', { models: ['m'], execute: async () => { throw beta; } });
+
+    const thrown = await executeWithFailover(routeCandidates(resolveModel('m')), params).catch((error: unknown) => error);
+    expect(thrown).toBeInstanceOf(FailoverError);
+    expect((thrown as FailoverError).tried).toEqual(['alpha', 'beta']);
+    expect(failureOf(thrown)).toBe(beta);
+    expect(failoverHeaders(thrown)).toEqual({ 'x-nougate-attempts': '2', 'x-nougate-tried': 'alpha,beta' });
+  });
+
+  test('a throw no other provider would answer differently stops there, and says who was tried', async () => {
+    const refusal = new ProviderResponseError('bad body', { status: 400, clientCode: 'upstream_error' });
+    fakeProvider('alpha', { models: ['m'], execute: async () => { throw refusal; } });
+    fakeProvider('beta', { models: ['m'], execute: async () => new Response('never asked') });
+
+    const thrown = await executeWithFailover(routeCandidates(resolveModel('m')), params).catch((error: unknown) => error);
+    expect((thrown as FailoverError).tried).toEqual(['alpha']);
+    expect(failureOf(thrown)).toBe(refusal);
+  });
+
+  test('an error that did not come out of a failover carries no attribution', () => {
+    expect(failoverHeaders(new Error('elsewhere'))).toEqual({});
+    expect(failureOf('as it is')).toBe('as it is');
+  });
 });
 
 /**
@@ -362,6 +393,7 @@ describe('saying who served', () => {
     fakeProvider('gamma', { models: ['m'], execute: async () => new Response('from gamma') });
     const served = await executeWithFailover(routeCandidates(resolveModel('m')), params);
     expect(said(served.response)).toEqual({ 'x-nougate-provider': 'gamma', 'x-nougate-model': 'm', 'x-nougate-attempts': '3' });
+    expect(served.response.headers.get('x-nougate-tried')).toBe('alpha,beta,gamma');
   });
 
   test('when every one failed, the failure handed back says whose it is and that all were tried', async () => {
@@ -370,6 +402,7 @@ describe('saying who served', () => {
     const served = await executeWithFailover(routeCandidates(resolveModel('m')), params);
     expect(served.response.status).toBe(429);
     expect(said(served.response)).toEqual({ 'x-nougate-provider': 'alpha', 'x-nougate-model': 'm', 'x-nougate-attempts': '2' });
+    expect(served.response.headers.get('x-nougate-tried')).toBe('alpha,beta');
   });
 
   test("an upstream's own response handed back is reframed: its encoding is not the body's any more", async () => {
@@ -386,6 +419,6 @@ describe('saying who served', () => {
 
   test('a browser client may read them', () => {
     const headers = withCorsHeaders(new Response('x')).headers.get('access-control-expose-headers') ?? '';
-    expect(headers.split(',').map((name) => name.trim())).toEqual(['x-nougate-provider', 'x-nougate-model', 'x-nougate-attempts']);
+    expect(headers.split(',').map((name) => name.trim())).toEqual(['x-nougate-provider', 'x-nougate-model', 'x-nougate-attempts', 'x-nougate-tried']);
   });
 });

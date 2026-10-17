@@ -125,9 +125,11 @@ Providers disagree about how they give up: most throw, Antigravity returns a 429
 a healthy provider unused while the caller was told the quota was gone.
 
 Whatever it returns says who served it, the same way for every provider: `x-nougate-provider`,
-`x-nougate-model` (the model as that provider names it) and `x-nougate-attempts` (providers tried,
-the one that served included). Set here and nowhere else, on the one path every protocol takes,
-so no provider can forget them; the headers are reframed as they are copied, because a provider
+`x-nougate-model` (the model as that provider names it), `x-nougate-attempts` (providers tried,
+the one that served included) and `x-nougate-tried` (which, in order). When none answered — each
+threw — it throws a `FailoverError` naming the providers tried around the last one's error, and
+both protocol handlers answer with that error and the two headers. Set here and nowhere else, on
+the one path every protocol takes, so no provider can forget them; the headers are reframed as they are copied, because a provider
 may hand back the upstream's own response, whose encoding its body no longer has. A client keeping
 its own accounting reads them — Nouride's `llm_usage` splits its calls by what actually ran.
 

@@ -630,6 +630,11 @@ served it:
 | `x-nougate-provider` | The provider that served, e.g. `antigravity` |
 | `x-nougate-model` | The model as that provider names it, e.g. `claude-sonnet-4-6` |
 | `x-nougate-attempts` | Providers tried for this request, the one that served included: `1` unless it failed over |
+| `x-nougate-tried` | Which they were, in order: `antigravity,claudecode` |
+
+When no provider answered at all — each one threw — the error response (a 502, or the status the last provider's
+error names, with its `Retry-After`) still carries `x-nougate-attempts` and `x-nougate-tried`, so "every provider
+failed" says which ones.
 
 A bare model id can be served by any provider that declares it, the next taking over when one fails, and the
 body's `model` does not say which did on every provider — so a client that keeps its own accounting reads these.

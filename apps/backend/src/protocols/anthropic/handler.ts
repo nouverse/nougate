@@ -6,16 +6,17 @@ import type { RequestContext } from "@/core/request-context";
 import { getAllProviders } from "@/core/registry";
 import { prepareRequestPayload } from "@/core/metrics/compression";
 import { instrumentResponse } from "@/core/metrics/tracker";
-import { executeWithFailover } from "@/core/provider-execute";
+import { executeWithFailover, failoverHeaders, failureOf } from "@/core/provider-execute";
 import { explainNoCandidate, routeCandidates } from "@/core/smart-routing";
 
 /**
- * Build a JSON response with the shared CORS and proxy headers.
+ * Build a JSON response with the shared CORS and proxy headers, and any of its own.
  */
-function createJsonResponse(body: unknown, status: number, attempts?: number): Response {
+function createJsonResponse(body: unknown, status: number, attempts?: number, extra: Record<string, string> = {}): Response {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
+    ...extra,
   };
 
   if (attempts !== undefined) {
@@ -31,14 +32,14 @@ function createJsonResponse(body: unknown, status: number, attempts?: number): R
 /**
  * Build an Anthropic-compatible error response.
  */
-function createErrorResponse(message: string, type = "invalid_request_error", status = 400): Response {
+function createErrorResponse(message: string, type = "invalid_request_error", status = 400, extra: Record<string, string> = {}): Response {
   return createJsonResponse({
     type: "error",
     error: {
       type,
       message,
     }
-  }, status);
+  }, status, undefined, extra);
 }
 
 /**
@@ -120,9 +121,13 @@ export class AnthropicProtocolHandler implements IProtocolHandler {
         modelSpec: candidate.modelSpec,
         ctx,
       }));
-    } catch (error: any) {
+    } catch (thrown: any) {
+      // Answered with the error that ended the last try; which providers were tried rides along (`FailoverError`).
+      const error: any = failureOf(thrown);
+      const tried = failoverHeaders(thrown);
       console.error(
-        `[Anthropic] Upstream execution failed for "${ctx.resolvedModel.raw}":`,
+        `[Anthropic] Upstream execution failed for "${ctx.resolvedModel.raw}"` +
+          (tried["x-nougate-tried"] ? ` after trying ${tried["x-nougate-tried"]}:` : ":"),
         error,
       );
 
@@ -132,6 +137,7 @@ export class AnthropicProtocolHandler implements IProtocolHandler {
         const headers: Record<string, string> = {
           "Content-Type": "application/json",
           "Access-Control-Allow-Origin": "*",
+          ...tried,
         };
         if (error.retryAfterSeconds) {
           headers["Retry-After"] = String(error.retryAfterSeconds);
@@ -153,6 +159,7 @@ export class AnthropicProtocolHandler implements IProtocolHandler {
         error?.message || "Upstream request failed",
         "api_error",
         502,
+        tried,
       );
     }
 
