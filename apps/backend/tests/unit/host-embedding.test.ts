@@ -17,6 +17,10 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 
 const STATE_DIR = mkdtempSync(join(tmpdir(), 'nougate-host-'));
+// What this file sets for itself, put back in `afterAll`: every later file in the suite runs in this process,
+// and would otherwise find the gateway's home in a directory this one has deleted.
+const ENV_SET = ['NOUGATE_DB_PATH', 'NOUGATE_HOME', 'SESSION_SECRET', 'SESSION_SECRET_FILE'] as const;
+const envBefore = Object.fromEntries(ENV_SET.map((name) => [name, process.env[name]]));
 process.env.NOUGATE_DB_PATH = join(STATE_DIR, 'host-test.db');
 // A built dashboard to serve where none has been built — a checkout's own `apps/frontend/dist` still
 // wins when it exists, and either is a relative build or an older absolute one, both handled.
@@ -52,6 +56,10 @@ afterAll(async () => {
   setHostResolver(null);
   await closeDb();
   rmSync(STATE_DIR, { recursive: true, force: true });
+  for (const name of ENV_SET) {
+    if (envBefore[name] === undefined) delete process.env[name];
+    else process.env[name] = envBefore[name];
+  }
 });
 
 function hostRequestFor(path: string, as = { username: 'owner', basePath: '/llm-gateway' }): Request {

@@ -39,3 +39,18 @@ describe('getDataDir', () => {
     expect(getDataDir()).toBe(expected);
   });
 });
+
+describe('getProjectRoot', () => {
+  test('NOUGATE_HOME is read on every call, so a root guessed before it was set does not stand in for it', () => {
+    // A guess first, the way it happens when anything looks up a path before a host has said where it lives —
+    // in the suite, the test above. The dashboard bundle is looked up under this root on every request.
+    delete process.env.NOUGATE_HOME;
+    const guessed = getProjectRoot();
+    process.env.NOUGATE_HOME = '/one';
+    expect(getProjectRoot()).toBe('/one');
+    process.env.NOUGATE_HOME = '/two';
+    expect(getProjectRoot()).toBe('/two');
+    delete process.env.NOUGATE_HOME;
+    expect(getProjectRoot()).toBe(guessed);
+  });
+});

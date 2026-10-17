@@ -42,6 +42,7 @@ export function isCompiledBinary(): boolean {
   return import.meta.dir.startsWith(BUNFS_PREFIX);
 }
 
+/** The guessed root — a compiled binary's directory or the walk-up's answer — once found. Never `NOUGATE_HOME`. */
 let cachedRoot: string | null = null;
 
 /**
@@ -65,19 +66,22 @@ function declaresWorkspaces(packageJsonPath: string): boolean {
  * image has, since it ships only the backend package at /app.
  */
 export function getProjectRoot(): string {
-  if (cachedRoot) {
-    return cachedRoot;
-  }
-
   /**
    * An operator saying where the install lives, which beats every guess below.
    *
    * The escape hatch for anything the two rules after it get wrong: a binary on a read-only path, a
    * container that mounts state elsewhere, two installs on one host.
+   *
+   * Read on every call, as `getDataDir` reads it, and never cached. Cached, the first answer stood for the
+   * life of the process: a guess made before a host set `NOUGATE_HOME` hid it from every later lookup of
+   * the dashboard bundle, and in the test suite one file's guess decided where the next file's dashboard was.
    */
   const home = process.env.NOUGATE_HOME?.trim();
   if (home) {
-    cachedRoot = home;
+    return home;
+  }
+
+  if (cachedRoot) {
     return cachedRoot;
   }
 
