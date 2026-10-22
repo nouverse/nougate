@@ -52,14 +52,14 @@ export function CopyButton({ value, label, className = '', title }: Props) {
  *
  * The two are not interchangeable, which is the whole reason both are offered:
  *
- *   - **bare** (`gemini-3.7-flash`) lets the gateway choose the provider, and fail over to another
+ *   - **bare** (`gemini-3.8-flash`) lets the gateway choose the provider, and fail over to another
  *     when the first cannot serve the request.
- *   - **prefixed** (`antigravity:gemini-3.7-flash`) pins it. An explicit prefix is an instruction, so
+ *   - **prefixed** (`antigravity:gemini-3.8-flash`) pins it. An explicit prefix is an instruction, so
  *     routing never overrides it — a spent quota here stays a spent quota.
  *
  * The displayed text is the prefixed form, because that is what identifies the row. The bare button
  * is labelled rather than a bare icon for the same reason: a copy button beside
- * `antigravity:gemini-3.7-flash` that silently yields something else is a small betrayal.
+ * `antigravity:gemini-3.8-flash` that silently yields something else is a small betrayal.
  */
 export function ModelIdChip({ providerId, modelId }: { providerId: string; modelId: string }) {
   const full = `${providerId}:${modelId}`;

@@ -156,15 +156,6 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
     upstreamModelId: 'claude-fable-5.1',
     timeoutMs: 60000,
   },
-  'gemini-3.7-flash': {
-    modelId: 'gemini-3.7-flash',
-    displayName: 'Gemini 3.7 Flash',
-    pool: 'cli',
-    isThinking: false,
-    maxOutputTokens: 8192,
-    upstreamModelId: 'gemini-3.7-flash',
-    timeoutMs: 60000,
-  },
   'gemini-3.8-flash': {
     modelId: 'gemini-3.8-flash',
     displayName: 'Gemini 3.8 Flash',

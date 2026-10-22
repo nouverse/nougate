@@ -5,7 +5,7 @@
 **Nougate** is Nouverse's internal LLM gateway — a modular router that sits between your tools and AI providers. Route requests through OpenAI or Anthropic protocols, authenticate via isolated per-provider accounts, and address a model either way:
 
 ```jsonc
-{ "model": "antigravity:gemini-3.7-flash" }  // pinned — this provider, never another
+{ "model": "antigravity:gemini-3.8-flash" }  // pinned — this provider, never another
 { "model": "claude-sonnet-4-6" }             // routed — the gateway picks, and fails over
 ```
 
@@ -18,7 +18,7 @@
 ### Core
 - **Multi-Protocol**: Expose providers via OpenAI (`/openai/v1/`) and Anthropic (`/anthropic/v1/`) compatible APIs simultaneously.
 - **Multi-Provider**: Pluggable provider system — each provider owns its auth, accounts, config, and model registry.
-- **Model Namespacing, with an escape hatch**: `provider:model-id` pins a request to one provider (e.g. `antigravity:gemini-3.7-flash`). A bare `model-id` instead fans out to every provider that serves it — see [Smart routing](#smart-routing).
+- **Model Namespacing, with an escape hatch**: `provider:model-id` pins a request to one provider (e.g. `antigravity:gemini-3.8-flash`). A bare `model-id` instead fans out to every provider that serves it — see [Smart routing](#smart-routing).
 - **Per-Provider Auth Isolation**: Credentials and account storage are fully isolated per provider.
 - **Custom Providers**: Define your own upstream from the dashboard — pick an ID, base URL, OpenAI or Anthropic API style, keys and pricing, then call it as `{provider_id}:{model}`.
 - **Gateway API Keys**: Issue `sk-nou-…` keys so clients authenticate against the proxy routes. Always required — an instance with no keys serves nobody.
@@ -334,10 +334,9 @@ differ because the settings do. A few worth knowing:
 Override or add models at runtime without code changes:
 ```jsonc
 {
-  "gemini-3.6-flash-low": {
-    "maxOutputTokens": 64000,
-    "thinkingMode": "level",
-    "thinkingLevel": "medium"
+  "gemini-3.8-flash": {
+    "maxOutputTokens": 32000,
+    "thinkingBudget": 4096
   }
 }
 ```
@@ -693,7 +692,7 @@ In `~/.config/zed/settings.json`:
         "api_url": "https://nougate.nouverse.tech/anthropic",
         "available_models": [
           {
-            "name": "antigravity:gemini-3.6-flash-low",
+            "name": "antigravity:gemini-3.8-flash",
             "display_name": "(Nougate) Gemini 3.5 Flash Medium",
             "max_tokens": 1048576,
             "max_output_tokens": 64000,
@@ -728,7 +727,7 @@ claude --model antigravity:claude-sonnet-4-6
       "npm": "@ai-sdk/openai-compatible",
       "options": { "baseURL": "https://nougate.nouverse.tech/openai/v1" },
       "models": {
-        "antigravity:gemini-3.6-flash-low": {
+        "antigravity:gemini-3.8-flash": {
           "name": "Gemini 3.5 Flash Medium",
           "limit": { "context": 1048576, "output": 65535 }
         }
@@ -744,7 +743,7 @@ claude --model antigravity:claude-sonnet-4-6
 curl https://nougate.nouverse.tech/openai/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "antigravity:gemini-3.6-flash-low",
+    "model": "antigravity:gemini-3.8-flash",
     "messages": [{"role": "user", "content": "Hello"}],
     "stream": true
   }'

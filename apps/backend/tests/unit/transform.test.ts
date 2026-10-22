@@ -264,7 +264,7 @@ describe("Unit Tests: mapOpenAIToGoogle", () => {
    */
   test("Gemini 3 signs unsigned tool calls with the validation-skip placeholder", () => {
     const openaiBody = {
-      model: "antigravity:gemini-3.6-flash-medium",
+      model: "antigravity:gemini-3.8-flash",
       messages: [
         { role: "user", content: "analyse this image" },
         {
@@ -290,7 +290,7 @@ describe("Unit Tests: mapOpenAIToGoogle", () => {
 
     const result = mapOpenAIToGoogle(
       openaiBody,
-      buildModelSpec({ modelId: "gemini-3.6-flash-medium", isThinking: true }),
+      buildModelSpec({ modelId: "gemini-3.8-flash", isThinking: true }),
       "session-signature-gap",
     );
 
@@ -351,7 +351,7 @@ describe("Unit Tests: mapOpenAIToGoogle", () => {
 
   test("Non-thinking Gemini 3 keeps unsigned tool calls as function calls", () => {
     const openaiBody = {
-      model: "antigravity:gemini-3.6-flash-medium",
+      model: "antigravity:gemini-3.8-flash",
       messages: [
         { role: "user", content: "run it" },
         {
@@ -366,7 +366,7 @@ describe("Unit Tests: mapOpenAIToGoogle", () => {
 
     const result = mapOpenAIToGoogle(
       openaiBody,
-      buildModelSpec({ modelId: "gemini-3.6-flash-medium", isThinking: false }),
+      buildModelSpec({ modelId: "gemini-3.8-flash", isThinking: false }),
       "session-no-thinking",
     );
 

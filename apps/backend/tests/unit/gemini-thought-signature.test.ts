@@ -20,7 +20,7 @@ import type { IModelSpec } from "@/core/interfaces";
  */
 
 const GEMINI_3_THINKING: IModelSpec = {
-  modelId: "gemini-3.6-flash-medium",
+  modelId: "gemini-3.8-flash",
   pool: "sandbox",
   isThinking: true,
   thinkingMode: "level",
@@ -38,7 +38,7 @@ describe("Anthropic → Google: unsigned tool_use blocks", () => {
   const longResult = "x".repeat(4000);
 
   const body = {
-    model: "antigravity:gemini-3.6-flash-medium",
+    model: "antigravity:gemini-3.8-flash",
     max_tokens: 4096,
     messages: [
       { role: "user" as const, content: "fetch the docs page and summarise it" },
@@ -115,7 +115,7 @@ describe("Google → Anthropic stream: stop_reason for tool calls", () => {
     });
 
     const out = source.pipeThrough(
-      createAnthropicStreamTransformer("gemini-3.6-flash-medium", "msg_test") as any,
+      createAnthropicStreamTransformer("gemini-3.8-flash", "msg_test") as any,
     );
 
     let text = "";
