@@ -22,7 +22,7 @@ import { refreshTokens, isPermanentRefreshFailure, type TokenRefreshError } from
 import type { CodexAccount } from '../auth/types';
 import { getCodexConfig } from '../config/provider-config';
 import { transformCodexRequest } from './request-transform';
-import { peekSseTransientError, MODEL_CAPACITY_MESSAGE } from './stream';
+import { peekSseTransientError, MODEL_CAPACITY_MESSAGE, streamFailureAnswer } from './stream';
 
 const CODEX_ORIGINATOR = 'codex_cli_rs';
 
@@ -134,7 +134,7 @@ export class CodexExecutor {
     let attempts = 0;
     let refreshedThisAccount = false;
 
-    while (attempts < maxAttempts) {
+    accounts: while (attempts < maxAttempts) {
       attempts++;
 
       const account = await getBestAccount(modelId, tried);
@@ -247,6 +247,19 @@ export class CodexExecutor {
         let currentResponse = response;
         while (true) {
           const peek = await peekSseTransientError(currentResponse);
+          if (peek.failure) {
+            const answer = streamFailureAnswer(peek.failure.code);
+            console.warn(`[codex] ${account.label} failed on ${modelId} before answering: ${peek.failure.code ?? 'no code'} — ${peek.failure.message.slice(0, 200)}`);
+            // A usage limit is this credential's, as a 429 is above: it sits out, and the next one is asked.
+            if (answer.status === 429) {
+              await markCooldown(account.id, scope, DEFAULT_COOLDOWN_MS);
+              await updateAccountUsage(account.id, false);
+              continue accounts;
+            }
+            // A window exceeded or a prompt refused is the request's, and every credential would say the same.
+            if (answer.status >= 500) await updateAccountUsage(account.id, false);
+            throw new ProviderResponseError(peek.failure.message, { status: answer.status, clientCode: answer.clientCode });
+          }
           if (!peek.matched) {
             // Replace body with re-assembled stream (prefix bytes already read + rest)
             if (peek.replacementBody) {

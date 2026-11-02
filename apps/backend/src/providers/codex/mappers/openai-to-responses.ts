@@ -27,7 +27,8 @@
  * keeps one Responses translation rather than a second one that would drift from this.
  */
 
-import { UnsupportedContentPartError } from '@/core/upstream-errors';
+import { ProviderResponseError, UnsupportedContentPartError } from '@/core/upstream-errors';
+import { failureOf, streamFailureAnswer, type StreamFailure } from '../upstream/stream';
 
 /** Chat Completions tool shape, kept as-is: `normalizeCodexTools` flattens it downstream. */
 type Json = Record<string, any>;
@@ -226,7 +227,10 @@ interface ResponsesState {
   nextToolIndex: number;
   sawToolCall: boolean;
   usage?: Json;
-  errorMessage?: string;
+  /** What `response.failed` or an `error` event named — said to the client as an error, never as a finished reply. */
+  failure?: StreamFailure;
+  /** Why `response.incomplete` ended the answer early: `max_output_tokens`, `content_filter`. */
+  incomplete?: string;
 }
 
 function newState(): ResponsesState {
@@ -273,10 +277,16 @@ function eventToDeltas(event: any, state: ResponsesState): Json[] {
       state.usage = toOpenAIUsage(event.response?.usage) ?? state.usage;
       return [];
 
+    // Ended before it was done: cut at the output limit or filtered. Its usage is real and is passed on; read as a
+    // finish, a reply cut at the limit went out as whole.
+    case 'response.incomplete':
+      state.usage = toOpenAIUsage(event.response?.usage) ?? state.usage;
+      state.incomplete = event.response?.incomplete_details?.reason ?? 'unknown';
+      return [];
+
     case 'response.failed':
     case 'error':
-      state.errorMessage =
-        event.response?.error?.message ?? event.error?.message ?? event.message ?? 'the upstream stream failed';
+      state.failure = failureOf(event) ?? { message: 'the upstream stream failed' };
       return [];
 
     default:
@@ -286,7 +296,24 @@ function eventToDeltas(event: any, state: ResponsesState): Json[] {
 
 /** Terminal Responses events, after which nothing more is coming. */
 function isTerminal(event: any): boolean {
-  return event?.type === 'response.completed' || event?.type === 'response.failed' || event?.type === 'error';
+  return event?.type === 'response.completed' || event?.type === 'response.incomplete' || event?.type === 'response.failed' || event?.type === 'error';
+}
+
+/** The Chat Completions finish reason for how the answer ended. */
+function finishReasonOf(state: ResponsesState): string {
+  if (state.incomplete === 'max_output_tokens') return 'length';
+  if (state.incomplete === 'content_filter') return 'content_filter';
+  return state.sawToolCall ? 'tool_calls' : 'stop';
+}
+
+/**
+ * A failure after the answer began, as Chat Completions streams one: an `error` object in place of a finish — what the
+ * OpenAI SDKs raise on, and what Nouride reads. The 200 has gone out by then; the executor answers one that came before
+ * any output with a status instead (`peekSseTransientError`).
+ */
+function failureChunk(failure: StreamFailure): Json {
+  const answer = streamFailureAnswer(failure.code);
+  return { error: { message: failure.message, type: answer.type, code: failure.code ?? answer.clientCode } };
 }
 
 /**
@@ -338,8 +365,12 @@ export function createResponsesToOpenAIStreamTransformer(
     if (closed) return;
     closed = true;
 
-    const finishReason = state.errorMessage ? 'stop' : state.sawToolCall ? 'tool_calls' : 'stop';
-    controller.enqueue(sseData(chunk(id, requestedModelId, created, {}, finishReason, state.usage)));
+    if (state.failure) {
+      console.warn(`[codex] ${requestedModelId} failed part-way through its answer: ${state.failure.code ?? 'no code'} — ${state.failure.message.slice(0, 200)}`);
+      controller.enqueue(sseData(failureChunk(state.failure)));
+    } else {
+      controller.enqueue(sseData(chunk(id, requestedModelId, created, {}, finishReasonOf(state), state.usage)));
+    }
     controller.enqueue(encoder.encode('data: [DONE]\n\n'));
   };
 
@@ -411,6 +442,12 @@ export async function finalizeResponsesToOpenAIResponse(
     }
   });
 
+  // Nothing has gone to the client yet: the failure is answered with its status, as one before any output is.
+  if (state.failure) {
+    const answer = streamFailureAnswer(state.failure.code);
+    throw new ProviderResponseError(state.failure.message, { status: answer.status, clientCode: answer.clientCode });
+  }
+
   const message: Json = { role: 'assistant', content: content || null };
   if (reasoning) message.reasoning_content = reasoning;
   const calls = toolCalls.filter(Boolean);
@@ -421,7 +458,7 @@ export async function finalizeResponsesToOpenAIResponse(
     object: 'chat.completion',
     created: Math.floor(Date.now() / 1000),
     model: requestedModelId,
-    choices: [{ index: 0, message, finish_reason: calls.length > 0 ? 'tool_calls' : 'stop' }],
+    choices: [{ index: 0, message, finish_reason: finishReasonOf({ ...state, sawToolCall: calls.length > 0 }) }],
     ...(state.usage ? { usage: state.usage } : {}),
   };
 

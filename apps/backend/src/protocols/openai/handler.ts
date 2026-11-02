@@ -170,7 +170,10 @@ export class OpenAIProtocolHandler implements IProtocolHandler {
           JSON.stringify({
             error: {
               message: error.message,
-              type: error.status === 429 ? "rate_limit_error" : "invalid_request_error",
+              // By status: a client reads the label before the status, and a server's failure labelled
+              // `invalid_request_error` read as a request built wrong — Nouride told the person so, and
+              // did not retry (nouride-releases#14).
+              type: error.status === 429 ? "rate_limit_error" : error.status >= 500 ? "server_error" : "invalid_request_error",
               code: error.clientCode,
             },
           }),

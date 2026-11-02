@@ -260,6 +260,17 @@ export function createOpenAIToAnthropicStreamTransformer(model: string, messageI
         try {
           const openAIEvent = JSON.parse(dataStr);
 
+          // A failure the upstream named part-way through, as Anthropic streams one: an `error` event, and the message
+          // is not closed. Read past, it became an empty `end_turn` — a finished reply with nothing in it.
+          if (openAIEvent.error && !finished) {
+            finished = true;
+            const said = openAIEvent.error;
+            const type = said.type === 'rate_limit_error' ? 'rate_limit_error' : said.type === 'invalid_request_error' ? 'invalid_request_error' : 'api_error';
+            const message = typeof said.message === 'string' && said.message ? said.message : 'the upstream failed part-way through';
+            controller.enqueue(encoder.encode(sseEvent('error', { type: 'error', error: { type, message } })));
+            continue;
+          }
+
           // Capture usage from the final chunk (sent when stream_options.include_usage is true)
           if (openAIEvent.usage) {
             inputTokens = openAIEvent.usage.prompt_tokens || 0;

@@ -147,7 +147,8 @@ export class AnthropicProtocolHandler implements IProtocolHandler {
           JSON.stringify({
             type: "error",
             error: {
-              type: error.status === 429 ? "rate_limit_error" : "invalid_request_error",
+              // By status, as the OpenAI handler labels it: a server's failure is not a request built wrong.
+              type: error.status === 429 ? "rate_limit_error" : error.status >= 500 ? "api_error" : "invalid_request_error",
               message: error.message,
             },
           }),
