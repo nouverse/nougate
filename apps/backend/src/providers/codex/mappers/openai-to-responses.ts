@@ -224,6 +224,10 @@ function toOpenAIUsage(usage: any): Json | undefined {
 interface ResponsesState {
   /** Dense tool-call index, which is what a Chat Completions client accumulates into. */
   toolIndexByOutput: Map<number, number>;
+  /** The same index by the item's id, the key a closing event may carry instead. */
+  toolIndexByItem: Map<string, number>;
+  /** Calls whose arguments have reached the client, streamed or whole: a closing event never sends them twice. */
+  argumentsSent: Set<number>;
   nextToolIndex: number;
   sawToolCall: boolean;
   usage?: Json;
@@ -234,7 +238,46 @@ interface ResponsesState {
 }
 
 function newState(): ResponsesState {
-  return { toolIndexByOutput: new Map(), nextToolIndex: 0, sawToolCall: false };
+  return { toolIndexByOutput: new Map(), toolIndexByItem: new Map(), argumentsSent: new Set(), nextToolIndex: 0, sawToolCall: false };
+}
+
+/** The tool-call index an event belongs to, by its output index or its item's id; undefined for a call not yet opened. */
+function toolIndexOf(event: any, state: ResponsesState): number | undefined {
+  const byOutput = typeof event?.output_index === 'number' ? state.toolIndexByOutput.get(event.output_index) : undefined;
+  if (byOutput !== undefined) return byOutput;
+  const id = event?.item_id ?? event?.item?.id;
+  return typeof id === 'string' ? state.toolIndexByItem.get(id) : undefined;
+}
+
+/** A function call opened: its index, id and name, and its arguments where the item already holds them. */
+function openCall(item: any, outputIndex: unknown, state: ResponsesState): Json[] {
+  const index = state.nextToolIndex++;
+  if (typeof outputIndex === 'number') state.toolIndexByOutput.set(outputIndex, index);
+  if (typeof item.id === 'string') state.toolIndexByItem.set(item.id, index);
+  state.sawToolCall = true;
+  const args = typeof item.arguments === 'string' ? item.arguments : '';
+  if (args) state.argumentsSent.add(index);
+  return [{
+    tool_calls: [{
+      index,
+      id: item.call_id ?? item.id ?? `call_${index}`,
+      type: 'function',
+      function: { name: item.name ?? '', arguments: args },
+    }],
+  }];
+}
+
+/**
+ * A call's whole arguments at its close, sent where none were streamed.
+ *
+ * Codex streams no argument deltas for calls it makes in parallel: the arguments arrive only when each call closes.
+ * Read from the deltas alone, every one of them reached the client as `{}`, and a Nouride agent's three `glob` calls
+ * in one step each failed for want of a pattern (found live, 2026-11-02).
+ */
+function closingArguments(index: number, args: unknown, state: ResponsesState): Json[] {
+  if (state.argumentsSent.has(index) || typeof args !== 'string' || !args) return [];
+  state.argumentsSent.add(index);
+  return [{ tool_calls: [{ index, function: { arguments: args } }] }];
 }
 
 /** The deltas one Responses event produces. Empty when the event carries nothing a client needs. */
@@ -252,25 +295,28 @@ function eventToDeltas(event: any, state: ResponsesState): Json[] {
     case 'response.output_item.added': {
       const item = event.item;
       if (item?.type !== 'function_call') return [];
-      const outputIndex = Number(event.output_index) || 0;
-      const index = state.nextToolIndex++;
-      state.toolIndexByOutput.set(outputIndex, index);
-      state.sawToolCall = true;
-      return [{
-        tool_calls: [{
-          index,
-          id: item.call_id ?? item.id ?? `call_${index}`,
-          type: 'function',
-          function: { name: item.name ?? '', arguments: '' },
-        }],
-      }];
+      return openCall(item, event.output_index, state);
     }
 
     case 'response.function_call_arguments.delta': {
       if (typeof event.delta !== 'string' || !event.delta) return [];
-      const outputIndex = Number(event.output_index) || 0;
-      const index = state.toolIndexByOutput.get(outputIndex) ?? 0;
+      const index = toolIndexOf(event, state) ?? 0;
+      state.argumentsSent.add(index);
       return [{ tool_calls: [{ index, function: { arguments: event.delta } }] }];
+    }
+
+    case 'response.function_call_arguments.done': {
+      const index = toolIndexOf(event, state);
+      return index === undefined ? [] : closingArguments(index, event.arguments, state);
+    }
+
+    // A call's close carries it whole: its arguments where none were streamed, and the call itself where it was never
+    // opened.
+    case 'response.output_item.done': {
+      const item = event.item;
+      if (item?.type !== 'function_call') return [];
+      const index = toolIndexOf(event, state);
+      return index === undefined ? openCall(item, event.output_index, state) : closingArguments(index, item.arguments, state);
     }
 
     case 'response.completed':
