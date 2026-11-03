@@ -487,7 +487,9 @@ What a custom provider carries:
   cooldown controls the built-in providers get.
 - **Models** — press *Auto-load from upstream* to import everything the upstream's `/models`
   endpoint reports. Re-syncing adds new models and never overwrites prices or overrides you
-  edited by hand. Models can also be added one at a time.
+  edited by hand. Models can also be added one at a time. Switch a model **off** in its row to
+  stop serving it and keep it out of later auto-loads; a removed model comes back with the next
+  one. Through the API, a save changes only the fields it states (`null` clears one).
 - **Pricing** — per-model `$/1M` input and output rates feed the cost dashboard, editable in
   the provider's Models table. Leave a rate on `auto` and the built-in price book works it out
   from the model name, which handles aggregator IDs like `anthropic/claude-opus-4.5` correctly.
