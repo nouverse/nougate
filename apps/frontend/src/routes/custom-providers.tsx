@@ -803,6 +803,9 @@ function ModelEditor({
     );
   }, [draft, search]);
 
+  // What clients can call: a model switched off is kept, so a sync does not bring it back, but not served.
+  const served = useMemo(() => draft.filter((model) => model.enabled), [draft]);
+
   if (isLoading) {
     return (
       <div className="flex items-center gap-2 text-xs text-base-content/50 py-6">
@@ -860,10 +863,10 @@ function ModelEditor({
 
         <div className="flex items-center gap-2 flex-wrap">
           <CopyButton
-            value={draft.map((model) => `${providerId}:${model.modelId}`).join('\n')}
-            label={`Copy ${draft.length} ID${draft.length === 1 ? '' : 's'}`}
+            value={served.map((model) => `${providerId}:${model.modelId}`).join('\n')}
+            label={`Copy ${served.length} ID${served.length === 1 ? '' : 's'}`}
             className="border border-base-300"
-            title="Copy every model ID, one per line"
+            title="Copy the ID of every model that is on, one per line"
           />
           <button
             type="button"
@@ -912,6 +915,12 @@ function ModelEditor({
         <table className="table table-sm table-pin-rows">
           <thead>
             <tr className="text-base-content/50 text-[10px] uppercase tracking-wider">
+              <th
+                className="text-center"
+                title="Off keeps the model here, so Auto-load does not add it back, and stops serving it. Removing it instead lets the next Auto-load bring it back."
+              >
+                On
+              </th>
               <th className="min-w-[16rem]">Model ID (send this as `model`)</th>
               <th>Upstream ID</th>
               <th className="text-right">Max out</th>
@@ -926,7 +935,16 @@ function ModelEditor({
           </thead>
           <tbody>
             {visible.map((model) => (
-              <tr key={model.modelId}>
+              <tr key={model.modelId} className={model.enabled ? undefined : 'opacity-50'}>
+                <td className="text-center">
+                  <input
+                    type="checkbox"
+                    className="toggle toggle-xs toggle-success"
+                    aria-label={`Serve ${model.modelId}`}
+                    checked={model.enabled}
+                    onChange={(event) => patch(model.modelId, { enabled: event.target.checked })}
+                  />
+                </td>
                 <td>
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <ModelIdChip providerId={providerId} modelId={model.modelId} />
@@ -1025,7 +1043,7 @@ function ModelEditor({
             ))}
             {visible.length === 0 && (
               <tr>
-                <td colSpan={8} className="text-center text-base-content/40 py-6 text-xs">
+                <td colSpan={9} className="text-center text-base-content/40 py-6 text-xs">
                   {draft.length === 0
                     ? 'No models yet. Use "Auto-load from upstream" or add one above.'
                     : `Nothing matches "${search}".`}

@@ -569,6 +569,39 @@ describe('custom providers', () => {
     expect(models.some((model) => model.modelId === 'deepseek-new')).toBe(true);
   });
 
+  test('a model switched off stays off through a save that does not say, and through a sync', async () => {
+    // OpenRouter kept listing a model its operator had removed: the dashboard could only delete one, and the next
+    // auto-load brought it back. Off is kept, so the sync skips it, and never served.
+    await store.createCustomProvider({ id: 'switchable', baseUrl: 'https://x.dev/v1' });
+    await store.addProviderKey('switchable', 'sk-temp');
+    await store.upsertProviderModels('switchable', [{ modelId: 'old-flash', enabled: false }, { modelId: 'kept' }]);
+    await store.upsertProviderModels('switchable', [{ modelId: 'old-flash', inputPricePer1M: 0.3 }]);
+    await store.upsertProviderModels('switchable', [{ modelId: 'old-flash' }, { modelId: 'kept' }, { modelId: 'new-one' }], true);
+
+    const enabled = Object.fromEntries((await store.listProviderModels('switchable')).map((model) => [model.modelId, model.enabled]));
+    expect(enabled).toEqual({ 'old-flash': false, kept: true, 'new-one': true });
+    const provider = new CustomProvider((await store.getCustomProvider('switchable'))!);
+    await provider.init();
+    expect(provider.getSupportedModels()).toEqual(['kept', 'new-one']);
+
+    await store.upsertProviderModels('switchable', [{ modelId: 'old-flash', enabled: true }]);
+    expect((await store.listProviderModels('switchable')).find((model) => model.modelId === 'old-flash')?.enabled).toBe(true);
+    expect(await store.deleteCustomProvider('switchable')).toBe(true);
+  });
+
+  test('a save keeps what it does not state, and null clears', async () => {
+    // A price written alone reset the window the upstream had stated, the output limit and the thinking flag.
+    await store.createCustomProvider({ id: 'partial', baseUrl: 'https://x.dev/v1' });
+    await store.upsertProviderModels('partial', [{ modelId: 'm', contextWindow: 32768, maxOutputTokens: 16000, isThinking: true }]);
+    await store.upsertProviderModels('partial', [{ modelId: 'm', inputPricePer1M: 0.3 }]);
+    const row = async () => (await store.listProviderModels('partial')).find((model) => model.modelId === 'm');
+    expect(await row()).toMatchObject({ contextWindow: 32768, maxOutputTokens: 16000, isThinking: true, inputPricePer1M: 0.3, enabled: true });
+
+    await store.upsertProviderModels('partial', [{ modelId: 'm', contextWindow: null, inputPricePer1M: null }]);
+    expect(await row()).toMatchObject({ contextWindow: null, inputPricePer1M: null, maxOutputTokens: 16000 });
+    expect(await store.deleteCustomProvider('partial')).toBe(true);
+  });
+
   test('deleting a provider cascades to its keys and models', async () => {
     await store.createCustomProvider({ id: 'throwaway', baseUrl: 'https://x.dev/v1' });
     await store.addProviderKey('throwaway', 'sk-temp');

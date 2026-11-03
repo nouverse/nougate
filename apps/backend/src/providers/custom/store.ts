@@ -404,6 +404,7 @@ export interface UpsertModelInput {
  *
  * `preserveExisting` is what makes auto-sync safe to re-run: discovered models
  * are added, but prices and overrides a user already set are left untouched.
+ * Without it an existing row takes the fields an entry states and keeps the rest.
  */
 export async function upsertProviderModels(
   providerId: string,
@@ -414,28 +415,36 @@ export async function upsertProviderModels(
     throw new CustomProviderError(`Custom provider "${providerId}" not found.`, 404);
   }
 
-  const existing = new Set((await listProviderModels(providerId)).map((model) => model.modelId));
+  const existing = new Map((await listProviderModels(providerId)).map((model) => [model.modelId, model]));
 
   const rows = models
     .map((entry) => ({ entry, modelId: (entry.modelId ?? '').trim() }))
     .filter(({ modelId }) => modelId)
     .filter(({ modelId }) => !(preserveExisting && existing.has(modelId)))
-    .map(({ entry, modelId }) => ({
-      providerId,
-      modelId,
-      displayName: entry.displayName ?? modelId,
-      upstreamModelId: entry.upstreamModelId ?? modelId,
-      pool: entry.pool ?? 'cli',
-      isThinking: entry.isThinking ? 1 : 0,
-      thinkingMode: entry.thinkingMode ?? null,
-      thinkingBudget: entry.thinkingBudget ?? null,
-      maxOutputTokens: entry.maxOutputTokens ?? 8192,
-      contextWindow: windowOrNull(entry.contextWindow),
-      timeoutMs: entry.timeoutMs ?? 60000,
-      inputPricePer1M: entry.inputPricePer1M ?? null,
-      outputPricePer1M: entry.outputPricePer1M ?? null,
-      enabled: entry.enabled === false ? 0 : 1,
-    }));
+    .map(({ entry, modelId }) => {
+      // A field the entry leaves out keeps what the row has: a client writing one model's price must not reset the
+      // window its upstream stated, nor switch back on a model someone switched off. `null` is said, and clears. A
+      // new row takes the defaults.
+      const prior = existing.get(modelId);
+      const kept = <K extends keyof UpsertModelInput & keyof CustomProviderModelRecord>(key: K) =>
+        entry[key] !== undefined ? entry[key] : prior?.[key];
+      return {
+        providerId,
+        modelId,
+        displayName: kept('displayName') ?? modelId,
+        upstreamModelId: kept('upstreamModelId') ?? modelId,
+        pool: kept('pool') ?? 'cli',
+        isThinking: kept('isThinking') ? 1 : 0,
+        thinkingMode: kept('thinkingMode') ?? null,
+        thinkingBudget: kept('thinkingBudget') ?? null,
+        maxOutputTokens: kept('maxOutputTokens') ?? 8192,
+        contextWindow: windowOrNull(kept('contextWindow')),
+        timeoutMs: kept('timeoutMs') ?? 60000,
+        inputPricePer1M: kept('inputPricePer1M') ?? null,
+        outputPricePer1M: kept('outputPricePer1M') ?? null,
+        enabled: (kept('enabled') ?? true) ? 1 : 0,
+      };
+    });
 
   if (rows.length === 0) {
     return 0;
