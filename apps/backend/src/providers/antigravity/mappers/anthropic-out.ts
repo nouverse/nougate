@@ -20,24 +20,41 @@ export function createAnthropicStreamTransformer(model: string, messageId: strin
   // the presence of a tool_use block — "end_turn" ends their agent loop.
   let sawToolUse = false;
 
-  return new TransformStream({
-    start(controller) {
-      const msgStart = {
-        type: "message_start",
-        message: {
-          id: messageId,
-          type: "message",
-          role: "assistant",
-          model,
-          content: [],
-          stop_reason: null,
-          stop_sequence: null,
-          usage: { input_tokens: 0, output_tokens: 0 },
+  /**
+   * `message_start` waits for the upstream's first event, because that event is where Gemini counts the prompt.
+   *
+   * Anthropic reports the input side of `usage`, the cache read included, on `message_start`, and a client reads it
+   * there — Nouride's does, and so does this gateway's own Anthropic → OpenAI stream. Sent before the upstream had said
+   * anything, the event could only claim `input_tokens: 0`, and the cache read went out on `message_delta` alone, where
+   * such a client never looks: the route looked uncached to it whatever Google served from cache.
+   *
+   * Nothing is held back for it. The first event is passed on as soon as it arrives, after the `message_start` it
+   * opens; one that counts nothing opens the message with zeros, as before.
+   */
+  let started = false;
+  const openMessage = (controller: TransformStreamDefaultController, usage?: any) => {
+    if (started) return;
+    started = true;
+    controller.enqueue(encoder.encode(sseEvent("message_start", {
+      type: "message_start",
+      message: {
+        id: messageId,
+        type: "message",
+        role: "assistant",
+        model,
+        content: [],
+        stop_reason: null,
+        stop_sequence: null,
+        usage: {
+          // The split `message_delta` makes too: `promptTokenCount` includes the cache read, `input_tokens` does not.
+          ...anthropicUsageFromTotal(usage?.promptTokenCount ?? 0, cacheReadTokens(usage)),
+          output_tokens: 0,
         },
-      };
-      controller.enqueue(encoder.encode(sseEvent("message_start", msgStart)));
-    },
+      },
+    })));
+  };
 
+  return new TransformStream({
     transform(chunk, controller) {
       buffer += decoder.decode(chunk, { stream: true });
       const lines = buffer.split("\n");
@@ -55,6 +72,7 @@ export function createAnthropicStreamTransformer(model: string, messageId: strin
           const parts = data.candidates?.[0]?.content?.parts ?? [];
           const finishReason = data.candidates?.[0]?.finishReason;
           const usage = data.usageMetadata;
+          openMessage(controller, usage);
 
           for (const part of parts) {
             const isThought = part.thought || part.thoughtText || part.type === "thinking";
@@ -168,6 +186,7 @@ export function createAnthropicStreamTransformer(model: string, messageId: strin
             const parts = data.candidates?.[0]?.content?.parts ?? [];
             const finishReason = data.candidates?.[0]?.finishReason;
             const usage = data.usageMetadata;
+            openMessage(controller, usage);
 
             for (const part of parts) {
               const isThought = part.thought || part.thoughtText || part.type === "thinking";
@@ -276,6 +295,8 @@ export function createAnthropicStreamTransformer(model: string, messageId: strin
           }
         }
       }
+      // An upstream that sent nothing still gets a message that opens before it closes.
+      openMessage(controller);
       controller.enqueue(encoder.encode(sseEvent("message_stop", { type: "message_stop" })));
     },
   });
