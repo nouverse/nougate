@@ -173,6 +173,20 @@ bun run start
 docker compose up -d --build
 ```
 
+### Deploying an image
+
+Every commit of `main` whose Test run passed is built and pushed as `ghcr.io/nouverse/nougate:<short SHA>` and
+`latest` (`.github/workflows/docker-publish.yml`); nothing is built by hand, and no other branch is built. A host runs
+a commit's tag, so what it runs is a commit that was tested, and going back is the previous commit's tag:
+
+```bash
+# beside docker-compose.prod.yml (as docker-compose.yml) and its .env
+export NOUGATE_TAG=9109949
+docker compose pull && docker compose up -d
+```
+
+Unset, `NOUGATE_TAG` is `latest`. Never run `docker compose config` there: it prints the environment.
+
 ---
 
 ## Where State Lives

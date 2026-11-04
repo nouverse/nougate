@@ -2,7 +2,8 @@ name: nougate
 
 services:
   nougate:
-    image: ghcr.io/nouverse/nougate:latest
+    # A commit's tag in production (`NOUGATE_TAG=9109949`, README "Deploying an image"), `latest` when unset.
+    image: ghcr.io/nouverse/nougate:${NOUGATE_TAG:-latest}
     container_name: nougate
     restart: unless-stopped
     ports:

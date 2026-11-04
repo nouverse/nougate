@@ -1,0 +1,3 @@
+self-hosted-runner:
+  # The homelab build runner (VM 107) every job runs on.
+  labels: [build-runner]
