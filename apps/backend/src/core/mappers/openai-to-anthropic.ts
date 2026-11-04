@@ -319,6 +319,11 @@ export async function finalizeAnthropicToOpenAIResponse(
     message.tool_calls = toolCalls;
   }
 
+  // The whole prompt, cached part included — see `promptTokens`. Anthropic's
+  // `input_tokens` alone is only what the cache did not serve.
+  const promptTotal = promptTokens(data.usage) ?? 0;
+  const completion = data.usage?.output_tokens ?? 0;
+
   const body = {
     id: data.id || `chatcmpl-${crypto.randomUUID()}`,
     object: 'chat.completion',
@@ -332,11 +337,11 @@ export async function finalizeAnthropicToOpenAIResponse(
       },
     ],
     usage: {
-      // The whole prompt, cached part included — see `promptTokens`. Anthropic's
-      // `input_tokens` alone is only what the cache did not serve.
-      prompt_tokens: promptTokens(data.usage) ?? 0,
-      completion_tokens: data.usage?.output_tokens ?? 0,
-      total_tokens: (data.usage?.input_tokens ?? 0) + (data.usage?.output_tokens ?? 0),
+      prompt_tokens: promptTotal,
+      completion_tokens: completion,
+      // Of the same prompt: summing `input_tokens` here made the total smaller than the prompt it contains
+      // whenever the cache served any of it, as the streamed answer's total never was.
+      total_tokens: promptTotal + completion,
       // The other half of the breakpoint above: an upstream that honoured it says so as
       // `cache_read_input_tokens`, and an OpenAI client only understands `prompt_tokens_details`.
       ...openAiCacheUsage(cacheReadTokens(data.usage)),

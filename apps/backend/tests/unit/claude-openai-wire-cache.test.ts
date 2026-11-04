@@ -13,7 +13,11 @@
 
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { loadProxyConfig } from '@/config/manager';
-import { createAnthropicToOpenAIStreamTransformer, mapOpenAIToAnthropic } from '@/core/mappers/openai-to-anthropic';
+import {
+  createAnthropicToOpenAIStreamTransformer,
+  finalizeAnthropicToOpenAIResponse,
+  mapOpenAIToAnthropic,
+} from '@/core/mappers/openai-to-anthropic';
 
 beforeAll(async () => {
   // The mapper reads the Caveman switch from the global config.
@@ -259,6 +263,25 @@ describe('the cache read reaches an OpenAI client', () => {
       .find((chunk) => chunk.usage)?.usage;
 
     expect(usage).toEqual({
+      prompt_tokens: 10_000,
+      completion_tokens: 50,
+      total_tokens: 10_050,
+      prompt_tokens_details: { cached_tokens: 8_000 },
+    });
+  });
+
+  test('not streamed: the same figures, total_tokens the prompt and the completion together', async () => {
+    const upstream = new Response(
+      JSON.stringify({
+        id: 'msg_1',
+        content: [{ type: 'text', text: '30% full.' }],
+        stop_reason: 'end_turn',
+        usage: { input_tokens: 500, cache_creation_input_tokens: 1_500, cache_read_input_tokens: 8_000, output_tokens: 50 },
+      }),
+    );
+    const body = await (await finalizeAnthropicToOpenAIResponse(upstream, 'claudecode:claude-sonnet-5-5')).json();
+
+    expect(body.usage).toEqual({
       prompt_tokens: 10_000,
       completion_tokens: 50,
       total_tokens: 10_050,
