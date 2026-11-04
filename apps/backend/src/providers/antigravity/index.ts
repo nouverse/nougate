@@ -61,7 +61,7 @@ function createAnthropicErrorResponse(message: string, type = "invalid_request_e
   }, status);
 }
 
-async function finalizeOpenAIResponse(params: {
+export async function finalizeOpenAIResponse(params: {
   googleRes: Response;
   openaiBody: any;
   requestId: string;
@@ -114,6 +114,13 @@ async function finalizeOpenAIResponse(params: {
   let reasoningContent = "";
   let aggregatedToolCalls: any[] = [];
   let finalFinishReason = "stop";
+  /**
+   * The usage the stream last reported. Gemini's counts are cumulative, so the last is the answer's — the figure the
+   * streamed answer ends with, cache read included. Kept from before the `choices` check: a chunk can carry usage and
+   * no choice. Collecting only the choices sent a non-streamed answer out with no `usage` at all, and its client had to
+   * estimate the prompt and saw no cache read; `undefined` when the upstream counted nothing, never a zero it was not told.
+   */
+  let usage: unknown;
   let buffer = "";
 
   try {
@@ -134,6 +141,7 @@ async function finalizeOpenAIResponse(params: {
 
         try {
           const event = JSON.parse(line.slice(6));
+          usage = event.usage ?? usage;
           const choice = event.choices?.[0];
           if (!choice) {
             continue;
@@ -165,6 +173,7 @@ async function finalizeOpenAIResponse(params: {
   if (buffer.startsWith("data: ") && buffer !== "data: [DONE]") {
     try {
       const event = JSON.parse(buffer.slice(6));
+      usage = event.usage ?? usage;
       const choice = event.choices?.[0];
       if (choice?.delta?.content) {
         fullContent += choice.delta.content;
@@ -212,6 +221,7 @@ async function finalizeOpenAIResponse(params: {
             finish_reason: finalFinishReason,
           },
         ],
+        ...(usage ? { usage } : {}),
       },
       200,
       attempts,
