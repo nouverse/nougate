@@ -20,6 +20,20 @@ const DEFAULT_MAX_TOKENS = 8192;
 const CACHE_BREAKPOINT_MIN_CHARS = 4000;
 
 /**
+ * How many of the conversation's newest messages carry a breakpoint: the last block of each.
+ *
+ * Anthropic caches only up to a breakpoint, and an OpenAI-shaped client cannot mark one, so without these the
+ * conversation — what grows, and on an agent most of the prompt — went at full price on every request while only the
+ * tools and the system prompt were read back. Two rather than one because the newest message may be one the next
+ * request does not repeat: a client can say something once at the very end, as Nouride says a turn's work notes, and
+ * an entry written through it is never read. The message before it is history the next request repeats, so its entry
+ * is read back; when the newest is history too, its own entry covers one message more.
+ *
+ * With the tools' and the system prompt's, that is the four breakpoints Anthropic allows — a fifth is a 400.
+ */
+const CONVERSATION_BREAKPOINTS = 2;
+
+/**
  * Anthropic requires tool results to be user-turn blocks, and consecutive
  * same-role turns are rejected, so adjacent turns are merged as we build them.
  */
@@ -106,6 +120,14 @@ export function mapOpenAIToAnthropic(
 ): any {
   const systemParts: string[] = [];
   const messages: any[] = [];
+  /** The block each conversation message ended on, in the client's order: where its breakpoint goes. */
+  const messageEnds: any[] = [];
+  const append = (role: 'user' | 'assistant', blocks: any[]) => {
+    pushMessage(messages, role, blocks);
+    if (blocks.length > 0) {
+      messageEnds.push(blocks[blocks.length - 1]);
+    }
+  };
 
   const cavemanPrefix = getCavemanPrompt();
   if (cavemanPrefix) {
@@ -124,7 +146,7 @@ export function mapOpenAIToAnthropic(
     }
 
     if (msg.role === 'tool') {
-      pushMessage(messages, 'user', [
+      append('user', [
         {
           type: 'tool_result',
           tool_use_id: msg.tool_call_id,
@@ -152,11 +174,11 @@ export function mapOpenAIToAnthropic(
           input,
         });
       }
-      pushMessage(messages, 'assistant', blocks);
+      append('assistant', blocks);
       continue;
     }
 
-    pushMessage(messages, 'user', contentToBlocks(msg.content, providerId));
+    append('user', contentToBlocks(msg.content, providerId));
   }
 
   const anthropicBody: any = {
@@ -217,6 +239,21 @@ export function mapOpenAIToAnthropic(
     } else if (choice?.type === 'function' && choice.function?.name) {
       anthropicBody.tool_choice = { type: 'tool', name: choice.function.name };
     }
+  }
+
+  /**
+   * A breakpoint on the last tool, so the schemas stay cached when the system prompt moves.
+   *
+   * Tools render first, so the system breakpoint caches them too — but only while every byte of the system prompt
+   * stays the same, and an agent's does not: a date, what it remembers about the chat. Marked on their own, the
+   * schemas are read back across such a change instead of being written again with everything after them.
+   */
+  const tools = anthropicBody.tools;
+  if (Array.isArray(tools) && tools.length > 0) {
+    tools[tools.length - 1].cache_control = { type: 'ephemeral' };
+  }
+  for (const block of messageEnds.slice(-CONVERSATION_BREAKPOINTS)) {
+    block.cache_control = { type: 'ephemeral' };
   }
 
   return anthropicBody;

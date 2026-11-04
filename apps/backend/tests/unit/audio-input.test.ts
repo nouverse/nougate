@@ -142,7 +142,8 @@ describe("Mappers that cannot carry input_audio refuse it by name", () => {
       messages: [{ role: "user", content: [{ type: "text", text: "hi" }, { type: "mystery" }] }],
     };
 
-    expect(mapOpenAIToAnthropic(body, "claude", 4096, "claudecode").messages[0].content).toEqual([
+    // Matched rather than equal: the newest message also carries a cache breakpoint, which is not this test's business.
+    expect(mapOpenAIToAnthropic(body, "claude", 4096, "claudecode").messages[0].content).toMatchObject([
       { type: "text", text: "hi" },
     ]);
     expect(mapOpenAIToResponses(body, "gpt-5").input[0].content).toEqual([
