@@ -294,7 +294,9 @@ penalties are too, so providers stay comparable.
 
 **A conversation goes back to the account that answered it.** Claude Code and Codex ask the
 account that answered a conversation last (`core/conversation-accounts.ts`, keyed by the
-request's session id) before their strategy, while that account can answer: an upstream's
+request's session id: who names the conversation, `user` or `metadata.user_id` or the client,
+and the first block of its first message without its cache marker, so the id is the same from
+its first request on) before their strategy, while that account can answer: an upstream's
 prompt cache belongs to one account, and the least-recently-used tie-break alone sent each
 request of a conversation to the next account, which wrote the conversation's prefix into
 its own cache instead of reading it. Cooling, invalidated, removed or already tried this

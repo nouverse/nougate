@@ -30,18 +30,24 @@ function createJsonResponse(body: unknown, status: number, attempts?: number, ex
 }
 
 /**
- * Derive a deterministic session ID from the request body when possible.
+ * The request's conversation as an id, the same on each of its requests: who is asking, and how it opened.
+ *
+ * Who: `user` on the OpenAI wire, `metadata.user_id` on the Anthropic one, else the client. How it opened: the first
+ * message's first block, without its cache marker. Not the whole first message: a client adds to its newest message
+ * (Nouride's work notes) and moves its cache markers to the newest messages, and at a conversation's first request
+ * the newest message is the first. Hashed whole, a conversation's second request had an id of its own (live on
+ * 2026-11-05: two requests in a row, two ids, the second reading the first's cache). The account a conversation is
+ * kept on (`core/conversation-accounts.ts`) and Antigravity's signature cache are keyed by it. With no first message
+ * there is no conversation to name: a random id.
  */
-export function buildSessionId(openaiBody: any, clientId: string): string {
-  const firstMessage = openaiBody.messages?.[0]?.content || "";
-  const userIdentifier = openaiBody.user || clientId;
-  const stableSeed = `${userIdentifier}:${
-    typeof firstMessage === "string" ? firstMessage : JSON.stringify(firstMessage)
-  }`;
+export function buildSessionId(body: any, clientId: string): string {
+  const content = body.messages?.[0]?.content;
+  const opening = Array.isArray(content) ? content[0] : content;
+  if (!opening) return crypto.randomUUID();
 
-  return firstMessage
-    ? new Bun.CryptoHasher("sha256").update(stableSeed).digest("hex")
-    : crypto.randomUUID();
+  const said = typeof opening === "string" ? opening : JSON.stringify({ ...opening, cache_control: undefined });
+  const who = body.user || body.metadata?.user_id || clientId;
+  return new Bun.CryptoHasher("sha256").update(`${who}:${said}`).digest("hex");
 }
 
 /**
