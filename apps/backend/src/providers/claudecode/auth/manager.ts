@@ -16,6 +16,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { ConversationAccounts } from '@/core/conversation-accounts';
 import type { ClaudeCodeAccount, RateLimitSnapshot, SelectionStrategy } from './types';
 import { credentialHint, credentialKind } from './credential';
 import { loadConfig, saveConfig } from './storage';
@@ -35,6 +36,9 @@ const HEALTH_MAX = 100;
 const HEALTH_RECOVERY = 10;
 const HEALTH_PENALTY = 20;
 
+/** Which account each conversation goes back to (`core/conversation-accounts.ts` says why). */
+const conversations = new ConversationAccounts();
+
 /**
  * Load the credentials from disk, replacing whatever is in memory.
  *
@@ -46,6 +50,11 @@ export async function initManager(): Promise<void> {
   accounts = (config.accounts ?? []).map(normalizeHealth);
   strategy = config.strategy ?? 'healthiest';
   cursor = 0;
+}
+
+/** The account that answered `conversation`, remembered for its next request. */
+export function rememberConversation(conversation: string, accountId: string, now = Date.now()): void {
+  conversations.remember(conversation, accountId, now);
 }
 
 const persist = (immediate = false) => saveConfig({ accounts, strategy }, { immediate });
@@ -250,11 +259,14 @@ function cooling(account: ClaudeCodeAccount, scope: string): boolean {
  * The next credential to try.
  *
  * `excludeIds` is what the executor has already tried this request, so a retry cannot pick the same
- * failing credential twice and burn its attempts on one account.
+ * failing credential twice and burn its attempts on one account. `conversation` is the request's own
+ * (the router's session id): the account that answered it last, while it can still be offered, before
+ * the strategy is asked, since that account's cache holds the conversation.
  */
 export async function getBestAccount(
   modelId?: string,
   excludeIds: string[] = [],
+  conversation?: string,
 ): Promise<ClaudeCodeAccount | null> {
   const scope = cooldownScope(modelId);
   const usable = accounts.filter(
@@ -262,6 +274,9 @@ export async function getBestAccount(
       !account.invalidatedAt && !excludeIds.includes(account.id) && !cooling(account, scope),
   );
   if (usable.length === 0) return null;
+
+  const kept = conversations.keptAmong(conversation, usable);
+  if (kept) return kept;
 
   if (strategy === 'round-robin') {
     cursor = (cursor + 1) % usable.length;

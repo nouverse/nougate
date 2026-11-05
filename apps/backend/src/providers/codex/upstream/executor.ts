@@ -15,6 +15,7 @@ import {
   invalidate,
   markCooldown,
   needsRefresh,
+  rememberConversation,
   storeRefreshedTokens,
   updateAccountUsage,
 } from '../auth/manager';
@@ -102,6 +103,8 @@ export interface CodexExecuteOptions {
   body: Record<string, any>;
   modelSpec: IModelSpec;
   clientId?: string;
+  /** The conversation the request is part of: answered by the account that answered it last (`getBestAccount`). */
+  conversation?: string;
 }
 
 export interface CodexExecuteResult {
@@ -137,7 +140,7 @@ export class CodexExecutor {
     accounts: while (attempts < maxAttempts) {
       attempts++;
 
-      const account = await getBestAccount(modelId, tried);
+      const account = await getBestAccount(modelId, tried, options.conversation);
       if (!account) {
         throw new Error(
           tried.length > 0
@@ -270,6 +273,8 @@ export class CodexExecutor {
               });
             }
             await updateAccountUsage(account.id, true);
+            // The account that answered, not the first one picked: its cache now holds the conversation.
+            if (options.conversation) rememberConversation(options.conversation, account.id);
             return { response: reframeResponse(currentResponse), accountId: account.id, attempts };
           }
 

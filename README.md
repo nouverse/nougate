@@ -815,6 +815,8 @@ An Antigravity account may carry a `tier`, which adds a bonus to its rotation sc
 > because the scoring half still works; wire a setter back up if you want it live.
 
 Every other provider ranks purely on health score with least-recently-used as the tie-break.
+Claude Code and Codex first send a conversation back to the account that answered it last,
+while that account can answer: their upstreams cache a conversation per account.
 
 ---
 

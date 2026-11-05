@@ -173,6 +173,7 @@ export class ClaudeCodeProvider implements IProvider {
         body: upstreamBody,
         modelSpec,
         clientId: ctx.clientId,
+        conversation: ctx.sessionId,
       });
 
       return await restoreResponse(result.response, toolNameMap, isStreaming);
@@ -191,6 +192,7 @@ export class ClaudeCodeProvider implements IProvider {
         body: upstreamBody,
         modelSpec,
         clientId: ctx.clientId,
+        conversation: ctx.sessionId,
       });
 
       // Name restoration runs *before* the protocol translation, not after: it is an Anthropic-shaped

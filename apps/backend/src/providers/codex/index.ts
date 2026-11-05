@@ -147,6 +147,7 @@ export class CodexProvider implements IProvider {
         body: mapOpenAIToResponses(chatBody, upstreamModelId),
         modelSpec,
         clientId: ctx.clientId,
+        conversation: ctx.sessionId,
       });
 
       if (isStreaming) {
@@ -167,6 +168,7 @@ export class CodexProvider implements IProvider {
       body: mapOpenAIToResponses(body, upstreamModelId),
       modelSpec,
       clientId: ctx.clientId,
+      conversation: ctx.sessionId,
     });
 
     if (isStreaming) {

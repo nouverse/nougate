@@ -30,6 +30,7 @@ import {
   markCooldown,
   needsRefresh,
   recordRateLimit,
+  rememberConversation,
   replaceCredential,
   storeRefreshedTokens,
   updateAccountUsage,
@@ -81,6 +82,8 @@ export interface ClaudeCodeExecuteOptions {
   body: unknown;
   modelSpec: IModelSpec;
   clientId?: string;
+  /** The conversation the request is part of: answered by the account that answered it last (`getBestAccount`). */
+  conversation?: string;
 }
 
 export interface ClaudeCodeExecuteResult {
@@ -122,7 +125,7 @@ export class ClaudeCodeExecutor {
     while (attempts < maxAttempts) {
       attempts++;
 
-      const account = await getBestAccount(modelId, tried);
+      const account = await getBestAccount(modelId, tried, options.conversation);
       if (!account) {
         throw new Error(
           tried.length > 0
@@ -269,6 +272,8 @@ export class ClaudeCodeExecutor {
         }
 
         await updateAccountUsage(account.id, true);
+        // The account that answered, not the first one picked: its cache now holds the conversation.
+        if (options.conversation) rememberConversation(options.conversation, account.id);
         return { response: reframeResponse(response), accountId: account.id, attempts };
       } catch (error) {
         clearTimeout(timeoutId);

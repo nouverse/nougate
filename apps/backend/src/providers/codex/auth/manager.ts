@@ -7,6 +7,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { ConversationAccounts } from '@/core/conversation-accounts';
 import type { CodexAccount, SelectionStrategy } from './types';
 import { credentialHint, decodeAccountId } from './credential';
 import { CODEX_OAUTH, isRefreshStale } from './oauth';
@@ -20,11 +21,19 @@ const HEALTH_MAX = 100;
 const HEALTH_RECOVERY = 10;
 const HEALTH_PENALTY = 20;
 
+/** Which account each conversation goes back to (`core/conversation-accounts.ts` says why). */
+const conversations = new ConversationAccounts();
+
 export async function initManager(): Promise<void> {
   const config = await loadConfig();
   accounts = config.accounts ?? [];
   strategy = config.strategy ?? 'healthiest';
   cursor = 0;
+}
+
+/** The account that answered `conversation`, remembered for its next request. */
+export function rememberConversation(conversation: string, accountId: string, now = Date.now()): void {
+  conversations.remember(conversation, accountId, now);
 }
 
 const persist = (immediate = false) => saveConfig({ accounts, strategy }, { immediate });
@@ -157,9 +166,15 @@ function cooling(account: CodexAccount, scope: string): boolean {
   return until !== undefined && until > Date.now();
 }
 
+/**
+ * The next credential to try: not one already tried this request (`excludeIds`), and for a request of a
+ * conversation (`conversation`, the router's session id) the account that answered it last while it can still
+ * be offered, since that account's cache holds the conversation; otherwise the strategy's.
+ */
 export async function getBestAccount(
   modelId?: string,
   excludeIds: string[] = [],
+  conversation?: string,
 ): Promise<CodexAccount | null> {
   const scope = cooldownScope(modelId);
   const usable = accounts.filter(
@@ -167,6 +182,9 @@ export async function getBestAccount(
       !account.invalidatedAt && !excludeIds.includes(account.id) && !cooling(account, scope),
   );
   if (usable.length === 0) return null;
+
+  const kept = conversations.keptAmong(conversation, usable);
+  if (kept) return kept;
 
   if (strategy === 'round-robin') {
     cursor = (cursor + 1) % usable.length;
