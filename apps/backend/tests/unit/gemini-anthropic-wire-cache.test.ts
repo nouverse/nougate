@@ -65,7 +65,7 @@ const inodes = { type: 'tool_result', tool_use_id: 'call_di', content: '/dev/sda
 
 function request(messages: unknown[]) {
   return {
-    model: 'antigravity:gemini-3.8-flash',
+    model: 'antigravity:gemini-3.8-flash-medium',
     max_tokens: 4096,
     stream: true,
     system,
@@ -91,8 +91,8 @@ const second = request([
 
 /** Through the mapper as the provider calls it: the real model spec, the session id the router derives. */
 function translate(body: ReturnType<typeof request>) {
-  const spec = antigravityModelRegistry.getSpec('gemini-3.8-flash');
-  if (!spec) throw new Error('gemini-3.8-flash is not in the registry');
+  const spec = antigravityModelRegistry.getSpec('gemini-3.8-flash-medium');
+  if (!spec) throw new Error('gemini-3.8-flash-medium is not in the registry');
   return mapAnthropicToGoogle(body as any, spec, buildSessionId(body, 'nouride'), {
     systemInstructionPrefix: 'You are a coding agent.',
     features: { sanitizeToolNames: true, keepThinking: false },

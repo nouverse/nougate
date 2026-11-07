@@ -21,31 +21,71 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
     maxOutputTokens: 8192, // max: 65536
     timeoutMs: 60000,
   },
-  // ── Gemini 3.8 Flash (tiered thinking budget) ─────────────────────────────
-  // Both entries hit `gemini-3.8-flash-tiered` upstream and differ only in the
-  // thinking budget they send (high: 24576, default: 8192). The bare `gemini-3.8-flash`
-  // is *not* an upstream id — it 404s — so the mapping is what makes the
-  // familiar name callable.
-  'gemini-3.8-flash-high': {
-    modelId: 'gemini-3.8-flash-high',
-    displayName: 'Gemini 3.8 Flash High',
-    pool: 'sandbox',
-    upstreamModelId: 'gemini-3.8-flash-tiered',
-    isThinking: true,
-    thinkingMode: 'budget',
-    thinkingBudget: 24576,
-    maxOutputTokens: 65536,
-    timeoutMs: 60000,
-  },
+  // ── Gemini 3.8 Flash ──────────────────────────────────────────────────────
+  // Google serves the thinking level as three ids of their own, so no budget is sent: one would
+  // override the level the id names. The bare `gemini-3.8-flash` is not an upstream id; it stays
+  // callable as Medium so a config that names it keeps working.
   'gemini-3.8-flash': {
     modelId: 'gemini-3.8-flash',
     displayName: 'Gemini 3.8 Flash',
     pool: 'sandbox',
-    upstreamModelId: 'gemini-3.8-flash-tiered',
+    upstreamModelId: 'gemini-3.8-flash-medium',
     isThinking: true,
     thinkingMode: 'budget',
-    thinkingBudget: 8192,
     maxOutputTokens: 65536,
+    timeoutMs: 60000,
+  },
+  'gemini-3.8-flash-low': {
+    modelId: 'gemini-3.8-flash-low',
+    displayName: 'Gemini 3.8 Flash (Low)',
+    pool: 'sandbox',
+    isThinking: true,
+    thinkingMode: 'budget',
+    maxOutputTokens: 65536,
+    timeoutMs: 60000,
+  },
+  'gemini-3.8-flash-medium': {
+    modelId: 'gemini-3.8-flash-medium',
+    displayName: 'Gemini 3.8 Flash (Medium)',
+    pool: 'sandbox',
+    isThinking: true,
+    thinkingMode: 'budget',
+    maxOutputTokens: 65536,
+    timeoutMs: 60000,
+  },
+  'gemini-3.8-flash-high': {
+    modelId: 'gemini-3.8-flash-high',
+    displayName: 'Gemini 3.8 Flash (High)',
+    pool: 'sandbox',
+    isThinking: true,
+    thinkingMode: 'budget',
+    maxOutputTokens: 65536,
+    timeoutMs: 60000,
+  },
+  'gemini-3-flash': {
+    modelId: 'gemini-3-flash',
+    displayName: 'Gemini 3 Flash',
+    pool: 'sandbox',
+    isThinking: true,
+    thinkingMode: 'budget',
+    maxOutputTokens: 65536,
+    timeoutMs: 60000,
+  },
+  'gemini-3.5-flash-lite': {
+    modelId: 'gemini-3.5-flash-lite',
+    displayName: 'Gemini 3.5 Flash Lite',
+    pool: 'sandbox',
+    isThinking: false,
+    maxOutputTokens: 65535,
+    timeoutMs: 60000,
+  },
+  'gemini-2.5-pro': {
+    modelId: 'gemini-2.5-pro',
+    displayName: 'Gemini 2.5 Pro',
+    pool: 'sandbox',
+    isThinking: true,
+    thinkingMode: 'budget',
+    maxOutputTokens: 65535,
     timeoutMs: 60000,
   },
   'claude-sonnet-4-6': {

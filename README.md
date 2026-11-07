@@ -5,7 +5,7 @@
 **Nougate** is Nouverse's internal LLM gateway — a modular router that sits between your tools and AI providers. Route requests through OpenAI or Anthropic protocols, authenticate via isolated per-provider accounts, and address a model either way:
 
 ```jsonc
-{ "model": "antigravity:gemini-3.8-flash" }  // pinned — this provider, never another
+{ "model": "antigravity:gemini-3.8-flash-medium" }  // pinned — this provider, never another
 { "model": "claude-sonnet-4-6" }             // routed — the gateway picks, and fails over
 ```
 
@@ -18,7 +18,7 @@
 ### Core
 - **Multi-Protocol**: Expose providers via OpenAI (`/openai/v1/`) and Anthropic (`/anthropic/v1/`) compatible APIs simultaneously.
 - **Multi-Provider**: Pluggable provider system — each provider owns its auth, accounts, config, and model registry.
-- **Model Namespacing, with an escape hatch**: `provider:model-id` pins a request to one provider (e.g. `antigravity:gemini-3.8-flash`). A bare `model-id` instead fans out to every provider that serves it — see [Smart routing](#smart-routing).
+- **Model Namespacing, with an escape hatch**: `provider:model-id` pins a request to one provider (e.g. `antigravity:gemini-3.8-flash-medium`). A bare `model-id` instead fans out to every provider that serves it — see [Smart routing](#smart-routing).
 - **Per-Provider Auth Isolation**: Credentials and account storage are fully isolated per provider.
 - **Custom Providers**: Define your own upstream from the dashboard — pick an ID, base URL, OpenAI or Anthropic API style, keys and pricing, then call it as `{provider_id}:{model}`.
 - **Gateway API Keys**: Issue `sk-nou-…` keys so clients authenticate against the proxy routes. Always required — an instance with no keys serves nobody.
@@ -92,7 +92,7 @@ Registration order is display order and bare-model routing order. Both are set i
 
 | Provider | Prefix | Auth | Quota reporting | Models |
 |---|---|---|---|---|
-| **Google Antigravity** | `antigravity:` | Google OAuth (multi-account) | Per-model rolling windows, averaged across the pool | Gemini 3.1/3.6/3.7 Flash, Claude Sonnet 4.6, Claude Opus 4.6 Thinking |
+| **Google Antigravity** | `antigravity:` | Google OAuth (multi-account) | Per-model rolling windows, averaged across the pool | Gemini 3.8 Flash (Low/Medium/High), Gemini 3 Flash, Gemini 3.5/3.1 Flash Lite, Gemini 3.1 Flash Image, Gemini 2.5 Pro, Claude Sonnet 4.6, Claude Opus 4.6 Thinking |
 | **OpenAI Codex** | `codex:` | ChatGPT OAuth (PKCE, multi-account) | Primary/secondary windows and review quota from the `wham` API | GPT-6 Astra, GPT-5.6 Sol/Terra/Luna, GPT-5.5, GPT-5.4 (+ Mini), GPT-5.3 Codex Spark — each with a `-review` variant |
 | **Claude Code** | `claudecode:` | Anthropic OAuth, or a pasted `setup-token` / API key | Five-hour and weekly plan windows from `/api/oauth/usage` | Claude Opus 5, Opus 4.8, Sonnet 5, Sonnet 4.6, Haiku 4.5, Fable 5.1 |
 | **GitHub Copilot** | `copilot:` | GitHub Device Flow (multi-account) | Monthly chat / completions / premium-request entitlements per seat | Claude Sonnet 4.5, Claude Opus 4.5/4.6, Gemini 2.5 Pro, GPT-4o/4.1/5-mini |
@@ -348,9 +348,8 @@ differ because the settings do. A few worth knowing:
 Override or add models at runtime without code changes:
 ```jsonc
 {
-  "gemini-3.8-flash": {
-    "maxOutputTokens": 32000,
-    "thinkingBudget": 4096
+  "gemini-3.8-flash-medium": {
+    "maxOutputTokens": 32000
   }
 }
 ```
@@ -708,7 +707,7 @@ In `~/.config/zed/settings.json`:
         "api_url": "https://nougate.nouverse.tech/anthropic",
         "available_models": [
           {
-            "name": "antigravity:gemini-3.8-flash",
+            "name": "antigravity:gemini-3.8-flash-medium",
             "display_name": "(Nougate) Gemini 3.5 Flash Medium",
             "max_tokens": 1048576,
             "max_output_tokens": 64000,
@@ -743,7 +742,7 @@ claude --model antigravity:claude-sonnet-4-6
       "npm": "@ai-sdk/openai-compatible",
       "options": { "baseURL": "https://nougate.nouverse.tech/openai/v1" },
       "models": {
-        "antigravity:gemini-3.8-flash": {
+        "antigravity:gemini-3.8-flash-medium": {
           "name": "Gemini 3.5 Flash Medium",
           "limit": { "context": 1048576, "output": 65535 }
         }
@@ -759,7 +758,7 @@ claude --model antigravity:claude-sonnet-4-6
 curl https://nougate.nouverse.tech/openai/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "antigravity:gemini-3.8-flash",
+    "model": "antigravity:gemini-3.8-flash-medium",
     "messages": [{"role": "user", "content": "Hello"}],
     "stream": true
   }'

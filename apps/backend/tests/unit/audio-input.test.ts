@@ -76,7 +76,7 @@ function makeProvider(id: string, registry: IModelRegistry, execute?: IProvider[
 }
 
 describe("Antigravity carries input_audio to Gemini", () => {
-  const gemini = buildModelSpec({ modelId: "gemini-3.8-flash", upstreamModelId: "gemini-3.8-flash-tiered" });
+  const gemini = buildModelSpec({ modelId: "gemini-3.8-flash-medium" });
 
   for (const [format, mimeType] of [
     ["mp3", "audio/mpeg"],
@@ -222,7 +222,7 @@ describe("/models declares what each route can deliver", () => {
       try {
         const models = await listModels(handler, path);
 
-        const gemini = models.get("antigravity:gemini-3.8-flash");
+        const gemini = models.get("antigravity:gemini-3.8-flash-medium");
         expect(gemini.input_modalities).toEqual(["text", "image", "audio"]);
         expect(gemini.input_audio_formats).toEqual(["mp3", "wav", "ogg"]);
 
