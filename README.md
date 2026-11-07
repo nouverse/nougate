@@ -92,7 +92,7 @@ Registration order is display order and bare-model routing order. Both are set i
 
 | Provider | Prefix | Auth | Quota reporting | Models |
 |---|---|---|---|---|
-| **Google Antigravity** | `antigravity:` | Google OAuth (multi-account) | Per-model rolling windows, averaged across the pool | Gemini 3.8 Flash (Low/Medium/High), Gemini 3 Flash, Gemini 3.5/3.1 Flash Lite, Gemini 3.1 Flash Image, Gemini 2.5 Pro, Claude Sonnet 4.6, Claude Opus 4.6 Thinking |
+| **Google Antigravity** | `antigravity:` | Google OAuth (multi-account) | Per-model rolling windows, averaged across the pool | Gemini 3.8 Flash (Low/Medium/High), Gemini 3 Flash, Gemini 3.5/3.1 Flash Lite, Gemini 3.1 Flash Image, Gemini 2.5 Pro, Claude Sonnet/Opus 5.5 (Low/Medium/High), Claude Sonnet 4.6, Claude Opus 4.6 Thinking |
 | **OpenAI Codex** | `codex:` | ChatGPT OAuth (PKCE, multi-account) | Primary/secondary windows and review quota from the `wham` API | GPT-6 Astra, GPT-5.6 Sol/Terra/Luna, GPT-5.5, GPT-5.4 (+ Mini), GPT-5.3 Codex Spark — each with a `-review` variant |
 | **Claude Code** | `claudecode:` | Anthropic OAuth, or a pasted `setup-token` / API key | Five-hour and weekly plan windows from `/api/oauth/usage` | Claude Opus 5, Opus 4.8, Sonnet 5, Sonnet 4.6, Haiku 4.5, Fable 5.1 |
 | **GitHub Copilot** | `copilot:` | GitHub Device Flow (multi-account) | Monthly chat / completions / premium-request entitlements per seat | Claude Sonnet 4.5, Claude Opus 4.5/4.6, Gemini 2.5 Pro, GPT-4o/4.1/5-mini |

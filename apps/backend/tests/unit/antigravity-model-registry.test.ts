@@ -34,3 +34,16 @@ describe('Antigravity Gemini 3.8 Flash', () => {
     );
   });
 });
+
+describe('Antigravity Claude 5.5', () => {
+  for (const id of ['claude-sonnet-5-5-low', 'claude-sonnet-5-5-medium', 'claude-sonnet-5-5-high',
+    'claude-opus-5-5-low', 'claude-opus-5-5-medium', 'claude-opus-5-5-high']) {
+    test(`${id} goes to Google under its own id, thinking, with no budget of ours`, () => {
+      const spec = antigravityModelRegistry.getSpec(id)!;
+      expect(spec.upstreamModelId ?? spec.modelId).toBe(id);
+      expect(spec.isThinking).toBe(true);
+      expect(spec.thinkingBudget).toBeUndefined();
+      expect(spec.maxOutputTokens).toBe(128000);
+    });
+  }
+});
