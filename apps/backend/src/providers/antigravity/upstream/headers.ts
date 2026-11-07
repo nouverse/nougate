@@ -17,7 +17,10 @@ export const OAUTH_CONFIG = {
   },
 };
 
-const ANTIGRAVITY_VERSION = "2.0.1";
+// Google answers a client older than its supported floor with "This version of Antigravity is
+// no longer supported" as the model's reply, with a 200. This follows the stable IDE release
+// (antigravity-ide-auto-updater), not the 2.0.x hub app: the hub's version is refused too.
+const ANTIGRAVITY_VERSION = "2.6.0";
 
 const PLATFORMS = ["darwin/x64", "darwin/arm64"] as const;
 
