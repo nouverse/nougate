@@ -571,7 +571,15 @@ export function isModelUnlistedFor(account: AntigravityAccount, model?: string):
     return false;
   }
 
-  return !account.availableModels.includes(upstreamModelIdFor(model));
+  const id = upstreamModelIdFor(model);
+  if (account.availableModels.includes(id)) {
+    return false;
+  }
+  // A model sent at a level (`gemini-3.8-flash-medium`) Google lists once for its family
+  // (`gemini-3.8-flash-tiered`, on every account on 2026-11-08), so a level is listed with its
+  // family. A 4.6 account lists nothing of `claude-sonnet-5-5`, so it still is not offered 5.5.
+  const family = id.replace(/-(low|medium|high)$/, '');
+  return family === id || !account.availableModels.some(listed => listed === family || listed.startsWith(`${family}-`));
 }
 
 /**

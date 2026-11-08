@@ -35,28 +35,35 @@ const HOUR = 60 * 60 * 1000;
 const realFetch = globalThis.fetch;
 let accountsBefore: AntigravityAccount[] = [];
 
-/** The ids a real account not yet moved to Claude 5.5 listed on 2026-11-07. */
-const NOT_MOVED = [
-  'claude-opus-4-6-thinking',
-  'claude-sonnet-4-6',
+/**
+ * The ids live accounts listed on 2026-11-08: four not yet moved to Claude 5.5, one moved. Gemini 3.8 Flash is listed
+ * once, as `gemini-3.8-flash-tiered`, though it is sent at its levels (`gemini-3.8-flash-medium`).
+ */
+const SHARED = [
+  'chat_20706',
+  'chat_23310',
+  'gemini-2.5-flash',
+  'gemini-2.5-flash-lite',
+  'gemini-2.5-flash-thinking',
   'gemini-2.5-pro',
   'gemini-3-flash',
   'gemini-3.1-flash-image',
   'gemini-3.1-flash-lite',
   'gemini-3.5-flash-lite',
+  'gemini-3.8-flash-tiered',
   'gpt-oss-120b-medium',
+  'tab_flash_lite_preview',
+  'tab_jump_flash_lite_preview',
 ];
-
-/** An account moved to 5.5: the registry's 5.5 ids where the 4.6 ones were. */
+const NOT_MOVED = [...SHARED, 'claude-opus-4-6-thinking', 'claude-sonnet-4-6'];
 const MOVED = [
+  ...SHARED,
   'claude-opus-5-5-high',
   'claude-opus-5-5-low',
   'claude-opus-5-5-medium',
   'claude-sonnet-5-5-high',
   'claude-sonnet-5-5-low',
   'claude-sonnet-5-5-medium',
-  'gemini-2.5-pro',
-  'gemini-3-flash',
 ];
 
 /**
@@ -153,10 +160,22 @@ describe('selection offers an account only the models its list has', () => {
 
     hold(
       account('lists-it@test.invalid', [listedAs!]),
-      account('lists-another@test.invalid', ['gemini-3.8-flash-low']),
+      account('lists-another-model@test.invalid', ['gemini-3-flash']),
     );
 
     expect(await offeredFor('gemini-3.8-flash')).toEqual(['lists-it@test.invalid']);
+  });
+
+  test('a model sent at a level is listed by its family, as Google lists Gemini 3.8 Flash', async () => {
+    hold(account('not-moved@test.invalid', NOT_MOVED), account('moved@test.invalid', MOVED));
+
+    // Every live account lists `gemini-3.8-flash-tiered`, never a level: each level, and the alias, stays served.
+    for (const model of ['gemini-3.8-flash', 'gemini-3.8-flash-low', 'gemini-3.8-flash-medium', 'gemini-3.8-flash-high']) {
+      expect(await offeredFor(model)).toEqual(['moved@test.invalid', 'not-moved@test.invalid']);
+    }
+    // A family is not a generation: an account on 4.6 lists nothing of claude-sonnet-5-5, at any level.
+    expect(await offeredFor('claude-sonnet-5-5-medium')).toEqual(['moved@test.invalid']);
+    expect(await offeredFor('claude-opus-5-5-low')).toEqual(['moved@test.invalid']);
   });
 });
 
