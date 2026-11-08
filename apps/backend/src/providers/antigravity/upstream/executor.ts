@@ -9,6 +9,7 @@ import {
   getEarliestReset,
   getFamilyName,
   getBestAccount,
+  isModelListedNowhere,
   cooldownScope,
   markCooldown,
   updateAccountUsage,
@@ -80,6 +81,8 @@ export interface ExhaustionInput {
   attemptLogs: Array<{ email: string; status: number; reason: string }>;
   /** Accounts that answered "this model does not exist here". */
   unsupportedCount: number;
+  /** No account's own model list from Google has the model, so selection offered none. */
+  listedNowhere: boolean;
   /** 5xx replies counted across accounts. */
   systemicErrorCount: number;
   lastStatus: number;
@@ -98,9 +101,13 @@ export interface ExhaustionInput {
 export function summarizeExhaustion(input: ExhaustionInput): { status: number; body: unknown } {
   const { attemptLogs } = input;
 
-  // Nobody has the model. Rotating further would not help, and a quota message
-  // sends the operator hunting for a limit that is not the problem.
-  if (input.unsupportedCount > 0 && input.unsupportedCount >= input.attemptCount) {
+  // Nobody has the model: no account lists it, or every account asked said so.
+  // Rotating further would not help, and a quota message sends the operator
+  // hunting for a limit that is not the problem.
+  if (
+    input.listedNowhere ||
+    (input.unsupportedCount > 0 && input.unsupportedCount >= input.attemptCount)
+  ) {
     return {
       status: 404,
       body: {
@@ -605,11 +612,17 @@ export class AntigravityExecutor {
       }
     }
 
+    const listedNowhere = isModelListedNowhere(modelId);
+    if (listedNowhere) {
+      console.log(`[Model] No account's model list from Google has ${modelId}.`);
+    }
+
     const exhaustion = summarizeExhaustion({
       model: options.model,
       attemptCount: attemptLogs.length,
       attemptLogs,
       unsupportedCount,
+      listedNowhere,
       systemicErrorCount,
       lastStatus,
       resetTime: getEarliestReset(useCliPool ? "cli" : "sandbox"),

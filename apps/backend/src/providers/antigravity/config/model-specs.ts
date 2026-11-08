@@ -90,7 +90,9 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
   },
   // ── Claude 5.5 ────────────────────────────────────────────────────────────
   // Like Gemini 3.8 Flash, the thinking level is in Google's id, so no budget is sent. An account
-  // Google has moved to 5.5 answers 4.6 with "no longer available" as the reply.
+  // Google has moved to 5.5 answers 4.6 with "no longer available" as the reply, and one not yet
+  // moved answers 5.5 so: selection offers an account only the models its own list from Google
+  // has (`isModelUnlistedFor` in auth/manager.ts).
   'claude-sonnet-5-5-low': {
     modelId: 'claude-sonnet-5-5-low',
     displayName: 'Claude Sonnet 5.5 (Low)',
@@ -263,6 +265,16 @@ export function getModelSpec(modelId: string): IModelSpec | null {
   return null;
 }
 
+
+/**
+ * The id Google knows a model by, the one the mappers send: the registry's `upstreamModelId` when it
+ * names one, so `gemini-3.8-flash` is `gemini-3.8-flash-medium`. An id the registry does not hold is
+ * sent as it is (see the bypass in `getModelSpec`), so it is its own upstream id.
+ */
+export function upstreamModelIdFor(modelId: string): string {
+  const modelSpec = MODEL_REGISTRY[normalizeModelId(modelId)];
+  return modelSpec ? (modelSpec.upstreamModelId ?? modelSpec.modelId) : modelId;
+}
 
 /**
  * Provider-local model registry for the antigravity provider.

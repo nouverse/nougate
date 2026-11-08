@@ -3,6 +3,7 @@ import { adminEventBus } from '@/core/events';
 import { assertAccountSlotAvailable, capRotationPool } from '@/core/rotation-pool';
 import type { UpstreamErrorKind } from '@/core/upstream-errors';
 import { getAntigravityConfig, loadAntigravityConfig } from '@/providers/antigravity/provider-config';
+import { upstreamModelIdFor } from '@/providers/antigravity/config/model-specs';
 import { generateFingerprint } from '@/providers/antigravity/upstream/headers';
 import { getProjectId, refreshAccessToken } from '@/providers/antigravity/auth/oauth';
 import { loadConfig, saveConfig } from '@/providers/antigravity/auth/storage';
@@ -343,7 +344,10 @@ function getPidOffset(): number {
 export async function getBestAccount(pool?: "cli" | "sandbox", model?: string, clientId?: string, excludeEmails: string[] = [], skipRescue: boolean = false): Promise<AntigravityAccount | null> {
   if (accounts.length === 0) return null;
   const now = Date.now();
-  const usable = accounts.filter(a => a.refreshToken && !a.challenge && !excludeEmails.includes(a.email));
+  // An account whose own list lacks the model is dropped here, with the accounts that cannot be
+  // used at all, so that no path below offers it: not the cache-first wait, not the rescue.
+  const usable = accounts.filter(a =>
+    a.refreshToken && !a.challenge && !excludeEmails.includes(a.email) && !isModelUnlistedFor(a, model));
   if (pool) {
     let candidates = usable.filter(a => {
       if (isModelUnsupportedFor(a, model)) return false;
@@ -549,6 +553,36 @@ export function isModelUnsupportedFor(account: AntigravityAccount, model?: strin
   }
 
   return Date.now() - flaggedAt < UNSUPPORTED_PROBE_WINDOW_MS;
+}
+
+/**
+ * Whether Google's own model list for this account leaves `model` out.
+ *
+ * Google moves accounts to a new model generation one by one, and an account asked for a model it
+ * does not list answers "no longer available" as a 200 reply, which reaches the client as the
+ * model's answer: one not yet on Claude 5.5 answers 5.5 so, one already moved answers 4.6 so. The
+ * list is matched on the id Google knows the model by, which for an alias is not `model` itself.
+ *
+ * An account with no list stays eligible. Its models were never fetched or the fetch failed, and a
+ * gap in what we know must not keep a request from an account that may serve it.
+ */
+export function isModelUnlistedFor(account: AntigravityAccount, model?: string): boolean {
+  if (!model || !account.availableModels?.length) {
+    return false;
+  }
+
+  return !account.availableModels.includes(upstreamModelIdFor(model));
+}
+
+/**
+ * Whether no account can serve `model` by its own list: every account has a list, and none has it.
+ *
+ * Selection then offers no account at all, and the executor says so by naming the model rather
+ * than with the quota message an empty pool gets otherwise. With no accounts there is nothing to
+ * say about the model, so this is false.
+ */
+export function isModelListedNowhere(model: string): boolean {
+  return accounts.length > 0 && accounts.every(account => isModelUnlistedFor(account, model));
 }
 
 export function flagModelUnsupported(email: string, model: string) {

@@ -303,6 +303,15 @@ its own cache instead of reading it. Cooling, invalidated, removed or already tr
 request, the account gives the conversation up to whichever answers instead. Kept in
 memory for an hour after the last answer, at most ten thousand conversations.
 
+**An Antigravity account is offered only the models its own list has.** Google moves
+accounts to a new model generation one by one, and an account asked for a model it does
+not list answers "no longer available" as a 200 reply, which reads as the model's answer.
+Each account keeps the model ids its last readable `fetchAvailableModels` reply listed
+(`availableModels`, refreshed with the quota), and selection skips one whose list lacks the
+model, matched on the id Google knows it by (`gemini-3.8-flash` is `gemini-3.8-flash-medium`).
+An account with no list yet stays eligible. When every account has a list and none has the
+model, the request fails with a 404 `model_not_found` that names it, not the quota message.
+
 Failure of one account is not failure of the request — the executor retries with the next
 account before surfacing an error, and a bare model then falls through to the next
 *provider* as well.

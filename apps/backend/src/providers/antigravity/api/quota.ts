@@ -41,7 +41,12 @@ export async function fetchQuota(account: AntigravityAccount, retry = true): Pro
       return null;
     }
 
-    return parseQuotaResponse(await res.json());
+    const data = await res.json();
+    const availableModels = parseAvailableModelIds(data);
+    if (availableModels) {
+      account.availableModels = availableModels;
+    }
+    return parseQuotaResponse(data);
   } catch (e) {
     console.error(`Error fetching quota for ${account.email}`, e);
   }
@@ -62,6 +67,24 @@ function getNextMidnightPT(): string {
 }
 
 export const supportedModelsCache: Set<string> = new Set();
+
+/**
+ * Every model id a fetchAvailableModels reply lists, with quota figures or without.
+ *
+ * Selection keeps an account away from a model its list leaves out, so the list is the whole reply:
+ * `parseQuotaResponse` keeps only the models that carry quota figures and a label it knows, and a
+ * model it drops would read as one the account does not have. A reply this cannot read gives `null`
+ * and the account keeps the list it had: none, for an account never fetched, so it stays eligible.
+ */
+export function parseAvailableModelIds(data: any): string[] | null {
+  const rawModels = data?.availableModels || data?.models;
+  if (!rawModels || typeof rawModels !== "object" || Array.isArray(rawModels)) {
+    return null;
+  }
+
+  const ids = Object.keys(rawModels).map((key) => key.replace("models/", ""));
+  return ids.length > 0 ? ids : null;
+}
 
 export function parseQuotaResponse(data: any): AntigravityAccount["quota"] | null {
   let rawModels = data.availableModels || data.models || [];

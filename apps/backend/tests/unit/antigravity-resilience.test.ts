@@ -59,6 +59,7 @@ describe('the client is told why every account failed', () => {
     model: 'antigravity:gemini-3-pro',
     attemptLogs: [],
     unsupportedCount: 0,
+    listedNowhere: false,
     systemicErrorCount: 0,
     lastStatus: 0,
     resetTime: null,

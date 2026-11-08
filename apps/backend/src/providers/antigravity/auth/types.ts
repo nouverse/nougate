@@ -60,6 +60,12 @@ export interface AntigravityAccount {
    * See `isModelUnsupportedFor` in ./manager.ts.
    */
   capabilityFlaggedAt?: Record<string, number>;
+  /**
+   * Every model id Google's fetchAvailableModels listed for this account at the last fetch that
+   * could be read, with quota figures or without. Absent until then. Selection reads it: see
+   * `isModelUnlistedFor` in ./manager.ts.
+   */
+  availableModels?: string[];
 
   // Quota info (cached)
   quota?: Array<{
