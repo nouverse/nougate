@@ -5,9 +5,10 @@
  * fresh, else exchanged for the account's GitHub token) and the headers a request carries.
  */
 
-import { fetchModelList, LiveModelList, UnitedAccountLists } from '@/core/live-models';
+import { fetchModelList, LiveModelList } from '@/core/live-models';
 import type { IModelSpec } from '@/core/interfaces';
 import { getAccounts } from '../auth/manager';
+import { copilotAccountLists } from '../auth/account-models';
 import { ensureSessionToken } from '../auth/token-exchange';
 import type { CopilotAccount } from '../auth/types';
 import { copilotLiveSpecs, copilotModelRegistry, type CopilotListedModel } from '../config/model-specs';
@@ -26,15 +27,13 @@ async function accountModels(account: CopilotAccount): Promise<IModelSpec[]> {
   return copilotLiveSpecs(data.data);
 }
 
-const lists = new UnitedAccountLists<CopilotAccount, IModelSpec>();
-
 /**
  * What Copilot offers the accounts now, united, or `null` with no account to ask. Every account
  * Copilot has not marked invalid is asked — not through selection, which also saves the pool and
  * benches an account whose exchange fails, which a model list has no cause to do.
  */
 export async function fetchCopilotModels(): Promise<IModelSpec[] | null> {
-  return lists.ask({
+  return copilotAccountLists.ask({
     accounts: getAccounts().filter((account) => account.personalToken && account.status !== 'invalid'),
     accountId: (account) => account.id,
     ask: accountModels,

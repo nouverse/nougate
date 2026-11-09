@@ -27,6 +27,8 @@ export class CopilotExecutor {
     let attempts = 0;
     const triedIds: string[] = [];
     let account: CopilotAccount | null = null;
+    /** The last "model not offered" answer: given to the client when no other account is left. */
+    let modelRefusal: ModelUnavailableError | undefined;
 
     while (attempts < maxAttempts) {
       attempts++;
@@ -37,6 +39,7 @@ export class CopilotExecutor {
       }
 
       if (!account || !account.sessionToken) {
+        if (modelRefusal) throw modelRefusal;
         if (triedIds.length > 0 && attempts < maxAttempts) {
           triedIds.length = 0;
           continue;
@@ -104,10 +107,13 @@ export class CopilotExecutor {
           // will answer differently. Rotating through them all dropped the
           // health score of every healthy account over a caller's typo, then
           // reported it as "failed after N attempts" — hiding the real cause.
+          // A model this account's seat is not offered may be on another's: the next eligible account
+          // is asked, and this one loses nothing. The refusal is the answer only once none is left.
           if (classification.kind === 'model_unsupported') {
-            throw new ModelUnavailableError(
+            modelRefusal = new ModelUnavailableError(
               `GitHub Copilot does not offer "${modelId}". Check the model list on the provider page.`,
             );
+            continue;
           }
 
           await updateAccountUsage(account.id, false, modelId, options.modelSpec.pool, options.clientId, response.status);
@@ -137,6 +143,7 @@ export class CopilotExecutor {
       }
     }
 
+    if (modelRefusal) throw modelRefusal;
     throw new Error(`Upstream request failed after ${attempts} attempts.`);
   }
 }

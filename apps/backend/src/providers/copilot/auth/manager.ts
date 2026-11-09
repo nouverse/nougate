@@ -5,6 +5,7 @@ import type { UpstreamErrorKind } from '@/core/upstream-errors';
 import { ensureSessionToken, TokenExchangeError } from './token-exchange';
 import { loadConfig, saveConfig, type SelectionStrategy } from './storage';
 import { type CopilotAccount } from './types';
+import { copilotAccountLists } from './account-models';
 
 let accounts: CopilotAccount[] = [];
 let currentStrategy: SelectionStrategy = 'hybrid';
@@ -176,14 +177,20 @@ export async function getBestAccount(
   // Filter active/usable accounts. Invalid accounts are normally excluded, but
   // become eligible again as a "half-open" probe once the recovery window has
   // elapsed, so a transient outage never bricks an account permanently.
-  const usable = accounts.filter(a => {
-    if (!a.personalToken || excludeIds.includes(a.id)) return false;
-    if (a.status === 'invalid') {
-      // Legacy invalid accounts (no invalidatedAt) are probed immediately.
-      return a.invalidatedAt === undefined || (now - a.invalidatedAt) >= INVALID_PROBE_WINDOW_MS;
-    }
-    return true;
-  });
+  // An account whose own model list lacks the model is passed over while another's has it: seats
+  // differ. When no account's list has it — an id asked for by name — any may be asked.
+  const usable = copilotAccountLists.eligible(
+    accounts.filter(a => {
+      if (!a.personalToken || excludeIds.includes(a.id)) return false;
+      if (a.status === 'invalid') {
+        // Legacy invalid accounts (no invalidatedAt) are probed immediately.
+        return a.invalidatedAt === undefined || (now - a.invalidatedAt) >= INVALID_PROBE_WINDOW_MS;
+      }
+      return true;
+    }),
+    (account) => account.id,
+    model ? model.trim().toLowerCase() : undefined,
+  );
   if (pool) {
     let candidates = usable.filter(a => {
       // Read with the same scope the executor writes. These used to disagree —

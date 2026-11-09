@@ -106,3 +106,85 @@ describe('a model Copilot will not serve here', () => {
     }
   });
 });
+
+/**
+ * Two accounts, each with the list given here, and an upstream whose `n`th call is answered by
+ * `answers[n]`: 200 for an answer, else a refusal of the model. Copilot picks among equally ranked
+ * accounts by process id, so which account is asked first is not assumed.
+ */
+async function twoAccounts(model: string, lists: Record<string, string[]>, answers: number[]) {
+  const dir = mkdtempSync(join(home, 'two-'));
+  const seat = (id: string) => ({
+    id,
+    providerId: 'copilot',
+    personalToken: `personal-${id}`,
+    sessionToken: `session-${id}`,
+    sessionTokenExpiresAt: Date.now() + 3_600_000,
+    healthScore: 100,
+    lastUsed: 0,
+    status: 'active',
+  });
+  writeFileSync(join(dir, 'accounts.json'), JSON.stringify({ strategy: 'hybrid', accounts: [seat('seat-a'), seat('seat-b')] }));
+  const code = `
+    import { loadProxyConfig } from '@/config/manager';
+    import { getAccounts, initManager } from '@/providers/copilot/auth/manager';
+    import { copilotAccountLists } from '@/providers/copilot/auth/account-models';
+    import { CopilotExecutor } from '@/providers/copilot/upstream/executor';
+    console.log = () => {}; console.error = () => {}; console.warn = () => {};
+    await loadProxyConfig();
+    await initManager();
+    const lists = ${JSON.stringify(lists)};
+    await copilotAccountLists.ask({
+      accounts: getAccounts(),
+      accountId: (account) => account.id,
+      ask: async (account) => (lists[account.id] ?? []).map((modelId) => ({ modelId, pool: 'cli', isThinking: false, maxOutputTokens: 1 })),
+      key: (spec) => spec.modelId,
+    });
+    const answers = ${JSON.stringify(answers)};
+    const asked = [];
+    globalThis.fetch = async (_input, init) => {
+      asked.push(new Headers(init?.headers).get('authorization').replace('Bearer session-', ''));
+      return answers[asked.length - 1] === 200
+        ? Response.json({ choices: [{ message: { role: 'assistant', content: 'ok' } }] })
+        : new Response('{"error":{"message":"The requested model is not supported.","code":"model_not_supported","param":"model","type":"invalid_request_error"}}', { status: 400 });
+    };
+    const modelSpec = { modelId: ${JSON.stringify(model)}, upstreamModelId: ${JSON.stringify(model)}, pool: 'cli', isThinking: false, maxOutputTokens: 8192, timeoutMs: 60000 };
+    const outcome = await new CopilotExecutor().execute({ body: { messages: [{ role: 'user', content: 'hi' }] }, modelSpec }).then((result) => ({ answeredBy: result.accountId }), (error) => ({ name: error?.name, status: error?.status }));
+    const health = Object.fromEntries(getAccounts().map((account) => [account.id, account.healthScore]));
+    process.stdout.write(JSON.stringify({ asked, outcome, health }));
+    process.exit(0);
+  `;
+  const child = Bun.spawn([process.execPath, '-e', code], {
+    cwd: BACKEND,
+    env: { ...process.env, NOUGATE_HOME: dir, COPILOT_ACCOUNTS_FILE: join(dir, 'accounts.json'), CONFIG_FILE: join(dir, 'config.json') },
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  const [stdout, stderr] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited]);
+  if (!stdout) throw new Error(`the child printed nothing: ${stderr.slice(0, 500)}`);
+  return JSON.parse(stdout) as { asked: string[]; outcome: { answeredBy?: string; name?: string; status?: number }; health: Record<string, number> };
+}
+
+describe("routing by each account's own list", () => {
+  test('a model goes only to the account whose list has it', async () => {
+    const result = await twoAccounts('gpt-9-test', { 'seat-a': ['claude-opus-5'], 'seat-b': ['gpt-9-test'] }, [200]);
+    expect(result.asked).toEqual(['seat-b']);
+    expect(result.outcome).toEqual({ answeredBy: 'seat-b' });
+  });
+
+  test('an account that does not have the model hands the request to the next, at no cost', async () => {
+    const result = await twoAccounts('gpt-9-test', { 'seat-a': ['claude-opus-5'], 'seat-b': ['claude-opus-5'] }, [400, 200]);
+    expect(result.asked).toHaveLength(2);
+    expect(new Set(result.asked).size).toBe(2);
+    expect(result.outcome).toEqual({ answeredBy: result.asked[1] });
+    expect(result.health).toEqual({ 'seat-a': 100, 'seat-b': 100 });
+  });
+
+  test('when no account has it, that answer is the error, and none pays', async () => {
+    const result = await twoAccounts('gpt-9-test', { 'seat-a': [], 'seat-b': [] }, [400, 400, 400, 400]);
+    expect(new Set(result.asked)).toEqual(new Set(['seat-a', 'seat-b']));
+    expect(result.asked).toHaveLength(2);
+    expect(result.outcome).toEqual({ name: 'ModelUnavailableError', status: 404 });
+    expect(result.health).toEqual({ 'seat-a': 100, 'seat-b': 100 });
+  });
+});
