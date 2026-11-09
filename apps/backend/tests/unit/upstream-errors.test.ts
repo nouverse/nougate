@@ -72,6 +72,24 @@ describe('credentials and unknown models', () => {
     expect(result.rotate).toBe(false);
     expect(result.retryable).toBe(false);
   });
+
+  test('a model served only on another endpoint is the model\'s, not the account\'s', () => {
+    // Copilot's answer on 2026-11-09 to copilot:gpt-6-luna on /chat/completions, word for word. Read as
+    // unknown, it was tried three times on the one account and each try charged: that request and one
+    // to gpt-5.6-luna took the account from 100 to 40 health.
+    const result = classifyUpstreamError({
+      status: 400,
+      body: '{"error":{"message":"model \\"gpt-6-luna\\" is not accessible via the /chat/completions endpoint","code":"unsupported_api_for_model"}}',
+    });
+    expect(result.kind).toBe('model_unsupported');
+    expect(result.rotate).toBe(false);
+    expect(result.retryable).toBe(false);
+    expect(result.modelScoped).toBe(true);
+  });
+
+  test('any other 400 stays unknown', () => {
+    expect(classifyUpstreamError({ status: 400, body: '{"error":{"message":"bad request","code":"invalid_value"}}' }).kind).toBe('unknown');
+  });
 });
 
 describe('failures before a response', () => {

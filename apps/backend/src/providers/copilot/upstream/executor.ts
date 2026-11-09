@@ -1,7 +1,7 @@
 import { type IModelSpec } from '@/core/interfaces';
 import { type CopilotAccount } from '../auth/types';
 import { getBestAccount, updateAccountUsage, markCooldown, cooldownScope } from '../auth/manager';
-import { classifyUpstreamError, ModelUnavailableError } from '@/core/upstream-errors';
+import { classifyUpstreamError, ModelUnavailableError, ProviderResponseError } from '@/core/upstream-errors';
 import { getCopilotHeaders } from './headers';
 import { getProxyConfig } from '@/config/manager';
 
@@ -124,6 +124,10 @@ export class CopilotExecutor {
 
       } catch (error: any) {
         clearTimeout(timeoutId);
+        // A failure already named for the client (the model is not offered here) is the request's:
+        // thrown on, not charged. Caught here, it was charged to the account as a 500 and asked again
+        // until the attempts ran out, and the client read "failed after N attempts".
+        if (error instanceof ProviderResponseError) throw error;
         if (error?.name === 'AbortError') {
           console.error(`[Copilot Upstream] Account ${account.id} timed out after ${timeoutMs}ms`);
         } else {
