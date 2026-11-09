@@ -28,6 +28,7 @@ import {
 import { CodexExecutor } from '@/providers/codex/upstream/executor';
 import { peekSseTransientError } from '@/providers/codex/upstream/stream';
 import { getModelSpec } from '@/providers/codex/config/model-specs';
+import { clearSeeds, seedCodex } from './fixtures/upstream-models';
 
 const event = (payload: Record<string, unknown>) => `event: ${payload.type}\ndata: ${JSON.stringify(payload)}\n\n`;
 const created = event({ type: 'response.created', response: { id: 'resp_1', status: 'in_progress' } });
@@ -117,6 +118,8 @@ describe('the executor', () => {
   const home = mkdtempSync(join(tmpdir(), 'nougate-codex-failure-'));
   const previousHome = process.env.NOUGATE_HOME;
   const realFetch = globalThis.fetch;
+  // The model as ChatGPT listed it: a provider's models are its upstream's.
+  seedCodex();
   const spec = getModelSpec('gpt-5.6-luna')!;
   let asked: string[] = [];
   // Past the five days before expiry a credential is renewed ahead of time — a call this test does not mean to make.
@@ -133,6 +136,7 @@ describe('the executor', () => {
     asked = [];
   });
   afterAll(() => {
+    clearSeeds();
     if (previousHome === undefined) delete process.env.NOUGATE_HOME;
     else process.env.NOUGATE_HOME = previousHome;
     rmSync(home, { recursive: true, force: true });

@@ -1,9 +1,10 @@
 /**
- * Codex lists the models ChatGPT offers its account, not only the ones written down.
+ * Codex lists the models ChatGPT offers its account, and only those.
  *
- * ChatGPT offered `gpt-6-luna` through Codex while the written list did not have it, so no client
+ * ChatGPT offered `gpt-6-luna` through Codex while a hand-written list did not have it, so no client
  * could pick it. The provider now reads `GET /backend-api/codex/models` — at start, after an account
- * is added, every six hours — and lists what the Codex CLI's picker shows (`visibility: "list"`).
+ * is added, every six hours — and lists what the Codex CLI's picker shows (`visibility: "list"`). No
+ * id is written down.
  *
  * The fixture is the answer a live Plus account gave on 2026-11-09 with `client_version=0.190.0`,
  * trimmed to the fields read and a few beside them. The account is a fake held in a scratch
@@ -19,31 +20,10 @@ import { codexModelList } from '@/providers/codex/api/models';
 import { codexModelRegistry } from '@/providers/codex/config/model-specs';
 import { getCodexConfig } from '@/providers/codex/config/provider-config';
 import { CodexProvider } from '@/providers/codex';
+import { CODEX_ANSWER } from './fixtures/upstream-models';
 
-const listed = (slug: string, display_name: string, visibility: 'list' | 'hide', priority: number, supported_in_api = true) => ({
-  slug,
-  display_name,
-  visibility,
-  supported_in_api,
-  priority,
-  upgrade: null,
-  context_window: 272000,
-  max_context_window: 872000,
-  input_modalities: ['text', 'image'],
-  default_reasoning_level: 'medium',
-});
-
-/** What a live account was offered on 2026-11-09. Three are hidden from the CLI's picker. */
-const LIVE = {
-  models: [
-    listed('gpt-6-chat-thinking', 'GPT-6 Chat Thinking', 'hide', 1, false),
-    listed('gpt-reserve', 'GPT-Reserve', 'hide', 2),
-    listed('gpt-6-luna', 'GPT-6-Luna', 'list', 3),
-    listed('gpt-5.6-terra', 'GPT-5.6-Terra', 'list', 4),
-    listed('gpt-5.6-luna', 'GPT-5.6-Luna', 'list', 5),
-    listed('codex-auto-review', 'Codex Auto Review', 'hide', 6),
-  ],
-};
+const LIVE = CODEX_ANSWER;
+const OFFERED = ['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-6-luna'];
 
 /** An id_token carrying the workspace claim, so the account-binding header is sent. */
 const ID_TOKEN = ['e30', Buffer.from(JSON.stringify({ 'https://api.openai.com/auth': { chatgpt_account_id: 'acct-test' } })).toString('base64url'), 'sig'].join('.');
@@ -136,7 +116,7 @@ describe('when the list is asked for', () => {
       'POST https://auth.openai.com/oauth/token',
       'GET https://chatgpt.com/backend-api/codex/models?client_version=0.190.0',
     ]);
-    expect(codexModelRegistry.liveModelIds()).toEqual(['gpt-6-luna']);
+    expect(codexModelRegistry.liveModelIds()).toEqual(OFFERED);
   });
 
   test('with a token near its end renewed first, as a request would renew it', async () => {
@@ -166,12 +146,11 @@ describe('when the list is asked for', () => {
 });
 
 describe('what Codex then lists', () => {
-  test('gpt-6-luna, which the picker shows and the written list lacks', async () => {
+  test('exactly what the picker shows, gpt-6-luna among them, with the window the list states and no price', async () => {
     upstream(() => Response.json(LIVE));
     await codexModelList.refresh();
 
-    expect(new CodexProvider().getSupportedModels()).toContain('gpt-6-luna');
-    expect(codexModelRegistry.liveModelIds()).toEqual(['gpt-6-luna']);
+    expect(new CodexProvider().getSupportedModels()).toEqual(OFFERED);
     const spec = codexModelRegistry.getSpec('gpt-6-luna')!;
     expect(spec).toMatchObject({
       modelId: 'gpt-6-luna',
@@ -197,15 +176,10 @@ describe('what Codex then lists', () => {
     }
   });
 
-  test('a written model keeps its own spec', async () => {
-    const written = codexModelRegistry.getSpec('gpt-5.6-luna');
-    upstream(() => Response.json(LIVE));
-    await codexModelList.refresh();
-
-    expect(codexModelRegistry.getSpec('gpt-5.6-luna')).toEqual(written);
-    expect(codexModelRegistry.getSpec('gpt-5.6-luna')?.displayName).toBe('GPT 5.6 Luna');
-    // Written models the upstream does not list for this account stay listed.
-    expect(codexModelRegistry.listModelIds()).toContain('gpt-6-astra');
+  test('nothing before ChatGPT has answered: no id is written down', () => {
+    expect(new CodexProvider().getSupportedModels()).toEqual([]);
+    expect(codexModelRegistry.getSpec('gpt-5.6-luna')).toBeNull();
+    expect(codexModelRegistry.getSpec('gpt-6-astra')).toBeNull();
   });
 
   test('a failed answer, or one with no list in it, keeps the last list', async () => {
@@ -221,7 +195,7 @@ describe('what Codex then lists', () => {
     await codexModelList.refresh();
 
     expect(asked).toHaveLength(4);
-    expect(codexModelRegistry.liveModelIds()).toEqual(['gpt-6-luna']);
+    expect(codexModelRegistry.liveModelIds()).toEqual(OFFERED);
   });
 
   test('a later answer replaces the upstream set: a model it stops listing stops being offered', async () => {
@@ -232,7 +206,6 @@ describe('what Codex then lists', () => {
     await codexModelList.refresh();
     await codexModelList.refresh();
 
-    expect(codexModelRegistry.listModelIds()).not.toContain('gpt-6-luna');
-    expect(codexModelRegistry.listModelIds()).toContain('gpt-5.6-luna');
+    expect(codexModelRegistry.listModelIds()).toEqual(['gpt-5.6-luna', 'gpt-5.6-terra']);
   });
 });

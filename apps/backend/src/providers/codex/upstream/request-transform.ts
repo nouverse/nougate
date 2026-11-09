@@ -6,7 +6,7 @@
  */
 
 import { CODEX_DEFAULT_INSTRUCTIONS } from '../config/codex-instructions';
-import { getUpstreamModelId, CODEX_EFFORT_LEVELS } from '../config/model-specs';
+import { CODEX_EFFORT_LEVELS } from '../config/model-specs';
 
 // Server-generated item id prefixes that Codex /responses cannot resolve when store=false
 const SERVER_ID_PATTERN = /^(rs|fc|resp|msg)_/;
@@ -188,8 +188,7 @@ export function transformCodexRequest(
   // Ensure store is false (Codex requirement)
   body.store = false;
 
-  // Map virtual Codex review models to the upstream Codex model before suffix parsing
-  body.model = getUpstreamModelId(body.model || model);
+  body.model = body.model || model;
 
   // Extract thinking level from model name suffix
   // e.g., gpt-5.3-codex-high → high, gpt-5.3-codex → medium (default)

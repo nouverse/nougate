@@ -8,7 +8,7 @@
  * each provider that has it, Claude Code and Codex, to the upstream.
  */
 
-import { afterEach, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -19,6 +19,7 @@ import { ClaudeCodeProvider } from '@/providers/claudecode';
 import * as manager from '@/providers/claudecode/auth/manager';
 import { CodexProvider } from '@/providers/codex';
 import * as codex from '@/providers/codex/auth/manager';
+import { clearSeeds, seedCodex } from './fixtures/upstream-models';
 
 let dir = '';
 const realFetch = globalThis.fetch;
@@ -34,7 +35,11 @@ async function freshManager(): Promise<typeof manager> {
 beforeAll(async () => {
   // The provider's mappers and the executor's retry budget read the proxy config.
   await loadProxyConfig();
+  // A provider's models are its upstream's: these are the ones they listed.
+  seedCodex();
 });
+
+afterAll(() => clearSeeds());
 
 afterEach(() => {
   globalThis.fetch = realFetch;
