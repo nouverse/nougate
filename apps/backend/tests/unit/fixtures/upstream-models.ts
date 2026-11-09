@@ -12,6 +12,7 @@
 import { claudeCodeModelRegistry, claudeLiveSpecs, type ClaudeListedModel } from '@/providers/claudecode/config/model-specs';
 import { codexLiveSpecs, codexModelRegistry, type CodexListedModel } from '@/providers/codex/config/model-specs';
 import { copilotLiveSpecs, copilotModelRegistry, type CopilotListedModel } from '@/providers/copilot/config/model-specs';
+import { catalogToModelDefs, kiroModelRegistry, type KiroCatalogEntry } from '@/providers/kiro/config/model-specs';
 
 const codexListed = (slug: string, display_name: string, visibility: 'list' | 'hide', priority: number, supported_in_api = true) => ({
   slug,
@@ -155,9 +156,47 @@ export function seedCopilot(): void {
   copilotModelRegistry.mergeLive(copilotLiveSpecs(COPILOT_ANSWER.data));
 }
 
+const kiroEntry = (
+  modelId: string,
+  modelName: string,
+  description: string,
+  rateMultiplier: number,
+  supportedInputTypes: string[],
+  maxInputTokens: number,
+): KiroCatalogEntry & Record<string, unknown> => ({
+  additionalModelRequestFieldsSchema: null,
+  availableOrigins: null,
+  description,
+  modelId,
+  modelName,
+  rateMultiplier,
+  rateUnit: 'Credit',
+  supportedInputTypes,
+  tokenLimits: { maxInputTokens, maxOutputTokens: 64000 },
+});
+
+/** `ListAvailableModels` for an AWS Builder ID account. */
+export const KIRO_ANSWER: { models: KiroCatalogEntry[] } = {
+  models: [
+    kiroEntry('auto', 'Auto', 'Models chosen by task for optimal usage and consistent quality', 1, ['TEXT', 'IMAGE'], 1_000_000),
+    kiroEntry('claude-sonnet-4.5', 'Claude Sonnet 4.5', 'Claude Sonnet 4.5 model', 1.3, ['TEXT', 'IMAGE'], 200_000),
+    kiroEntry('claude-haiku-4.5', 'Claude Haiku 4.5', 'The latest Claude Haiku model', 0.4, ['TEXT', 'IMAGE'], 200_000),
+    kiroEntry('deepseek-3.2', 'Deepseek v3.2', 'Experimental preview of DeepSeek V3.2', 0.25, ['TEXT'], 164_000),
+    kiroEntry('minimax-m2.5', 'MiniMax M2.5', 'MiniMax M2.5 model', 0.25, ['TEXT'], 196_000),
+    kiroEntry('minimax-m2.1', 'MiniMax M2.1', 'Experimental preview of MiniMax M2.1', 0.15, ['TEXT'], 196_000),
+    kiroEntry('glm-5', 'GLM 5', 'GLM-5 model', 0.5, ['TEXT'], 200_000),
+    kiroEntry('qwen3-coder-next', 'Qwen3 Coder Next', 'Experimental preview of Qwen3 Coder Next', 0.05, ['TEXT'], 256_000),
+  ],
+};
+
+export function seedKiro(): void {
+  kiroModelRegistry.mergeLive(catalogToModelDefs(KIRO_ANSWER.models));
+}
+
 /** Every registry back to what no answer has filled. */
 export function clearSeeds(): void {
   codexModelRegistry.mergeLive([]);
   claudeCodeModelRegistry.mergeLive([]);
   copilotModelRegistry.mergeLive([]);
+  kiroModelRegistry.mergeLive([]);
 }

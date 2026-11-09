@@ -1,13 +1,15 @@
 /**
- * Kiro's live catalogue, on the list every provider now shares (`core/live-models.ts`).
+ * Kiro's models are the ones its catalogue lists (`core/live-models.ts`).
  *
- * Kiro already read `ListAvailableModels` at start and after an account was added; it now does so
- * every six hours too, through the same list as the other providers. What a merge does is Kiro's
- * own and unchanged: static definitions stay, a model only the catalogue has comes with its variants,
- * and a failure keeps the last catalogue.
+ * Kiro reads `ListAvailableModels` at start, after an account is added and every six hours, and that
+ * is its list: no id is written down. What a model takes comes from its own entry where the
+ * catalogue says (input types, window, output limit, credit rate); which models take the `-thinking`
+ * and `-agentic` variants is a rule by family, as the catalogue does not say. A failure keeps the last
+ * catalogue.
  *
- * The account is a fake loaded into the pool's memory (loading saves nothing) with a token a day from
- * expiry, so no renewal is due; `fetch` is stubbed and nothing reaches AWS.
+ * The fixture is the catalogue an AWS Builder ID account was given on 2026-11-09. The account is a
+ * fake loaded into the pool's memory (loading saves nothing) with a token a day from expiry, so no
+ * renewal is due; `fetch` is stubbed and nothing reaches AWS.
  */
 
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
@@ -21,6 +23,7 @@ import { getKiroConfig } from '@/providers/kiro/config/provider-config';
 import { kiroModelList } from '@/providers/kiro';
 import { convertOpenAIMessages } from '@/providers/kiro/mappers/openai';
 import { prepareKiroRequest } from '@/providers/kiro/mappers/payload';
+import { KIRO_ANSWER } from './fixtures/upstream-models';
 
 // The list keeps its answer on disk: in a scratch data directory, never the real one.
 const modelsHome = mkdtempSync(join(tmpdir(), 'nougate-models-home-'));
@@ -35,12 +38,7 @@ afterAll(() => {
 const ARN = 'arn:aws:codewhisperer:us-east-1:000000000000:profile/TESTPROFILE';
 
 /** Kiro's catalogue answer, as `ListAvailableModels` shapes it. */
-const CATALOGUE = {
-  models: [
-    { modelId: 'claude-opus-5.5', modelName: 'Claude Opus 5.5', rateMultiplier: 2, rateUnit: 'credit', tokenLimits: { maxInputTokens: 1_000_000 } },
-    { modelId: 'test-new-model', modelName: 'Test New Model', rateMultiplier: 1, rateUnit: 'credit', tokenLimits: { maxInputTokens: 300_000 } },
-  ],
-};
+const CATALOGUE = KIRO_ANSWER;
 
 const account: KiroAccount = {
   id: 'kiro-test',
@@ -89,7 +87,7 @@ afterAll(() => {
 });
 
 describe("Kiro's live catalogue", () => {
-  test('is asked of the best account, and a model only it has is offered with its variants', async () => {
+  test('is asked of the best account, and what it lists is the list', async () => {
     kiroAccounts.load({ accounts: [{ ...account }] });
     upstream(() => Response.json(CATALOGUE));
     await kiroModelList.refresh();
@@ -100,11 +98,41 @@ describe("Kiro's live catalogue", () => {
     expect(url.searchParams.get('profileArn')).toBe(ARN);
     expect(asked[0]!.headers.get('authorization')).toBe('Bearer test-kiro-access');
 
+    const bases = kiroModelRegistry.listModelIds().filter((id) => !/-(thinking|agentic)$/.test(id));
+    expect(bases).toEqual(['auto', 'claude-haiku-4.5', 'claude-sonnet-4.5', 'deepseek-3.2', 'glm-5', 'minimax-m2.1', 'minimax-m2.5', 'qwen3-coder-next']);
+  });
+
+  test('nothing before Kiro has answered: no id is written down', () => {
+    expect(kiroModelRegistry.listModelIds()).toEqual([]);
+    expect(kiroModelRegistry.getSpec('claude-opus-5.5')).toBeNull();
+  });
+
+  test("each model takes what its entry says: its window, its output limit, images only where it lists them", async () => {
+    kiroAccounts.load({ accounts: [{ ...account }] });
+    upstream(() => Response.json(CATALOGUE));
+    await kiroModelList.refresh();
+
+    expect(kiroModelRegistry.getSpec('claude-sonnet-4.5')).toMatchObject({ contextWindow: 200_000, maxOutputTokens: 64000, inputModalities: ['text', 'image'] });
+    expect(kiroModelRegistry.getSpec('deepseek-3.2')).toMatchObject({ contextWindow: 164_000, inputModalities: ['text'] });
+    expect(kiroModelRegistry.describeModel('deepseek-3.2')?.rateMultiplier).toBe(0.25);
+  });
+
+  test('variants by family: Claude and GPT take both, auto thinking only, the others none', async () => {
+    kiroAccounts.load({ accounts: [{ ...account }] });
+    upstream(() =>
+      Response.json({
+        models: [...CATALOGUE.models, { modelId: 'gpt-7-test', modelName: 'GPT 7 Test', supportedInputTypes: ['TEXT', 'IMAGE'] }],
+      }),
+    );
+    await kiroModelList.refresh();
+
     const ids = kiroModelRegistry.listModelIds();
-    for (const id of ['test-new-model', 'test-new-model-thinking', 'test-new-model-agentic', 'test-new-model-thinking-agentic']) {
+    for (const id of ['claude-haiku-4.5-thinking', 'claude-haiku-4.5-agentic', 'claude-haiku-4.5-thinking-agentic', 'gpt-7-test-thinking-agentic', 'auto-thinking']) {
       expect(ids).toContain(id);
     }
-    expect(kiroModelRegistry.getSpec('test-new-model')?.contextWindow).toBe(300_000);
+    for (const id of ['auto-agentic', 'deepseek-3.2-thinking', 'minimax-m2.5-agentic', 'glm-5-thinking', 'qwen3-coder-next-thinking']) {
+      expect(ids).not.toContain(id);
+    }
   });
 
   test('a failure keeps the last catalogue', async () => {
@@ -114,50 +142,27 @@ describe("Kiro's live catalogue", () => {
     await kiroModelList.refresh();
 
     expect(asked).toHaveLength(2);
-    expect(kiroModelRegistry.listModelIds()).toContain('test-new-model');
+    expect(kiroModelRegistry.listModelIds()).toContain('minimax-m2.5');
   });
 
-  test('a model the catalogue spells in other case is the static one, listed and sent as the catalogue spells it', async () => {
-    // The live catalogue of 2026-11-09 listed the static `MiniMax-M2.5` as `minimax-m2.5`, and both were
-    // offered, the live one with thinking and agentic variants the static one does not take. Kiro
-    // refused `MiniMax-M2.5` that day with INVALID_MODEL_ID.
+  test('two entries that differ only in case are one model, and another spelling reaches it', async () => {
     kiroAccounts.load({ accounts: [{ ...account }] });
     upstream(() =>
       Response.json({
         models: [
-          { modelId: 'minimax-m2.5', modelName: 'MiniMax M2.5', rateMultiplier: 0.3, rateUnit: 'credit', tokenLimits: { maxInputTokens: 196_000 } },
-          { modelId: 'test-case-model', modelName: 'Test Case Model', tokenLimits: { maxInputTokens: 100_000 } },
-          { modelId: 'Test-Case-Model', modelName: 'Test Case Model again' },
+          { modelId: 'minimax-m2.5', modelName: 'MiniMax M2.5', supportedInputTypes: ['TEXT'], tokenLimits: { maxInputTokens: 196_000 } },
+          { modelId: 'MiniMax-M2.5', modelName: 'MiniMax M2.5 again' },
         ],
       }),
     );
     await kiroModelList.refresh();
 
-    const ids = kiroModelRegistry.listModelIds();
-    expect(ids.filter((id) => id.toLowerCase().startsWith('minimax-m2.5'))).toEqual(['minimax-m2.5']);
-    expect(ids.filter((id) => id.toLowerCase().startsWith('test-case-model'))).toEqual([
-      'test-case-model',
-      'test-case-model-agentic',
-      'test-case-model-thinking',
-      'test-case-model-thinking-agentic',
-    ]);
-    // The static facts stay — its name, no variants, no credit figure — and the catalogue's own window
-    // is taken, as for any static model.
-    expect(kiroModelRegistry.getSpec('minimax-m2.5')).toMatchObject({
-      modelId: 'minimax-m2.5',
-      upstreamModelId: 'minimax-m2.5',
-      displayName: 'MiniMax M2.5',
-      contextWindow: 196_000,
-    });
-    expect(kiroModelRegistry.getSpec('minimax-m2.5-thinking')).toBeNull();
-    expect(kiroModelRegistry.describeModel('minimax-m2.5')).toMatchObject({ contextLength: 196_000 });
-    expect(kiroModelRegistry.describeModel('minimax-m2.5')?.rateMultiplier).toBeUndefined();
-    // Picked under the static spelling, it is still that model, and the request mapper finds its window.
-    expect(kiroModelRegistry.getSpec('MiniMax-M2.5')?.modelId).toBe('minimax-m2.5');
+    expect(kiroModelRegistry.listModelIds()).toEqual(['minimax-m2.5']);
+    expect(kiroModelRegistry.getSpec('MiniMax-M2.5')).toMatchObject({ modelId: 'minimax-m2.5', displayName: 'MiniMax M2.5' });
     expect(kiroModelRegistry.describeModel('MiniMax-M2.5')?.contextLength).toBe(196_000);
   });
 
-  test('a request for a respelled model is sent as the catalogue spells it, and as written once it stops', async () => {
+  test('a request is sent under the spelling the catalogue lists, and as written for a model it does not list', async () => {
     const sentAs = (requestedModel: string): string => {
       const payload: any = prepareKiroRequest({
         requestedModel,
@@ -171,18 +176,13 @@ describe("Kiro's live catalogue", () => {
     };
 
     kiroAccounts.load({ accounts: [{ ...account }] });
-    upstream(
-      () => Response.json({ models: [{ modelId: 'minimax-m2.5', modelName: 'MiniMax M2.5', tokenLimits: { maxInputTokens: 196_000 } }] }),
-      () => Response.json({ models: [] }),
-    );
+    upstream(() => Response.json(CATALOGUE));
     await kiroModelList.refresh();
-    expect(sentAs('MiniMax-M2.5')).toBe('minimax-m2.5');
-    expect(sentAs('minimax-m2.5')).toBe('minimax-m2.5');
-    expect(sentAs('claude-sonnet-4.5')).toBe('claude-sonnet-4.5');
 
-    await kiroModelList.refresh();
-    expect(kiroModelRegistry.listModelIds()).toContain('MiniMax-M2.5');
-    expect(sentAs('MiniMax-M2.5')).toBe('MiniMax-M2.5');
+    // Kiro refused `MiniMax-M2.5` on 2026-11-09 and answered `minimax-m2.5`.
+    expect(sentAs('MiniMax-M2.5')).toBe('minimax-m2.5');
+    expect(sentAs('CLAUDE-SONNET-4.5-thinking')).toBe('claude-sonnet-4.5');
+    expect(sentAs('not-listed-model')).toBe('not-listed-model');
   });
 
   test('switched off, or with no account, nothing is asked', async () => {

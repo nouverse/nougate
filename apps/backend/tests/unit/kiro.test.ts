@@ -8,6 +8,7 @@ import { canRefresh, needsRefresh } from '@/providers/kiro/auth/refresh';
 import { parseExternalIdpAuth } from '@/providers/kiro/auth/token-import';
 import type { KiroAccount, KiroAccountsFile } from '@/providers/kiro/auth/types';
 import { kiroModelRegistry, resolveKiroModel } from '@/providers/kiro/config/model-specs';
+import { clearSeeds, seedKiro } from './fixtures/upstream-models';
 import { buildAdditionalModelRequestFields, resolveThinkingBudget } from '@/providers/kiro/config/reasoning';
 import { toPublicAccount } from '@/providers/kiro';
 import { AnthropicStreamEncoder, buildAnthropicMessage, convertAnthropicMessages } from '@/providers/kiro/mappers/anthropic';
@@ -361,9 +362,14 @@ describe('kiro request mapping', () => {
 
   test('model suffixes and thinking intent resolve as documented', () => {
     expect(resolveKiroModel('claude-sonnet-4.5-thinking-agentic')).toEqual({ upstream: 'claude-sonnet-4.5', agentic: true, thinking: true });
-    expect(kiroModelRegistry.getSpec('claude-sonnet-4.5(high)')?.modelId).toBe('claude-sonnet-4.5');
-    expect(kiroModelRegistry.getSpec('deepseek-3.2-thinking')).toBeNull();
-    expect(kiroModelRegistry.getSpec('nope')).toBeNull();
+    seedKiro();
+    try {
+      expect(kiroModelRegistry.getSpec('claude-sonnet-4.5(high)')?.modelId).toBe('claude-sonnet-4.5');
+      expect(kiroModelRegistry.getSpec('deepseek-3.2-thinking')).toBeNull();
+      expect(kiroModelRegistry.getSpec('nope')).toBeNull();
+    } finally {
+      clearSeeds();
+    }
     expect(resolveThinkingBudget({ thinking: { type: 'disabled' } }, null, 'x-thinking')).toBeNull();
     expect(resolveThinkingBudget({ reasoning_effort: 'low' }, null, 'm')).toBe(1024);
     expect(buildAdditionalModelRequestFields({ reasoning_effort: 'xhigh' }, 'claude-opus-4.6')).toEqual({
@@ -726,7 +732,10 @@ describe('kiro executor', () => {
       systemText: '',
       convert: (model) => convertOpenAIMessages([{ role: 'user', content: 'hi' }], model, { images: true }),
     });
+  // The model as Kiro's catalogue listed it: a provider's models are its upstream's.
+  seedKiro();
   const spec = kiroModelRegistry.getSpec('claude-sonnet-4.5')!;
+  clearSeeds();
   const eventStream = (...frames: Uint8Array[]) => new Response(streamOf(...frames), { status: 200 });
 
   test('a surface that refuses the token hands on to the next one', async () => {

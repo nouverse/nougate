@@ -14,6 +14,7 @@ import { OpenAIProtocolHandler } from "@/protocols/openai/handler";
 import { AnthropicProtocolHandler } from "@/protocols/anthropic/handler";
 import { registerProvider, unregisterProvider } from "@/core/registry";
 import { catalogToModelDefs, kiroModelRegistry } from "@/providers/kiro/config/model-specs";
+import { clearSeeds, seedKiro } from "./fixtures/upstream-models";
 import { upstreamWindow } from "@/providers/custom/model-sync";
 
 const NO_JITTER: JitterConfig = { jitterEnabled: false, jitterMinMs: 0, jitterMaxMs: 0 };
@@ -76,8 +77,13 @@ describe("/models states a model's window where the route knows it, and only the
 
 describe("Kiro", () => {
   test("its specs carry the window its catalogue states", () => {
-    expect(kiroModelRegistry.getSpec("claude-opus-5.5")?.contextWindow).toBe(1_000_000);
-    expect(kiroModelRegistry.getSpec("claude-sonnet-4.5")?.contextWindow).toBe(200_000);
+    seedKiro();
+    try {
+      expect(kiroModelRegistry.getSpec("auto")?.contextWindow).toBe(1_000_000);
+      expect(kiroModelRegistry.getSpec("claude-sonnet-4.5")?.contextWindow).toBe(200_000);
+    } finally {
+      clearSeeds();
+    }
   });
 
   test("a live catalogue's `tokenLimits` reaches a model the static list does not know, and nothing is made up without it", () => {

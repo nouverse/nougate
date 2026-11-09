@@ -30,7 +30,7 @@ import { KiroExecutor, ensureFreshCredential } from './upstream/executor';
 const HOUR_MS = 3_600_000;
 
 /**
- * Models `ListAvailableModels` reports that the static list does not know, asked for at start, after
+ * The models `ListAvailableModels` lists: the list, read back from disk at start, asked for then, after
  * an account is added and every six hours. The credential is renewed first when it is near expiry:
  * a Kiro token lives an hour, so on an idle gateway the timer would otherwise find it spent each time.
  */
