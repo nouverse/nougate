@@ -36,6 +36,7 @@ import {
 } from './config/provider-config';
 import { CodexExecutor } from './upstream/executor';
 import { getCodexUsage, usageToQuotas } from './api/usage';
+import { codexModelList } from './api/models';
 import {
   createResponsesToOpenAIStreamTransformer,
   finalizeResponsesToOpenAIResponse,
@@ -92,6 +93,8 @@ export class CodexProvider implements IProvider {
   async init(): Promise<void> {
     await loadCodexConfig();
     await initManager();
+    // In the background: boot does not wait on ChatGPT, and the written list serves meanwhile.
+    codexModelList.start();
   }
 
   getJitterConfig(): JitterConfig {
@@ -236,6 +239,7 @@ export class CodexProvider implements IProvider {
           ...(body.label ? { label: body.label } : {}),
         });
         console.log(`[codex] account added: ${account.label}`);
+        void codexModelList.refresh();
         return { success: true, email: account.label };
       } catch (err: any) {
         console.error(`[codex] token exchange failed:`, err?.message || err);

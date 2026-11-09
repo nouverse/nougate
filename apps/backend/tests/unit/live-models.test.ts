@@ -210,6 +210,7 @@ describe('every six hours, for every provider', () => {
   // ask a real upstream with them; so what `init()` does is read, not run.
   test.each([
     ['kiro', 'kiroModelList'],
+    ['codex', 'codexModelList'],
   ])('%s starts its list when it starts', (provider, list) => {
     const source = readFileSync(join(BACKEND, 'src', 'providers', provider, 'index.ts'), 'utf8');
     const start = source.indexOf('async init(): Promise<void> {');

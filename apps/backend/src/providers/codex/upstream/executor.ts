@@ -51,9 +51,10 @@ function codexSseErrorResponse(status: number, message: string): Response {
 }
 
 /**
- * Build Codex-specific request headers.
+ * Build Codex-specific request headers. Also what the model list is asked with (`api/models.ts`),
+ * since the upstream gates both on the same client version.
  */
-function buildHeaders(account: CodexAccount): Record<string, string> {
+export function buildHeaders(account: CodexAccount): Record<string, string> {
   // One read, used twice: the two must agree, and a User-Agent claiming one version beside a
   // `version` header claiming another is a fingerprint no real CLI produces.
   const cliVersion = getCodexConfig().cliVersion;
@@ -81,7 +82,7 @@ function buildHeaders(account: CodexAccount): Record<string, string> {
 /**
  * Proactive refresh: renew before the token expires, quietly.
  */
-async function refreshIfNeeded(account: CodexAccount): Promise<void> {
+export async function refreshIfNeeded(account: CodexAccount): Promise<void> {
   if (!needsRefresh(account)) return;
   try {
     const tokens = await refreshTokens(account.refreshToken);
