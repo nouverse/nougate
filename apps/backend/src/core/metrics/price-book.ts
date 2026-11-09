@@ -23,7 +23,8 @@ const PRICE_BOOK: PriceEntry[] = [
   { pattern: /claude.*opus/, input: 5, output: 25 },
   { pattern: /claude.*sonnet/, input: 3, output: 15 },
   { pattern: /claude.*haiku/, input: 1, output: 5 },
-  // Fable 5 and 5.1 at Anthropic's published rate, checked 2026-06-24.
+  // Fable 5 and 5.1: $10 / $50 per MTok, Anthropic's pricing page
+  // (platform.claude.com/docs/en/about-claude/pricing), read 2026-11-10.
   { pattern: /claude.*fable/, input: 10, output: 50 },
 
   // Google Gemini family
