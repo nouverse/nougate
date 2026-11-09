@@ -225,6 +225,21 @@ it; `getModelRegistry().getSpec()` resolves it to an `IModelSpec` carrying
 `bypassModelValidation` on, an unknown model is passed through and the upstream is
 treated as the authority.
 
+**A provider's list is what it writes down and what its upstream offers.** Written lists go
+stale the day an upstream adds a model, so Codex, Claude Code, Copilot and Kiro also ask their
+upstream (`core/live-models.ts`): at start, after an account is added, and every six hours, on one
+unref'd timer each whose body cannot throw, since a host's process is the gateway's. A written spec
+always wins, because it carries checked facts — a price, an output limit, the id the upstream is
+really sent — that a model list does not. A model only the upstream offers is listed with what its
+list states and the provider's defaults, with no price of its own (cost then resolves as for any
+unpriced spec, §8). Each answer replaces the upstream's set whole;
+a failed fetch keeps the last one; lookups read memory and nothing on the request path waits on
+the network. What each provider offers is its own rule: Codex what its CLI's picker shows, Copilot
+the chat models its picker shows that it serves on `/chat/completions`, Claude Code every listed
+model but a dated snapshot of one already listed. Antigravity adds none: a Google request is shaped
+partly by the model's name, and its list adds nothing a person should pick (its model-specs file
+says what, and why).
+
 ---
 
 ## 4. Protocol translation

@@ -101,6 +101,13 @@ Registration order is display order and bare-model routing order. Both are set i
 The Codex provider speaks OpenAI's **Responses** API upstream, not Chat Completions;
 Nougate translates in both directions so your client never has to know.
 
+**Model lists stay current.** The table names the models written into Nougate. Codex, Claude
+Code, Copilot and Kiro also ask their upstream which models it offers — at start, after an
+account is added, and every six hours — and list the ones not written down, with the limits the
+upstream states and no price of their own. A written model keeps its hand-checked spec, and a failed fetch
+keeps the last list. Antigravity reads Google's list per account to choose which account serves
+a model, but adds none from it: `providers/antigravity/config/model-specs.ts` says why.
+
 Providers are plugins: each owns its auth, accounts, config and model registry, and
 the core never branches on a provider's name. Features like quota reporting are
 **capabilities** — a provider implements one optional method and the matching
