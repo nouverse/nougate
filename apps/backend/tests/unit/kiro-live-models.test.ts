@@ -104,7 +104,8 @@ describe("Kiro's live catalogue", () => {
 
   test('nothing before Kiro has answered: no id is written down', () => {
     expect(kiroModelRegistry.listModelIds()).toEqual([]);
-    expect(kiroModelRegistry.getSpec('claude-opus-5.5')).toBeNull();
+    // Not offered; asked for by name, it is sent with a default spec and Kiro's answer decides.
+    expect(kiroModelRegistry.getSpec('claude-opus-5.5')).toMatchObject({ modelId: 'claude-opus-5.5', upstreamModelId: 'claude-opus-5.5' });
   });
 
   test("each model takes what its entry says: its window, its output limit, images only where it lists them", async () => {

@@ -365,8 +365,9 @@ describe('kiro request mapping', () => {
     seedKiro();
     try {
       expect(kiroModelRegistry.getSpec('claude-sonnet-4.5(high)')?.modelId).toBe('claude-sonnet-4.5');
-      expect(kiroModelRegistry.getSpec('deepseek-3.2-thinking')).toBeNull();
-      expect(kiroModelRegistry.getSpec('nope')).toBeNull();
+      // DeepSeek takes no variants: its -thinking is not offered (asked for by name it is still sent).
+      expect(kiroModelRegistry.listModelIds()).not.toContain('deepseek-3.2-thinking');
+      expect(kiroModelRegistry.listModelIds()).not.toContain('nope');
     } finally {
       clearSeeds();
     }

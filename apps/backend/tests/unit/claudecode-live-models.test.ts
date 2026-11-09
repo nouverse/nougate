@@ -170,7 +170,7 @@ describe('what Claude Code then lists', () => {
 
   test('nothing before Anthropic has answered: no id is written down', () => {
     expect(claudeCodeModelRegistry.listModelIds()).toEqual([]);
-    expect(claudeCodeModelRegistry.getSpec('claude-opus-5-5')).toBeNull();
+    expect(claudeCodeModelRegistry.liveModelIds()).toEqual([]);
   });
 
   test('either spelling of a model is the one entry, and an undated id reaches its newest snapshot', async () => {
@@ -183,7 +183,8 @@ describe('what Claude Code then lists', () => {
     expect(claudeCodeModelRegistry.listModelIds()).not.toContain('claude-haiku-4-5');
     expect(claudeCodeModelRegistry.getSpec('claude-haiku-4-5')?.upstreamModelId).toBe('claude-haiku-4-5-20251001');
     expect(claudeCodeModelRegistry.getSpec('claude-haiku-4.5')?.upstreamModelId).toBe('claude-haiku-4-5-20251001');
-    expect(claudeCodeModelRegistry.getSpec('claude-haiku-9')).toBeNull();
+    // A model with no snapshot listed is sent as written, with a default spec.
+    expect(claudeCodeModelRegistry.getSpec('claude-haiku-9')).toMatchObject({ upstreamModelId: 'claude-haiku-9', maxOutputTokens: 32_000 });
   });
 
   test('of two snapshots of one model, the undated id reaches the newer', () => {

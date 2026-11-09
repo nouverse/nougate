@@ -221,9 +221,16 @@ paths without a table of its own.
 
 Clients address every model as `provider:model-id`. `core/model-resolver.ts` parses
 it; `getModelRegistry().getSpec()` resolves it to an `IModelSpec` carrying
-`maxOutputTokens`, thinking mode, pool, timeout and optional per-1M prices. With
-`bypassModelValidation` on, an unknown model is passed through and the upstream is
-treated as the authority.
+`maxOutputTokens`, thinking mode, pool, timeout and optional per-1M prices.
+
+**A list decides what is offered, not what may be asked for.** A built-in provider answers
+`getSpec()` for an id its list does not show with a default spec, so a prefixed id is still sent and
+the upstream's own answer decides: an install may have an agent pinned to an id its plan is served
+though one account's list lacks it. A refusal comes back as the error the upstream gave, and costs no
+account its health (§5). A bare id is routed only by the lists (`listModelIds()`, below). Antigravity
+answers an id every account's list lacks with a 404 before asking, since Google answers such a model
+with "no longer available" as a 200 reply. A custom provider passes an unknown id through only with
+`bypassModelValidation` on.
 
 **A provider's models are the ones its upstream lists.** No model id is written into the code: a
 written list goes stale the day an upstream adds a model. Each provider asks its upstream
@@ -252,7 +259,7 @@ model's maker, whether it thinks by level, the file types it takes and its limit
 them, and `providers/antigravity/config/shape.ts` decides from them the call ids, thought signatures,
 validated tool calls, endpoint and headers a request gets. Nothing reads the model's name for that,
 so a `gemini-4-*` or a Claude named some new way is shaped right with no code change. Only a model
-Google did not list (an override, `bypassModelValidation`) is read off its id, the one thing known.
+Google did not list (an override, or an id asked for by name) is read off its id, the one thing known.
 
 ---
 

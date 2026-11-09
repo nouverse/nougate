@@ -38,7 +38,6 @@
  */
 
 import type { IModelSpec, InputModality } from '@/core/interfaces';
-import { getProxyConfig } from '@/config/manager';
 import { LayeredModelRegistry, statedTokens } from '@/core/live-models';
 import { dataPath } from '@/core/paths';
 import { withRouteModalities } from '@/providers/antigravity/config/audio';
@@ -226,25 +225,22 @@ export async function loadModelSpecOverrides(): Promise<void> {
 const layered = new LayeredModelRegistry({ overrides: OVERRIDES, complete: createDefaultModelSpec, key: normalizeModelId });
 
 /**
- * A spec for an id Google does not list, when the operator lets unknown models through: the upstream
- * is the authority, and the id is all there is to go on.
+ * A default spec, for an id Google's lists do not show: it states nothing Google said. An id asked for
+ * by name is still taken, and shaped by reading it, the one thing known (`config/shape.ts`); whether
+ * thinking is on is read off it the same way. It reaches an account whose own list has it or that has
+ * no list yet; when every account has a list and none has it, the request is answered with a 404 that
+ * names it before anyone is asked, because Google answers such a model with "no longer available" as
+ * a 200 reply, which reads like the model's answer (`isModelUnlistedFor`).
  */
-function bypassSpec(modelId: string): IModelSpec | null {
-  try {
-    const proxyConfig = getProxyConfig();
-    if (proxyConfig && proxyConfig.bypassModelValidation) {
-      console.log(`[AntigravityModelRegistry] Unknown model "${modelId}" requested, generating dynamic spec fallback.`);
-      return createDefaultModelSpec(modelId, {
-        isThinking: modelId.toLowerCase().includes("thinking"),
-        thinkingMode: modelId.toLowerCase().includes("thinking") ? "budget" : undefined,
-        thinkingBudget: modelId.toLowerCase().includes("thinking") ? 32768 : undefined,
-        maxOutputTokens: 64000,
-      });
-    }
-  } catch (error) {
-    // If config is not loaded (e.g. during specific standalone script runs), default to non-bypass
-  }
-  return null;
+function unlistedSpec(modelId: string): IModelSpec | null {
+  const id = normalizeModelId(modelId);
+  if (!id) return null;
+  const thinking = id.includes('thinking');
+  return createDefaultModelSpec(id, {
+    isThinking: thinking,
+    ...(thinking ? { thinkingMode: 'budget' as const, thinkingBudget: ANTHROPIC_THINKING_BUDGET } : {}),
+    maxOutputTokens: 64000,
+  });
 }
 
 /**
@@ -253,7 +249,7 @@ function bypassSpec(modelId: string): IModelSpec | null {
  */
 export const antigravityModelRegistry = {
   getSpec(modelId: string): IModelSpec | null {
-    const spec = layered.getSpec(modelId) ?? bypassSpec(modelId);
+    const spec = layered.getSpec(modelId) ?? unlistedSpec(modelId);
     return spec ? withRouteModalities(spec) : null;
   },
   listModelIds(): string[] {
@@ -277,7 +273,7 @@ export function getModelSpec(modelId: string): IModelSpec | null {
 /**
  * The id Google knows a model by, the one the mappers send: the spec's `upstreamModelId` when it
  * names one, so `gemini-3.8-flash` is `gemini-3.8-flash-medium`. An id no list has is sent as it is
- * (see the bypass in `getSpec`), so it is its own upstream id.
+ * (`unlistedSpec`), so it is its own upstream id.
  */
 export function upstreamModelIdFor(modelId: string): string {
   const modelSpec = layered.getSpec(modelId);

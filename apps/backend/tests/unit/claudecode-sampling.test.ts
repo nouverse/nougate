@@ -35,7 +35,7 @@ describe('which models refuse sampling parameters', () => {
   test('the models that accept them are named only to say so, and a snapshot of one accepts too', () => {
     // A name in that table makes no model exist: before Anthropic answers, none is listed.
     expect(claudeCodeModelRegistry.listModelIds()).toEqual([]);
-    expect(claudeCodeModelRegistry.getSpec('claude-sonnet-4-6')).toBeNull();
+
     for (const accepts of ['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5', 'claude-haiku-4-5-20251001', 'claude-haiku-4.5']) {
       expect(deprecatesSamplingParams(accepts)).toBe(false);
     }

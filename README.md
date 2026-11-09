@@ -111,7 +111,9 @@ empties a picker; before any answer and with no file, a provider lists nothing. 
 not state — which Claude models accept `temperature`, which Kiro families take the thinking variants,
 how a Google request is shaped for Claude — stays in the provider as a rule about the model, never as
 a list of which models exist. An operator's `providers/<id>/model-specs.json` is laid over the
-upstream's spec, where a provider reads one.
+upstream's spec, where a provider reads one. The list decides what is offered and where a bare id
+goes; an id asked for by name (`codex:gpt-6-astra`) is still sent with a default spec, and the
+upstream's answer decides — a refusal comes back as its own error and costs the account nothing.
 
 Providers are plugins: each owns its auth, accounts, config and model registry, and
 the core never branches on a provider's name. Features like quota reporting are

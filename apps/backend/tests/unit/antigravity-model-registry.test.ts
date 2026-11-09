@@ -77,7 +77,7 @@ describe('what Antigravity offers, from the reply', () => {
 
   test('ids the reply gives one display name are one model, the one whose id is that name', () => {
     for (const alias of ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-flash-thinking']) {
-      expect(antigravityModelRegistry.getSpec(alias)).toBeNull();
+      expect(antigravityModelRegistry.listModelIds()).not.toContain(alias);
     }
     expect(antigravityModelRegistry.getSpec('gemini-3.5-flash-lite')?.displayName).toBe('Gemini 3.5 Flash Lite');
   });
@@ -94,7 +94,7 @@ describe('what Antigravity offers, from the reply', () => {
 describe('Antigravity Gemini 3.8 Flash, listed as gemini-3.8-flash-tiered', () => {
   test('low, medium and high are offered, under the family name Google gives nothing for', () => {
     expect(antigravityModelRegistry.getSpec('gemini-3.8-flash-low')?.displayName).toBe('Gemini 3.8 Flash (Low)');
-    expect(antigravityModelRegistry.getSpec('gemini-3.8-flash-tiered')).toBeNull();
+    expect(antigravityModelRegistry.listModelIds()).not.toContain('gemini-3.8-flash-tiered');
   });
 
   test('the bare gemini-3.8-flash goes to Medium, never to tiered', () => {

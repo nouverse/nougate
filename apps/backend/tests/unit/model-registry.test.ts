@@ -53,15 +53,11 @@ describe("Antigravity Model Registry", () => {
     expect(antigravityModelRegistry.getSpec(`  ${modelId.toUpperCase()}  `)?.modelId).toBe(modelId);
   });
 
-  test("getSpec returns null for an unknown model when bypassModelValidation is false", () => {
-    getProxyConfig().bypassModelValidation = false;
-    expect(antigravityModelRegistry.getSpec("nonexistent-model")).toBeNull();
-  });
-
-  test("getSpec returns dynamic fallback spec for an unknown model when bypassModelValidation is true", () => {
-    getProxyConfig().bypassModelValidation = true;
-    const spec = antigravityModelRegistry.getSpec("nonexistent-model");
-    expect(spec).not.toBeNull();
-    expect(spec?.modelId).toBe("nonexistent-model");
+  test("an id Google does not list is not offered, and asked for by name gets a default spec, whatever bypassModelValidation says", () => {
+    for (const bypass of [false, true]) {
+      getProxyConfig().bypassModelValidation = bypass;
+      expect(antigravityModelRegistry.listModelIds()).not.toContain("nonexistent-model");
+      expect(antigravityModelRegistry.getSpec("nonexistent-model")?.modelId).toBe("nonexistent-model");
+    }
   });
 });

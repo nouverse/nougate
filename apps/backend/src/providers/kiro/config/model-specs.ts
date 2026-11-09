@@ -193,6 +193,20 @@ export function catalogToModelDefs(entries: KiroCatalogEntry[]): KiroModelDef[] 
 }
 
 /**
+ * A default spec, for an id the catalogue does not show: it states nothing about the model. The
+ * catalogue decides what is offered and where a bare id goes, but an id asked for by name — a variant
+ * suffix and all — is still sent as written, and Kiro's own answer decides; a refusal comes back as
+ * the error it is, costing no account.
+ */
+function unlistedSpec(modelId: string): IModelSpec | null {
+  const id = modelId.trim();
+  const { upstream } = resolveKiroModel(id);
+  if (!upstream) return null;
+  const specs = toSpecs({ id: upstream, name: upstream, variants: true });
+  return specs.find((spec) => spec.modelId === id) ?? specs[0] ?? null;
+}
+
+/**
  * The model map behind `getSpec`: what the last catalogue listed, replaced whole by each one.
  */
 class KiroModelRegistry implements IModelRegistry {
@@ -244,7 +258,7 @@ class KiroModelRegistry implements IModelRegistry {
    */
   getSpec(modelId: string): IModelSpec | null {
     const clean = parseThinkingSuffix(modelId).cleanModel;
-    return this.specs.get(clean) ?? this.specsIgnoringCase.get(clean.toLowerCase()) ?? null;
+    return this.specs.get(clean) ?? this.specsIgnoringCase.get(clean.toLowerCase()) ?? unlistedSpec(clean);
   }
 
   listModelIds(): string[] {

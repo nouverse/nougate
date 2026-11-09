@@ -15,9 +15,11 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { addOAuthAccount, initManager } from '@/providers/codex/auth/manager';
+import { addOAuthAccount, getAccounts, initManager } from '@/providers/codex/auth/manager';
+import { ProviderResponseError } from '@/core/upstream-errors';
+import { CodexExecutor } from '@/providers/codex/upstream/executor';
 import { codexModelList } from '@/providers/codex/api/models';
-import { codexModelRegistry } from '@/providers/codex/config/model-specs';
+import { codexModelRegistry, getModelSpec } from '@/providers/codex/config/model-specs';
 import { getCodexConfig } from '@/providers/codex/config/provider-config';
 import { CodexProvider } from '@/providers/codex';
 import { CODEX_ANSWER } from './fixtures/upstream-models';
@@ -163,7 +165,7 @@ describe('what Codex then lists', () => {
     expect(spec.inputPricePer1M).toBeUndefined();
     expect(spec.outputPricePer1M).toBeUndefined();
     // No `-review` twin: it would send the same request under a second name.
-    expect(codexModelRegistry.getSpec('gpt-6-luna-review')).toBeNull();
+    expect(codexModelRegistry.listModelIds()).not.toContain('gpt-6-luna-review');
   });
 
   test('none the picker hides: the review model, experiments, one the API does not take', async () => {
@@ -172,14 +174,13 @@ describe('what Codex then lists', () => {
 
     for (const hidden of ['gpt-6-chat-thinking', 'gpt-reserve', 'codex-auto-review']) {
       expect(codexModelRegistry.listModelIds()).not.toContain(hidden);
-      expect(codexModelRegistry.getSpec(hidden)).toBeNull();
+      expect(codexModelRegistry.liveModelIds()).not.toContain(hidden);
     }
   });
 
   test('nothing before ChatGPT has answered: no id is written down', () => {
     expect(new CodexProvider().getSupportedModels()).toEqual([]);
-    expect(codexModelRegistry.getSpec('gpt-5.6-luna')).toBeNull();
-    expect(codexModelRegistry.getSpec('gpt-6-astra')).toBeNull();
+    expect(codexModelRegistry.liveModelIds()).toEqual([]);
   });
 
   test('a failed answer, or one with no list in it, keeps the last list', async () => {
@@ -207,5 +208,26 @@ describe('what Codex then lists', () => {
     await codexModelList.refresh();
 
     expect(codexModelRegistry.listModelIds()).toEqual(['gpt-5.6-luna', 'gpt-5.6-terra']);
+  });
+});
+
+describe('an id the list does not show, asked for by name', () => {
+  test("is sent to ChatGPT as written, and its refusal comes back as the error it is, costing no account", async () => {
+    const spec = getModelSpec('gpt-6-astra')!;
+    expect(spec).toMatchObject({ modelId: 'gpt-6-astra', upstreamModelId: 'gpt-6-astra' });
+    const health = getAccounts().map((account) => account.healthScore);
+    const sent: string[] = [];
+    globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+      sent.push(JSON.parse(String(init?.body)).model);
+      return Response.json({ detail: "The 'gpt-6-astra' model is not supported when using Codex with a ChatGPT account." }, { status: 400 });
+    }) as typeof fetch;
+
+    const thrown = await new CodexExecutor().execute({ body: { input: [] }, modelSpec: spec }).catch((error: unknown) => error);
+
+    expect(sent).toEqual(['gpt-6-astra']);
+    expect(thrown).toBeInstanceOf(ProviderResponseError);
+    expect(thrown).toMatchObject({ status: 400 });
+    expect((thrown as Error).message).toContain('not supported');
+    expect(getAccounts().map((account) => account.healthScore)).toEqual(health);
   });
 });

@@ -15,7 +15,6 @@
  */
 
 import type { IModelSpec } from '@/core/interfaces';
-import { getProxyConfig } from '@/config/manager';
 import { LayeredModelRegistry, statedTokens } from '@/core/live-models';
 import { dataPath } from '@/core/paths';
 
@@ -58,29 +57,23 @@ export async function loadModelSpecOverrides(): Promise<void> {
   }
 }
 
-/** What a lookup of an id neither list has gets: a made-up spec when the operator allows unknown models. */
-function unknownModelSpec(modelId: string): IModelSpec | null {
-  try {
-    const proxyConfig = getProxyConfig();
-    if (proxyConfig && proxyConfig.bypassModelValidation) {
-      console.log(`[CopilotModelRegistry] Unknown model "${modelId}" requested, generating dynamic spec fallback.`);
-      return createDefaultModelSpec(modelId, {
-        isThinking: modelId.toLowerCase().includes("thinking") || modelId.toLowerCase().includes("o3"),
-        maxOutputTokens: 8192,
-      });
-    }
-  } catch (error) {
-    // Standard fallback behavior if config manager isn't initialized/ready
-  }
-
-  return null;
+/**
+ * A default spec, for an id the account's list does not show: it states nothing about the model. The
+ * list decides what is offered and where a bare id goes, but an id asked for by name is still sent,
+ * and Copilot's own answer decides; a model it does not know comes back as a 404 that names it,
+ * costing no account (`classifyUpstreamError`).
+ */
+function unlistedSpec(modelId: string): IModelSpec | null {
+  const id = normalizeModelId(modelId);
+  if (!id) return null;
+  return createDefaultModelSpec(id, { maxOutputTokens: DEFAULT_MAX_OUTPUT_TOKENS, upstreamModelId: id });
 }
 
 export const copilotModelRegistry = new LayeredModelRegistry({
   overrides: OVERRIDES,
   complete: createDefaultModelSpec,
   key: normalizeModelId,
-  unknown: unknownModelSpec,
+  unknown: unlistedSpec,
 });
 
 export function getModelSpec(modelId: string): IModelSpec | null {
@@ -115,10 +108,10 @@ export function servedOnChatCompletions(model: CopilotListedModel): boolean {
 }
 
 /**
- * The output limit of a listed model whose entry states none: a conservative default, the one most
- * written models here carry.
+ * The output limit of a model whose entry states none, or that the list does not show: a conservative
+ * default, the one most models written here by hand used to carry.
  */
-const DEFAULT_LIVE_MAX_OUTPUT_TOKENS = 8192;
+const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
 
 const COPILOT_TIMEOUT_MS = 60_000;
 
@@ -139,7 +132,7 @@ export function copilotLiveSpecs(models: CopilotListedModel[]): IModelSpec[] {
       displayName: model.name?.trim() || id,
       pool: 'cli',
       isThinking: false,
-      maxOutputTokens: statedTokens(limits?.max_output_tokens) ?? DEFAULT_LIVE_MAX_OUTPUT_TOKENS,
+      maxOutputTokens: statedTokens(limits?.max_output_tokens) ?? DEFAULT_MAX_OUTPUT_TOKENS,
       upstreamModelId: id,
       timeoutMs: COPILOT_TIMEOUT_MS,
       ...(contextWindow ? { contextWindow } : {}),

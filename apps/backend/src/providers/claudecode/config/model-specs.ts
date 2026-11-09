@@ -72,7 +72,36 @@ function snapshotOf(modelId: string): IModelSpec | null {
   return newest ? claudeCodeModelRegistry.getSpec(newest) : null;
 }
 
-export const claudeCodeModelRegistry = new LayeredModelRegistry({ key: dashed, unknown: snapshotOf });
+/**
+ * The output limit of a model whose list states none — or that the list does not show: a conservative
+ * default. Every model Anthropic listed on 2026-11-09 stated its own, 64K or 128K.
+ */
+const DEFAULT_MAX_OUTPUT_TOKENS = 32_000;
+
+/**
+ * A default spec, for an id the credential's list does not show: it states nothing about the model.
+ * The list decides what is offered and where a bare id goes, but an id asked for by name is still
+ * sent, and Anthropic's own answer decides; a refusal comes back as the error it is, costing no
+ * credential.
+ */
+function unlistedSpec(modelId: string): IModelSpec | null {
+  const id = dashed(modelId.trim());
+  if (!id) return null;
+  return {
+    modelId: id,
+    displayName: id,
+    pool: 'cli',
+    isThinking: false,
+    maxOutputTokens: DEFAULT_MAX_OUTPUT_TOKENS,
+    upstreamModelId: id,
+    timeoutMs: TIMEOUT_MS,
+  };
+}
+
+export const claudeCodeModelRegistry = new LayeredModelRegistry({
+  key: dashed,
+  unknown: (modelId) => snapshotOf(modelId) ?? unlistedSpec(modelId),
+});
 
 export function getModelSpec(modelId: string): IModelSpec | null {
   return claudeCodeModelRegistry.getSpec(modelId);
@@ -88,12 +117,6 @@ export interface ClaudeListedModel {
   /** The most one answer may hold. */
   max_tokens?: number;
 }
-
-/**
- * The output limit of a listed model whose list states none: a conservative default. Every model
- * Anthropic listed on 2026-11-09 stated its own, 64K or 128K.
- */
-const DEFAULT_MAX_OUTPUT_TOKENS = 32_000;
 
 /**
  * The models a `/v1/models` list offers, as specs. A dated snapshot whose undated id the list also

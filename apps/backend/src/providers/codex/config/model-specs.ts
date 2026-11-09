@@ -23,7 +23,27 @@ const CODEX_MAX_OUTPUT_TOKENS = 128_000;
 /** Generous, because these models reason: a hard request at high effort runs for minutes. */
 const CODEX_TIMEOUT_MS = 600_000;
 
-export const codexModelRegistry = new LayeredModelRegistry();
+/**
+ * A default spec, for an id this account's list does not show: it states nothing about the model. The
+ * list decides what is offered and where a bare id goes, but an id asked for by name is still sent —
+ * another plan may be served a model this account's list lacks (a user runs gpt-6-astra on his) —
+ * and ChatGPT's own answer decides. A refusal comes back as the error it is, costing no account.
+ */
+function unlistedSpec(modelId: string): IModelSpec | null {
+  const id = modelId.trim();
+  if (!id) return null;
+  return {
+    modelId: id,
+    displayName: id,
+    pool: 'cli',
+    isThinking: false,
+    maxOutputTokens: CODEX_MAX_OUTPUT_TOKENS,
+    upstreamModelId: id,
+    timeoutMs: CODEX_TIMEOUT_MS,
+  };
+}
+
+export const codexModelRegistry = new LayeredModelRegistry({ unknown: unlistedSpec });
 
 export function getModelSpec(modelId: string): IModelSpec | null {
   return codexModelRegistry.getSpec(modelId);

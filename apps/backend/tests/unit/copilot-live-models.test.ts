@@ -198,9 +198,7 @@ describe('what Copilot then lists', () => {
 
   test('nothing before Copilot has answered: no id is written down', () => {
     expect(copilotModelRegistry.listModelIds()).toEqual([]);
-    for (const id of ['claude-opus-5', 'gpt-4o', 'gpt-6-luna', 'claude-fable-5']) {
-      expect(copilotModelRegistry.getSpec(id)).toBeNull();
-    }
+    expect(copilotModelRegistry.liveModelIds()).toEqual([]);
   });
 
   test('a failed answer, a failed exchange, or an answer with no list keeps the last list', async () => {
@@ -283,6 +281,6 @@ describe("an operator's override file", () => {
     writeFileSync(file(), JSON.stringify({}));
     await loadModelSpecOverrides();
 
-    expect(copilotModelRegistry.getSpec('my-own-model')).toBeNull();
+    expect(copilotModelRegistry.listModelIds()).not.toContain('my-own-model');
   });
 });
