@@ -12,6 +12,7 @@
 
 import type { AccountRequestOptions, DeviceFlowPollResult, IAccount, IModelRegistry, IProvider, IProviderQuota, ProviderExecuteParams, AccountCopy } from '@/core/interfaces';
 import { normalizeJitterConfig, type JitterConfig } from '@/core/jitter';
+import { LiveModelList } from '@/core/live-models';
 import { ACCOUNT_WIDE, initKiroAccounts, kiroAccounts, type NewKiroAccount } from './auth/manager';
 import { pollDeviceFlow, startDeviceFlow } from './auth/device-flow';
 import { fetchModelCatalog, fetchProfileArn } from './auth/profile';
@@ -27,6 +28,23 @@ import { collectKiroEvents, streamKiroResponse } from './mappers/response';
 import { KiroExecutor, ensureFreshCredential } from './upstream/executor';
 
 const HOUR_MS = 3_600_000;
+
+/**
+ * Models `ListAvailableModels` reports that the static list does not know, asked for at start, after
+ * an account is added and every six hours. The credential is renewed first when it is near expiry:
+ * a Kiro token lives an hour, so on an idle gateway the timer would otherwise find it spent each time.
+ */
+export const kiroModelList = new LiveModelList({
+  provider: 'kiro',
+  fetch: async () => {
+    if (!getKiroConfig().features.liveModelCatalog) return null;
+    const account = kiroAccounts.best();
+    if (!account) return null;
+    await ensureFreshCredential(account);
+    return catalogToModelDefs(await fetchModelCatalog(account));
+  },
+  merge: (defs) => kiroModelRegistry.mergeLive(defs),
+});
 
 export class KiroProvider implements IProvider {
   readonly id = 'kiro';
@@ -44,7 +62,7 @@ export class KiroProvider implements IProvider {
     await loadKiroConfig();
     await initKiroAccounts();
     // In the background: boot must not wait on AWS, and the static catalogue serves meanwhile.
-    void this.refreshModelCatalog();
+    kiroModelList.start();
   }
 
   getJitterConfig(): JitterConfig {
@@ -194,21 +212,8 @@ export class KiroProvider implements IProvider {
     }
     const account = kiroAccounts.upsert(enriched);
     invalidateQuotaCache(account.id);
-    void this.refreshModelCatalog();
+    void kiroModelList.refresh();
     return account;
-  }
-
-  /** Offer models the live catalogue reports that the static list does not know. */
-  private async refreshModelCatalog(): Promise<void> {
-    if (!getKiroConfig().features.liveModelCatalog) return;
-    const account = kiroAccounts.best();
-    if (!account) return;
-    try {
-      const added = kiroModelRegistry.mergeLive(catalogToModelDefs(await fetchModelCatalog(account)));
-      if (added > 0) console.log(`[kiro] live catalogue added ${added} model(s)`);
-    } catch (error) {
-      console.warn(`[kiro] could not read the live model catalogue: ${(error as Error).message.slice(0, 200)}`);
-    }
   }
 
   async removeAccount(accountId: string): Promise<void> {
