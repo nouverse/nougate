@@ -102,18 +102,19 @@ Registration order is display order and bare-model routing order. Both are set i
 The Codex provider speaks OpenAI's **Responses** API upstream, not Chat Completions;
 Nougate translates in both directions so your client never has to know.
 
-**A provider's models are the ones its upstream lists.** No model id is written into Nougate:
-each provider asks its upstream which models it offers — at start, after an account is added, and
-every six hours — and that answer is its list, with the limits the upstream states and no price of
-its own (the shared price book prices a model by its family). The last good answer is kept in
-`data/providers/<id>/models.json` and read back at start, so a restart or an upstream outage never
-empties a picker; before any answer and with no file, a provider lists nothing. What an upstream does
-not state — which Claude models accept `temperature`, which Kiro families take the thinking variants,
-how a Google request is shaped for Claude — stays in the provider as a rule about the model, never as
-a list of which models exist. An operator's `providers/<id>/model-specs.json` is laid over the
-upstream's spec, where a provider reads one. The list decides what is offered and where a bare id
-goes; an id asked for by name (`codex:gpt-6-astra`) is still sent with a default spec, and the
-upstream's answer decides — a refusal comes back as its own error and costs the account nothing.
+**A provider's models are the ones its upstream lists.** No model id is written into Nougate: each
+provider asks its upstream which models it offers — every account, at start, after an account is
+added, and every six hours — and the union of the answers is its list, with the limits the upstream
+states and no price of its own (the shared price book prices a model by its family). The last good
+answer is kept in `data/providers/<id>/models.json` and read back at start, so a restart or an
+upstream outage never empties a picker; before any answer and with no file, a provider lists
+nothing. What an upstream does not state — which Claude models accept `temperature`, which Kiro
+families take the thinking variants, how a Google request is shaped for Claude — stays in the
+provider as a rule about the model, never as a list of which models exist. An operator's
+`providers/<id>/model-specs.json` is laid over the upstream's spec, where a provider reads one. The
+list decides what is offered and where a bare id goes; an id asked for by name (`codex:gpt-6-astra`)
+is still sent with a default spec, and the upstream's answer decides — a refusal comes back as its
+own error and costs the account nothing.
 
 Providers are plugins: each owns its auth, accounts, config and model registry, and
 the core never branches on a provider's name. Features like quota reporting are

@@ -241,6 +241,12 @@ back at start before boot goes on, so a restart or an outage never empties a pic
 keeps the last list, and so does an answer listing nothing once there is a list to lose. Lookups read
 memory; nothing on the request path waits on the network.
 
+Accounts on different plans are offered different models, so every account is asked, one after
+another (at most twenty), and the list is the union; an account that cannot answer keeps what its last
+answer listed, and only when none answers does the last list stay. Antigravity also keeps each
+account's own list, to send a request only to an account that has the model (§5); the other providers
+do not route by account.
+
 What each offers is its own rule, read from its upstream's fields: Codex what its CLI's picker shows;
 Claude Code every listed model, a dated snapshot reachable by its undated id; Copilot the chat models
 its picker shows, policy not disabled, that it serves on `/chat/completions`; Kiro its catalogue,

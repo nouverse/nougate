@@ -284,3 +284,25 @@ describe("an operator's override file", () => {
     expect(copilotModelRegistry.listModelIds()).not.toContain('my-own-model');
   });
 });
+
+describe('with more than one account', () => {
+  test('every account is asked, the lists united, and one that fails keeps what it listed', async () => {
+    hold(account(), account({ id: 'copilot-second', sessionToken: 'test-session-second' }));
+    const SECOND = { data: [chat('grok-test-chat', 'Grok Test', ['/chat/completions'], { max_output_tokens: 1000 })] };
+    let secondAnswer = () => Response.json(SECOND);
+    const byToken: string[] = [];
+    globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+      const token = new Headers(init?.headers).get('authorization');
+      byToken.push(String(token));
+      return token === 'Bearer test-session-token' ? Response.json(LIVE) : secondAnswer();
+    }) as typeof fetch;
+
+    await copilotModelList.refresh();
+    expect(byToken).toEqual(['Bearer test-session-token', 'Bearer test-session-second']);
+    expect(copilotModelRegistry.listModelIds()).toEqual([...OFFERED, 'grok-test-chat'].sort());
+
+    secondAnswer = () => new Response('{"message":"down"}', { status: 503 });
+    await copilotModelList.refresh();
+    expect(copilotModelRegistry.listModelIds()).toContain('grok-test-chat');
+  });
+});

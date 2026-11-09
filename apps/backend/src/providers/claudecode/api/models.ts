@@ -3,12 +3,14 @@
  *
  * The subscription login reads it too: an OAuth token on `Authorization: Bearer` with the
  * `oauth-2025-04-20` gate (`authHeaders`), and the CLI's identity headers beside it, as on a request.
- * The list is paged (`has_more`, `after_id`); every page is read. Asked of the best credential.
+ * The list is paged (`has_more`, `after_id`); every page is read. Every credential is asked and the
+ * lists are united (`UnitedAccountLists`).
  */
 
-import { fetchModelList, LiveModelList } from '@/core/live-models';
+import { fetchModelList, LiveModelList, UnitedAccountLists } from '@/core/live-models';
 import type { IModelSpec } from '@/core/interfaces';
-import { getBestAccount } from '../auth/manager';
+import { getAccounts } from '../auth/manager';
+import type { ClaudeCodeAccount } from '../auth/types';
 import { authHeaders, credentialKind } from '../auth/credential';
 import { claudeCodeModelRegistry, claudeLiveSpecs, type ClaudeListedModel } from '../config/model-specs';
 import { getClaudeCodeConfig } from '../config/provider-config';
@@ -27,10 +29,8 @@ interface ModelPage {
   last_id?: string;
 }
 
-/** What Anthropic lists for the best credential now, or `null` with no credential to ask. */
-export async function fetchClaudeModels(): Promise<IModelSpec[] | null> {
-  const account = await getBestAccount();
-  if (!account) return null;
+/** What Anthropic lists for one credential now. */
+async function accountModels(account: ClaudeCodeAccount): Promise<IModelSpec[]> {
   // Renewed first when near expiry, as a request would be: a token lives hours, and an idle
   // gateway's timer would otherwise find it spent.
   await refreshIfExpiring(account);
@@ -52,6 +52,18 @@ export async function fetchClaudeModels(): Promise<IModelSpec[] | null> {
     after = data.last_id;
   }
   return claudeLiveSpecs(models);
+}
+
+const lists = new UnitedAccountLists<ClaudeCodeAccount, IModelSpec>();
+
+/** What Anthropic lists for the credentials now, united, or `null` with no credential to ask. */
+export async function fetchClaudeModels(): Promise<IModelSpec[] | null> {
+  return lists.ask({
+    accounts: getAccounts().filter((account) => !account.invalidatedAt),
+    accountId: (account) => account.id,
+    ask: accountModels,
+    key: (spec) => spec.modelId,
+  });
 }
 
 /** Asked at start, after an account is added, and every six hours (`core/live-models.ts`). */

@@ -233,3 +233,25 @@ describe('claudeLiveSpecs', () => {
     expect(specs[0]!.contextWindow).toBeUndefined();
   });
 });
+
+describe('with more than one credential', () => {
+  test('every credential is asked, the lists united, and one that fails keeps what it listed', async () => {
+    await manager.addAccount('sk-ant-api03-first-key');
+    await manager.addAccount('sk-ant-api03-second-key');
+    let secondAnswer = () => page([{ type: 'model', id: 'claude-test-only-second', display_name: 'Only Second', max_tokens: 64_000 } as any], false);
+    const byKey: string[] = [];
+    globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+      const key = new Headers(init?.headers).get('x-api-key');
+      byKey.push(String(key));
+      return key === 'sk-ant-api03-first-key' ? page(LIVE, false) : secondAnswer();
+    }) as typeof fetch;
+
+    await claudeCodeModelList.refresh();
+    expect(byKey).toEqual(['sk-ant-api03-first-key', 'sk-ant-api03-second-key']);
+    expect(claudeCodeModelRegistry.listModelIds()).toEqual([...ALL, 'claude-test-only-second'].sort());
+
+    secondAnswer = () => new Response('{"type":"error"}', { status: 500 });
+    await claudeCodeModelList.refresh();
+    expect(claudeCodeModelRegistry.listModelIds()).toContain('claude-test-only-second');
+  });
+});

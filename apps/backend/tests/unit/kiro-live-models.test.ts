@@ -87,7 +87,7 @@ afterAll(() => {
 });
 
 describe("Kiro's live catalogue", () => {
-  test('is asked of the best account, and what it lists is the list', async () => {
+  test('is asked of the account, and what it lists is the list', async () => {
     kiroAccounts.load({ accounts: [{ ...account }] });
     upstream(() => Response.json(CATALOGUE));
     await kiroModelList.refresh();
@@ -200,5 +200,28 @@ describe("Kiro's live catalogue", () => {
     }
 
     expect(asked).toHaveLength(0);
+  });
+});
+
+describe('with more than one account', () => {
+  test('every account is asked, the catalogues united, and one that fails keeps what it listed', async () => {
+    kiroAccounts.load({ accounts: [{ ...account }, { ...account, id: 'kiro-second', label: 'kiro-second', accessToken: 'test-kiro-second' }] });
+    const SECOND = { models: [{ modelId: 'claude-opus-4.5', modelName: 'Claude Opus 4.5', supportedInputTypes: ['TEXT', 'IMAGE'], tokenLimits: { maxInputTokens: 200_000 } }] };
+    let secondAnswer = () => Response.json(SECOND);
+    const byToken: string[] = [];
+    globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+      const token = new Headers(init?.headers).get('authorization');
+      byToken.push(String(token));
+      return token === 'Bearer test-kiro-access' ? Response.json(CATALOGUE) : secondAnswer();
+    }) as typeof fetch;
+
+    await kiroModelList.refresh();
+    expect(byToken).toEqual(['Bearer test-kiro-access', 'Bearer test-kiro-second']);
+    expect(kiroModelRegistry.listModelIds()).toContain('claude-opus-4.5');
+    expect(kiroModelRegistry.listModelIds()).toContain('minimax-m2.5');
+
+    secondAnswer = () => new Response('{"message":"denied"}', { status: 403 });
+    await kiroModelList.refresh();
+    expect(kiroModelRegistry.listModelIds()).toContain('claude-opus-4.5');
   });
 });

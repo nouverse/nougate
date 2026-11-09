@@ -14,7 +14,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { IModelSpec } from '@/core/interfaces';
-import { fetchModelList, LayeredModelRegistry, LIVE_MODELS_REFRESH_MS, LiveModelList, modelListFile } from '@/core/live-models';
+import { fetchModelList, LayeredModelRegistry, LIVE_MODELS_REFRESH_MS, LiveModelList, MAX_ACCOUNTS_ASKED, modelListFile, UnitedAccountLists } from '@/core/live-models';
 
 const BACKEND = join(import.meta.dir, '..', '..');
 // Every list here keeps its answer on disk: in a scratch data directory, never the real one.
@@ -302,6 +302,93 @@ describe('the list kept on disk', () => {
       await list.restore();
     });
     expect(registry.listModelIds()).toEqual(['new']);
+  });
+});
+
+describe("a provider's list as the union of its accounts' lists", () => {
+  type Account = { id: string };
+  type Entry = { id: string; from: string };
+  const entry = (id: string, from: string): Entry => ({ id, from });
+
+  /** Each account's answer by id: a list, or an error to throw. */
+  function source(accounts: Account[], answers: Record<string, Entry[] | Error>, asked: string[] = []) {
+    return {
+      accounts,
+      accountId: (account: Account) => account.id,
+      ask: async (account: Account) => {
+        asked.push(account.id);
+        const answer = answers[account.id];
+        if (answer instanceof Error || answer === undefined) throw answer ?? new Error('no answer');
+        return answer;
+      },
+      key: (item: Entry) => item.id,
+    };
+  }
+
+  test('a model any account lists is offered, with the facts of the first account to list it', async () => {
+    const lists = new UnitedAccountLists<Account, Entry>();
+    const united = await lists.ask(source([{ id: 'a' }, { id: 'b' }], { a: [entry('shared', 'a'), entry('only-a', 'a')], b: [entry('shared', 'b'), entry('only-b', 'b')] }));
+    expect(united).toEqual([entry('shared', 'a'), entry('only-a', 'a'), entry('only-b', 'b')]);
+  });
+
+  test('accounts are asked one after another, never at once', async () => {
+    let inFlight = 0;
+    let most = 0;
+    const lists = new UnitedAccountLists<Account, Entry>();
+    await lists.ask({
+      accounts: [{ id: 'a' }, { id: 'b' }, { id: 'c' }],
+      accountId: (account) => account.id,
+      ask: async (account) => {
+        inFlight += 1;
+        most = Math.max(most, inFlight);
+        await Bun.sleep(5);
+        inFlight -= 1;
+        return [entry(account.id, account.id)];
+      },
+      key: (item) => item.id,
+    });
+    expect(most).toBe(1);
+  });
+
+  test("a failing account keeps what its last answer listed, and does not take the others' models", async () => {
+    const lists = new UnitedAccountLists<Account, Entry>();
+    const accounts = [{ id: 'a' }, { id: 'b' }];
+    await lists.ask(source(accounts, { a: [entry('only-a', 'a')], b: [entry('only-b', 'b')] }));
+    const united = await lists.ask(source(accounts, { a: [entry('only-a', 'a')], b: new Error('down') }));
+    expect(united?.map((item) => item.id)).toEqual(['only-a', 'only-b']);
+  });
+
+  test('a failing account that never answered adds nothing, and the others still count', async () => {
+    const lists = new UnitedAccountLists<Account, Entry>();
+    const united = await lists.ask(source([{ id: 'a' }, { id: 'b' }], { a: new Error('down'), b: [entry('only-b', 'b')] }));
+    expect(united?.map((item) => item.id)).toEqual(['only-b']);
+  });
+
+  test('when no account answers, it throws the first failure, so the last list stays', async () => {
+    const lists = new UnitedAccountLists<Account, Entry>();
+    const failure = Object.assign(new Error('down'), { status: 503 });
+    const thrown = await lists.ask(source([{ id: 'a' }, { id: 'b' }], { a: failure, b: new Error('also down') })).catch((error: unknown) => error);
+    expect(thrown).toBe(failure);
+  });
+
+  test('no account, no question', async () => {
+    expect(await new UnitedAccountLists<Account, Entry>().ask(source([], {}))).toBeNull();
+  });
+
+  test(`at most ${MAX_ACCOUNTS_ASKED} accounts are asked`, async () => {
+    const accounts = Array.from({ length: MAX_ACCOUNTS_ASKED + 5 }, (_, index) => ({ id: `account-${index}` }));
+    const answers = Object.fromEntries(accounts.map((account) => [account.id, [entry(account.id, account.id)]]));
+    const asked: string[] = [];
+    await new UnitedAccountLists<Account, Entry>().ask(source(accounts, answers, asked));
+    expect(asked).toHaveLength(MAX_ACCOUNTS_ASKED);
+  });
+
+  test('an account removed is forgotten: back again and failing, it brings none of its old models', async () => {
+    const lists = new UnitedAccountLists<Account, Entry>();
+    await lists.ask(source([{ id: 'a' }, { id: 'b' }], { a: [entry('only-a', 'a')], b: [entry('only-b', 'b')] }));
+    await lists.ask(source([{ id: 'a' }], { a: [entry('only-a', 'a')] }));
+    const united = await lists.ask(source([{ id: 'a' }, { id: 'b' }], { a: [entry('only-a', 'a')], b: new Error('down') }));
+    expect(united?.map((item) => item.id)).toEqual(['only-a']);
   });
 });
 

@@ -105,20 +105,30 @@ describe('when the list is asked for', () => {
   }
 
   test('once an account is added, without waiting for the timer', async () => {
-    const provider = new CodexProvider();
-    await provider.addAccount({});
-    upstream(
-      () => Response.json({ access_token: 'test-access-added', refresh_token: 'test-refresh-added', id_token: ID_TOKEN, expires_in: 10 * 24 * 3600 }),
-      () => Response.json(LIVE),
-    );
-    await provider.addAccount({ code: 'test-code', label: 'added' });
-    await until(() => codexModelRegistry.liveModelIds().length > 0);
+    // A home of its own, so the account added here is the only one and leaves no second behind.
+    const otherHome = mkdtempSync(join(tmpdir(), 'nougate-codex-models-added-'));
+    process.env.NOUGATE_HOME = otherHome;
+    try {
+      await initManager();
+      const provider = new CodexProvider();
+      await provider.addAccount({});
+      upstream(
+        () => Response.json({ access_token: 'test-access-added', refresh_token: 'test-refresh-added', id_token: ID_TOKEN, expires_in: 10 * 24 * 3600 }),
+        () => Response.json(LIVE),
+      );
+      await provider.addAccount({ code: 'test-code', label: 'added' });
+      await until(() => codexModelRegistry.liveModelIds().length > 0);
 
-    expect(asked.map((call) => `${call.method} ${call.url}`)).toEqual([
-      'POST https://auth.openai.com/oauth/token',
-      'GET https://chatgpt.com/backend-api/codex/models?client_version=0.190.0',
-    ]);
-    expect(codexModelRegistry.liveModelIds()).toEqual(OFFERED);
+      expect(asked.map((call) => `${call.method} ${call.url}`)).toEqual([
+        'POST https://auth.openai.com/oauth/token',
+        'GET https://chatgpt.com/backend-api/codex/models?client_version=0.190.0',
+      ]);
+      expect(codexModelRegistry.liveModelIds()).toEqual(OFFERED);
+    } finally {
+      process.env.NOUGATE_HOME = home;
+      await initManager();
+      rmSync(otherHome, { recursive: true, force: true });
+    }
   });
 
   test('with a token near its end renewed first, as a request would renew it', async () => {
@@ -229,5 +239,38 @@ describe('an id the list does not show, asked for by name', () => {
     expect(thrown).toMatchObject({ status: 400 });
     expect((thrown as Error).message).toContain('not supported');
     expect(getAccounts().map((account) => account.healthScore)).toEqual(health);
+  });
+});
+
+describe('with more than one account', () => {
+  test("every account is asked, the lists united, and one that fails keeps what it listed", async () => {
+    const otherHome = mkdtempSync(join(tmpdir(), 'nougate-codex-models-two-'));
+    process.env.NOUGATE_HOME = otherHome;
+    try {
+      await initManager();
+      await addOAuthAccount({ accessToken: 'test-access-plus', refreshToken: 'test-refresh-plus', expiresInSeconds: 10 * 24 * 3600, label: 'plus' });
+      await addOAuthAccount({ accessToken: 'test-access-pro', refreshToken: 'test-refresh-pro', expiresInSeconds: 10 * 24 * 3600, label: 'pro' });
+      // Another plan's list: the model this account's list lacks.
+      const PRO = { models: [{ slug: 'gpt-6-astra', display_name: 'GPT-6-Astra', visibility: 'list', context_window: 272000 }] };
+      let proAnswer = () => Response.json(PRO);
+      const byToken: string[] = [];
+      globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+        const token = new Headers(init?.headers).get('authorization');
+        byToken.push(String(token));
+        return token === 'Bearer test-access-plus' ? Response.json(LIVE) : proAnswer();
+      }) as typeof fetch;
+
+      await codexModelList.refresh();
+      expect(byToken).toEqual(['Bearer test-access-plus', 'Bearer test-access-pro']);
+      expect(codexModelRegistry.listModelIds()).toEqual([...OFFERED, 'gpt-6-astra'].sort());
+
+      proAnswer = () => new Response('{"detail":"Unauthorized"}', { status: 401 });
+      await codexModelList.refresh();
+      expect(codexModelRegistry.listModelIds()).toContain('gpt-6-astra');
+    } finally {
+      process.env.NOUGATE_HOME = home;
+      await initManager();
+      rmSync(otherHome, { recursive: true, force: true });
+    }
   });
 });

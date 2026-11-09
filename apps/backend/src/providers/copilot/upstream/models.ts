@@ -5,7 +5,7 @@
  * fresh, else exchanged for the account's GitHub token) and the headers a request carries.
  */
 
-import { fetchModelList, LiveModelList } from '@/core/live-models';
+import { fetchModelList, LiveModelList, UnitedAccountLists } from '@/core/live-models';
 import type { IModelSpec } from '@/core/interfaces';
 import { getAccounts } from '../auth/manager';
 import { ensureSessionToken } from '../auth/token-exchange';
@@ -15,19 +15,8 @@ import { getCopilotHeaders } from './headers';
 
 const MODELS_URL = 'https://api.githubcopilot.com/models';
 
-/**
- * The healthiest account Copilot has not marked invalid. Not selection's own pick: that one also
- * saves the pool and benches an account whose exchange fails, which a model list has no cause to do.
- */
-function healthiestAccount(): CopilotAccount | null {
-  const usable = getAccounts().filter((account) => account.personalToken && account.status !== 'invalid');
-  return usable.sort((a, b) => b.healthScore - a.healthScore)[0] ?? null;
-}
-
-/** What Copilot offers the healthiest account now, or `null` with no account to ask. */
-export async function fetchCopilotModels(): Promise<IModelSpec[] | null> {
-  const account = healthiestAccount();
-  if (!account) return null;
+/** What Copilot offers one account now. */
+async function accountModels(account: CopilotAccount): Promise<IModelSpec[]> {
   const sessionToken = await ensureSessionToken(account);
   const { 'Content-Type': _body, ...headers } = getCopilotHeaders(sessionToken);
   const data = (await fetchModelList(MODELS_URL, { ...headers, Accept: 'application/json' })) as {
@@ -35,6 +24,22 @@ export async function fetchCopilotModels(): Promise<IModelSpec[] | null> {
   } | null;
   if (!Array.isArray(data?.data)) throw new Error('the answer carries no `data` list');
   return copilotLiveSpecs(data.data);
+}
+
+const lists = new UnitedAccountLists<CopilotAccount, IModelSpec>();
+
+/**
+ * What Copilot offers the accounts now, united, or `null` with no account to ask. Every account
+ * Copilot has not marked invalid is asked — not through selection, which also saves the pool and
+ * benches an account whose exchange fails, which a model list has no cause to do.
+ */
+export async function fetchCopilotModels(): Promise<IModelSpec[] | null> {
+  return lists.ask({
+    accounts: getAccounts().filter((account) => account.personalToken && account.status !== 'invalid'),
+    accountId: (account) => account.id,
+    ask: accountModels,
+    key: (spec) => spec.modelId.toLowerCase(),
+  });
 }
 
 /** Asked at start, after an account is added, and every six hours (`core/live-models.ts`). */

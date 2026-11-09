@@ -102,6 +102,63 @@ export class LayeredModelRegistry implements IModelRegistry {
   }
 }
 
+/**
+ * The most accounts one refresh asks, one after another — an estimate: a provider rarely holds more,
+ * and a list the twenty-first adds to twenty others is unlikely to differ.
+ */
+export const MAX_ACCOUNTS_ASKED = 20;
+
+export interface AccountListSource<A, T> {
+  /** The accounts to ask, in order. */
+  accounts: A[];
+  accountId: (account: A) => string;
+  /** One account's list. Throws when it cannot be read. */
+  ask: (account: A) => Promise<T[]>;
+  /** What a model is one entry under; the first account to list it gives its facts. */
+  key: (entry: T) => string;
+}
+
+/**
+ * A provider's list as the union of its accounts' lists: a model any account lists is offered.
+ *
+ * Accounts on different plans are offered different models, and one account's list is not the
+ * provider's. Each is asked in turn, at most `MAX_ACCOUNTS_ASKED`. One that cannot answer keeps what
+ * its last answer listed, so a failing account does not take from the list what only it had; when
+ * none answers, `ask` throws and the provider's last list stays.
+ */
+export class UnitedAccountLists<A, T> {
+  private readonly last = new Map<string, T[]>();
+
+  async ask(source: AccountListSource<A, T>): Promise<T[] | null> {
+    const accounts = source.accounts.slice(0, MAX_ACCOUNTS_ASKED);
+    if (accounts.length === 0) return null;
+    const asked = new Set(accounts.map(source.accountId));
+    for (const id of [...this.last.keys()]) if (!asked.has(id)) this.last.delete(id);
+
+    const united = new Map<string, T>();
+    let answered = 0;
+    let failure: unknown;
+    for (const account of accounts) {
+      const id = source.accountId(account);
+      let entries: T[] | undefined;
+      try {
+        entries = await source.ask(account);
+        this.last.set(id, entries);
+        answered += 1;
+      } catch (error) {
+        failure ??= error;
+        entries = this.last.get(id);
+      }
+      for (const entry of entries ?? []) {
+        const key = source.key(entry);
+        if (!united.has(key)) united.set(key, entry);
+      }
+    }
+    if (answered === 0) throw failure;
+    return [...united.values()];
+  }
+}
+
 export interface LiveModelSource<T> {
   /** The provider's id: names it in the log, and its folder for the file the last answer is kept in. */
   provider: string;
