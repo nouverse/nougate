@@ -20,6 +20,7 @@ import { ConversationAccounts } from '@/core/conversation-accounts';
 import type { ClaudeCodeAccount, RateLimitSnapshot, SelectionStrategy } from './types';
 import { credentialHint, credentialKind } from './credential';
 import { loadConfig, saveConfig } from './storage';
+import { claudeCodeAccountLists } from './account-models';
 
 let accounts: ClaudeCodeAccount[] = [];
 let strategy: SelectionStrategy = 'healthiest';
@@ -269,9 +270,15 @@ export async function getBestAccount(
   conversation?: string,
 ): Promise<ClaudeCodeAccount | null> {
   const scope = cooldownScope(modelId);
-  const usable = accounts.filter(
-    (account) =>
-      !account.invalidatedAt && !excludeIds.includes(account.id) && !cooling(account, scope),
+  // A credential whose own model list lacks the model is passed over while another's has it: plans
+  // differ. When no credential's list has it — an id asked for by name — any may be asked.
+  const usable = claudeCodeAccountLists.eligible(
+    accounts.filter(
+      (account) =>
+        !account.invalidatedAt && !excludeIds.includes(account.id) && !cooling(account, scope),
+    ),
+    (account) => account.id,
+    modelId,
   );
   if (usable.length === 0) return null;
 

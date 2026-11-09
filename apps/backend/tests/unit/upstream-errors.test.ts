@@ -98,6 +98,16 @@ describe('credentials and unknown models', () => {
     expect(result.retryable).toBe(false);
   });
 
+  test("a model Anthropic does not know, in its words, is the model's", () => {
+    // Anthropic's answer on 2026-11-10 to a model id that cannot exist, word for word.
+    const result = classifyUpstreamError({
+      status: 404,
+      body: '{"type":"error","error":{"type":"not_found_error","message":"model: claude-nougate-probe-no-such-model"}}',
+    });
+    expect(result.kind).toBe('model_unsupported');
+    expect(result.rotate).toBe(false);
+  });
+
   test('any other 400 stays unknown', () => {
     expect(classifyUpstreamError({ status: 400, body: '{"error":{"message":"bad request","code":"invalid_value"}}' }).kind).toBe('unknown');
   });

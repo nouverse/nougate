@@ -56,7 +56,11 @@ const QUOTA_MARKERS = [
 /** Body fragments that mean the upstream itself is saturated for this model. */
 const CAPACITY_MARKERS = ['overloaded', 'model_capacity', 'capacity', 'try again later'];
 
-const UNSUPPORTED_MARKERS = ['not found', 'not supported', 'unknown model', 'does not exist'];
+/**
+ * Body fragments of a 404 that mean the model is unknown. `not_found_error` is Anthropic's
+ * ("model: claude-…", answered on 2026-11-10 for an id that cannot exist).
+ */
+const UNSUPPORTED_MARKERS = ['not found', 'not_found_error', 'not supported', 'unknown model', 'does not exist'];
 
 /**
  * Codes an OpenAI-style upstream answers a 400 with when the model, not the request, is the problem:

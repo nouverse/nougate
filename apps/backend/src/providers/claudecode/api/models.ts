@@ -7,9 +7,10 @@
  * lists are united (`UnitedAccountLists`).
  */
 
-import { fetchModelList, LiveModelList, UnitedAccountLists } from '@/core/live-models';
+import { fetchModelList, LiveModelList } from '@/core/live-models';
 import type { IModelSpec } from '@/core/interfaces';
 import { getAccounts } from '../auth/manager';
+import { claudeCodeAccountLists } from '../auth/account-models';
 import type { ClaudeCodeAccount } from '../auth/types';
 import { authHeaders, credentialKind } from '../auth/credential';
 import { claudeCodeModelRegistry, claudeLiveSpecs, type ClaudeListedModel } from '../config/model-specs';
@@ -54,11 +55,9 @@ async function accountModels(account: ClaudeCodeAccount): Promise<IModelSpec[]> 
   return claudeLiveSpecs(models);
 }
 
-const lists = new UnitedAccountLists<ClaudeCodeAccount, IModelSpec>();
-
 /** What Anthropic lists for the credentials now, united, or `null` with no credential to ask. */
 export async function fetchClaudeModels(): Promise<IModelSpec[] | null> {
-  return lists.ask({
+  return claudeCodeAccountLists.ask({
     accounts: getAccounts().filter((account) => !account.invalidatedAt),
     accountId: (account) => account.id,
     ask: accountModels,

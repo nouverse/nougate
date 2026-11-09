@@ -121,12 +121,15 @@ export class ClaudeCodeExecutor {
     let attempts = 0;
     /** Reset per account: a refresh is offered once per credential, not once per request. */
     let refreshedThisAccount = false;
+    /** The last "model not offered" answer: given to the client when no other credential is left. */
+    let modelRefusal: ModelUnavailableError | undefined;
 
     while (attempts < maxAttempts) {
       attempts++;
 
       const account = await getBestAccount(modelId, tried, options.conversation);
       if (!account) {
+        if (modelRefusal) throw modelRefusal;
         throw new Error(
           tried.length > 0
             ? `Every Claude Code credential failed or is cooling down (${tried.length} tried).`
@@ -245,10 +248,14 @@ export class ClaudeCodeExecutor {
           // this account's fault and no other will answer differently. Rotating would drop the health
           // score of every healthy credential over a caller's typo, then report it as "failed after
           // N attempts" — hiding the real cause.
+          // A model this credential's plan is not offered may be on another's: the next eligible
+          // credential is asked, and this one loses nothing. The refusal is the answer only once no
+          // credential is left.
           if (classification.kind === 'model_unsupported') {
-            throw new ModelUnavailableError(
+            modelRefusal = new ModelUnavailableError(
               `Anthropic does not offer "${modelId}". Check the model list on the provider page.`,
             );
+            continue;
           }
 
           console.error(
@@ -290,6 +297,7 @@ export class ClaudeCodeExecutor {
       }
     }
 
+    if (modelRefusal) throw modelRefusal;
     throw new Error(`Upstream request failed after ${attempts} attempts.`);
   }
 }

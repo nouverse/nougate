@@ -11,11 +11,14 @@
  * fakes in a scratch file, and `fetch` is stubbed: nothing reaches Anthropic.
  */
 
-import { afterAll, afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as manager from '@/providers/claudecode/auth/manager';
+import { ModelUnavailableError } from '@/core/upstream-errors';
+import { loadProxyConfig } from '@/config/manager';
+import { ClaudeCodeExecutor } from '@/providers/claudecode/upstream/executor';
 import { claudeCodeModelList } from '@/providers/claudecode/api/models';
 import { claudeCodeModelRegistry, claudeLiveSpecs, type ClaudeListedModel } from '@/providers/claudecode/config/model-specs';
 import { ClaudeCodeProvider } from '@/providers/claudecode';
@@ -253,5 +256,71 @@ describe('with more than one credential', () => {
     secondAnswer = () => new Response('{"type":"error"}', { status: 500 });
     await claudeCodeModelList.refresh();
     expect(claudeCodeModelRegistry.listModelIds()).toContain('claude-test-only-second');
+  });
+});
+
+describe("routing by each credential's own list", () => {
+  // The executor's retry budget reads the proxy config.
+  beforeAll(async () => {
+    await loadProxyConfig();
+  });
+
+  const notFound = (model: string) => Response.json({ type: 'error', error: { type: 'not_found_error', message: `model: ${model}` } }, { status: 404 });
+  const answered = (model: string) =>
+    Response.json({ id: 'msg_1', type: 'message', role: 'assistant', model, content: [{ type: 'text', text: 'ok' }], stop_reason: 'end_turn', usage: { input_tokens: 1, output_tokens: 1 } });
+
+  /** Two API-key credentials; the second's list has a model the first's lacks. */
+  async function twoCredentials() {
+    const first = await manager.addAccount('sk-ant-api03-first-key');
+    const second = await manager.addAccount('sk-ant-api03-second-key');
+    globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) =>
+      new Headers(init?.headers).get('x-api-key') === 'sk-ant-api03-first-key'
+        ? page(LIVE, false)
+        : page([{ type: 'model', id: 'claude-test-only-second', display_name: 'Only Second', max_tokens: 64_000 } as any], false)) as typeof fetch;
+    await claudeCodeModelList.refresh();
+    return { first, second };
+  }
+
+  test('a model goes to the credential whose list has it, whichever is first', async () => {
+    const { first, second } = await twoCredentials();
+    expect((await manager.getBestAccount('claude-test-only-second'))?.id).toBe(second.id);
+    expect((await manager.getBestAccount('claude-opus-5-5'))?.id).toBe(first.id);
+    // A model no list has may go to any credential.
+    expect((await manager.getBestAccount('claude-nowhere-9'))?.id).toBe(first.id);
+  });
+
+  test('a credential that does not have the model hands the request to the next, at no cost', async () => {
+    await twoCredentials();
+    const health = manager.getAccounts().map((account) => account.healthScore);
+    const asked: string[] = [];
+    globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+      const key = String(new Headers(init?.headers).get('x-api-key'));
+      asked.push(key);
+      return key === 'sk-ant-api03-first-key' ? notFound('claude-nowhere-9') : answered('claude-nowhere-9');
+    }) as typeof fetch;
+
+    const spec = claudeCodeModelRegistry.getSpec('claude-nowhere-9')!;
+    const result = await new ClaudeCodeExecutor().execute({ body: { messages: [{ role: 'user', content: 'hi' }], max_tokens: 8 }, modelSpec: spec });
+
+    expect(asked).toEqual(['sk-ant-api03-first-key', 'sk-ant-api03-second-key']);
+    expect(result.response.status).toBe(200);
+    expect(manager.getAccounts()[0]!.healthScore).toBe(health[0]!);
+  });
+
+  test('when no credential has it, that answer is the error, and none pays', async () => {
+    await twoCredentials();
+    const health = manager.getAccounts().map((account) => account.healthScore);
+    const asked: string[] = [];
+    globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+      asked.push(String(new Headers(init?.headers).get('x-api-key')));
+      return notFound('claude-nowhere-9');
+    }) as typeof fetch;
+
+    const spec = claudeCodeModelRegistry.getSpec('claude-nowhere-9')!;
+    const thrown = await new ClaudeCodeExecutor().execute({ body: { messages: [{ role: 'user', content: 'hi' }], max_tokens: 8 }, modelSpec: spec }).catch((error: unknown) => error);
+
+    expect(asked).toEqual(['sk-ant-api03-first-key', 'sk-ant-api03-second-key']);
+    expect(thrown).toBeInstanceOf(ModelUnavailableError);
+    expect(manager.getAccounts().map((account) => account.healthScore)).toEqual(health);
   });
 });
