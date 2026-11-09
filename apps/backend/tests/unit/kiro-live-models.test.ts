@@ -17,8 +17,10 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { kiroAccounts } from '@/providers/kiro/auth/manager';
+import { kiroAccountCatalogues } from '@/providers/kiro/auth/account-models';
+import { loadProxyConfig } from '@/config/manager';
 import type { KiroAccount } from '@/providers/kiro/auth/types';
-import { kiroModelRegistry } from '@/providers/kiro/config/model-specs';
+import { catalogToModelDefs, kiroModelRegistry } from '@/providers/kiro/config/model-specs';
 import { getKiroConfig } from '@/providers/kiro/config/provider-config';
 import { kiroModelList } from '@/providers/kiro';
 import { convertOpenAIMessages } from '@/providers/kiro/mappers/openai';
@@ -223,5 +225,29 @@ describe('with more than one account', () => {
     secondAnswer = () => new Response('{"message":"denied"}', { status: 403 });
     await kiroModelList.refresh();
     expect(kiroModelRegistry.listModelIds()).toContain('claude-opus-4.5');
+  });
+});
+
+describe("routing by each account's own catalogue", () => {
+  // Ranking two accounts reads the scoring config.
+  beforeAll(async () => {
+    await loadProxyConfig();
+  });
+
+  test('a model goes to the account whose catalogue has it, a variant to its model, and one no catalogue has to any', async () => {
+    const second = { ...account, id: 'kiro-second', label: 'kiro-second', accessToken: 'test-kiro-second' };
+    kiroAccounts.load({ accounts: [{ ...account }, second] });
+    await kiroAccountCatalogues.ask({
+      accounts: kiroAccounts.list(),
+      accountId: (item) => item.id,
+      ask: async (item) => catalogToModelDefs(item.id === 'kiro-second' ? [{ modelId: 'claude-opus-4.5' }] : CATALOGUE.models),
+      key: (def) => def.id.toLowerCase(),
+    });
+
+    expect(kiroAccounts.best({ modelId: 'claude-opus-4.5' })?.id).toBe('kiro-second');
+    expect(kiroAccounts.best({ modelId: 'claude-opus-4.5-thinking-agentic' })?.id).toBe('kiro-second');
+    expect(kiroAccounts.best({ modelId: 'minimax-m2.5' })?.id).toBe('kiro-test');
+    expect(kiroAccounts.best({ modelId: 'MiniMax-M2.5' })?.id).toBe('kiro-test');
+    expect(kiroAccounts.best({ modelId: 'model-no-catalogue-has' })).not.toBeNull();
   });
 });

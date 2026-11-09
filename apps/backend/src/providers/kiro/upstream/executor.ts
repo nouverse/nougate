@@ -89,7 +89,15 @@ type SurfaceOutcome =
   | { kind: 'success'; reader: KiroResponseReader; primed: KiroEvent[] }
   | { kind: 'auth'; status: number }
   | { kind: 'throttled'; waitMs?: number }
-  | { kind: 'server'; status?: number; message: string };
+  | { kind: 'server'; status?: number; message: string }
+  /** The account may not call this model: another account may. */
+  | { kind: 'model_refused'; message: string };
+
+/**
+ * Kiro's reason for a model the account may not call: 400, "Invalid model. Please select a different
+ * model to continue." (2026-11-09).
+ */
+const MODEL_REFUSED_REASON = 'INVALID_MODEL_ID';
 
 export class KiroExecutor {
   constructor(private readonly pool: KiroAccountPool = kiroAccounts) {}
@@ -101,6 +109,8 @@ export class KiroExecutor {
     const timeoutMs = modelSpec.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     const tried: string[] = [];
     let attempts = 0;
+    /** The last "model not callable" answer: given to the client when no other account is left. */
+    let modelRefusal: ProviderResponseError | undefined;
 
     while (attempts < MAX_ACCOUNT_ATTEMPTS) {
       const account = this.pool.best({ modelId, excludeIds: tried, clientId: options.clientId });
@@ -158,8 +168,16 @@ export class KiroExecutor {
           this.pool.recordResult(account.id, false, { modelId, status: outcome.status });
           console.warn(`[kiro] ${account.label} failed on every surface: ${outcome.message.slice(0, 200)}`);
           continue;
+
+        // A model this account may not call may be another's to call: the next eligible account is
+        // asked, and this one loses nothing. The refusal is the answer only once none is left.
+        case 'model_refused':
+          modelRefusal = new ProviderResponseError(outcome.message, { status: 400, clientCode: 'upstream_error' });
+          continue;
       }
     }
+
+    if (modelRefusal) throw modelRefusal;
 
     if (tried.length === 0) {
       throw new ProviderUnavailableError(
@@ -244,6 +262,10 @@ export class KiroExecutor {
         continue;
       }
       if (response.status === 429) return { kind: 'throttled', waitMs: retryAfterMs(response) };
+      if (response.status === 400 && text.includes(MODEL_REFUSED_REASON)) {
+        console.warn(`[kiro] ${endpoint.surface} refused the model for this account: ${text.slice(0, 200)}`);
+        return { kind: 'model_refused', message: upstreamMessage(text, 'Kiro refused the model') };
+      }
       if (response.status === 400 || response.status === 413 || response.status === 422) {
         console.error(`[kiro] ${response.status} from ${endpoint.surface}: ${text.slice(0, 300)}`);
         throw new ProviderResponseError(upstreamMessage(text, 'Kiro refused the request'), {

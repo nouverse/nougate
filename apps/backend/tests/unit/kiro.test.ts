@@ -787,6 +787,46 @@ describe('kiro executor', () => {
     expect(accounts.find(account.id)!.healthScore).toBe(100);
   });
 
+  test("an account that may not call the model hands the request to the next, at no cost", async () => {
+    const { pool: accounts } = pool();
+    const a = accounts.upsert(socialAccount({ email: 'a@x', refreshToken: 'aor-a' }));
+    const b = accounts.upsert(socialAccount({ email: 'b@x', refreshToken: 'aor-b', accessToken: 'token-b-000000000000' }));
+    accounts.recordResult(b.id, false, { status: 500 }); // make `a` the first choice
+    const healthA = accounts.find(a.id)!.healthScore;
+    const asked: string[] = [];
+
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      const auth = (init.headers as Record<string, string>).Authorization;
+      asked.push(auth.includes('token-b') ? 'b' : 'a');
+      return auth.includes('token-b')
+        ? eventStream(event('assistantResponseEvent', { content: 'from b' }))
+        : Response.json({ message: 'Invalid model. Please select a different model to continue.', reason: 'INVALID_MODEL_ID' }, { status: 400 });
+    }) as unknown as typeof fetch;
+
+    const result = await new KiroExecutor(accounts).execute({ prepared: prepared(), modelSpec: spec });
+    expect(asked).toEqual(['a', 'b']);
+    expect(result.accountId).toBe(b.id);
+    expect(accounts.find(a.id)!.healthScore).toBe(healthA);
+  });
+
+  test('when no account may call the model, its refusal is the answer, and no account pays', async () => {
+    const { pool: accounts } = pool();
+    const a = accounts.upsert(socialAccount({ email: 'a@x', refreshToken: 'aor-a' }));
+    const b = accounts.upsert(socialAccount({ email: 'b@x', refreshToken: 'aor-b', accessToken: 'token-b-000000000000' }));
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls += 1;
+      return Response.json({ message: 'Invalid model. Please select a different model to continue.', reason: 'INVALID_MODEL_ID' }, { status: 400 });
+    }) as unknown as typeof fetch;
+
+    await expect(new KiroExecutor(accounts).execute({ prepared: prepared(), modelSpec: spec })).rejects.toMatchObject({
+      status: 400,
+      message: 'Invalid model. Please select a different model to continue.',
+    });
+    expect(calls).toBe(2);
+    expect([accounts.find(a.id)!.healthScore, accounts.find(b.id)!.healthScore]).toEqual([100, 100]);
+  });
+
   test('no accounts is a 503 the failover can move past', async () => {
     const { pool: accounts } = pool();
     await expect(new KiroExecutor(accounts).execute({ prepared: prepared(), modelSpec: spec })).rejects.toMatchObject({ status: 503 });

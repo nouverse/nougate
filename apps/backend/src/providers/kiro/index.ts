@@ -12,14 +12,15 @@
 
 import type { AccountRequestOptions, DeviceFlowPollResult, IAccount, IModelRegistry, IProvider, IProviderQuota, ProviderExecuteParams, AccountCopy } from '@/core/interfaces';
 import { normalizeJitterConfig, type JitterConfig } from '@/core/jitter';
-import { LiveModelList, UnitedAccountLists } from '@/core/live-models';
+import { LiveModelList } from '@/core/live-models';
+import { kiroAccountCatalogues } from './auth/account-models';
 import { ACCOUNT_WIDE, initKiroAccounts, kiroAccounts, type NewKiroAccount } from './auth/manager';
 import { pollDeviceFlow, startDeviceFlow } from './auth/device-flow';
 import { fetchModelCatalog, fetchProfileArn } from './auth/profile';
 import { fetchUsageLimits, getPoolQuotas, invalidateQuotaCache } from './auth/quota';
 import { importToken } from './auth/token-import';
 import type { KiroAccount, SelectionStrategy } from './auth/types';
-import { catalogToModelDefs, kiroModelRegistry, type KiroModelDef } from './config/model-specs';
+import { catalogToModelDefs, kiroModelRegistry } from './config/model-specs';
 import { getKiroConfig, loadKiroConfig, updateKiroConfig, type KiroConfig } from './config/provider-config';
 import { AnthropicStreamEncoder, buildAnthropicMessage, convertAnthropicMessages, extractSystemText, newMessageId } from './mappers/anthropic';
 import { OpenAIStreamEncoder, buildOpenAICompletion, convertOpenAIMessages } from './mappers/openai';
@@ -28,8 +29,6 @@ import { collectKiroEvents, streamKiroResponse } from './mappers/response';
 import { KiroExecutor, ensureFreshCredential } from './upstream/executor';
 
 const HOUR_MS = 3_600_000;
-
-const catalogues = new UnitedAccountLists<KiroAccount, KiroModelDef>();
 
 /**
  * The models `ListAvailableModels` lists: the list, read back from disk at start, asked for then, after
@@ -41,7 +40,7 @@ export const kiroModelList = new LiveModelList({
   provider: 'kiro',
   fetch: async () => {
     if (!getKiroConfig().features.liveModelCatalog) return null;
-    return catalogues.ask({
+    return kiroAccountCatalogues.ask({
       accounts: kiroAccounts.list().filter((account) => !account.invalidatedAt),
       accountId: (account) => account.id,
       ask: async (account) => {

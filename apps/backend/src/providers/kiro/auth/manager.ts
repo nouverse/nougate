@@ -9,6 +9,8 @@
 import { randomUUID } from 'node:crypto';
 import { getProxyConfig } from '@/config/manager';
 import type { RotationConfig, ScoringConfig } from '@/config/types';
+import { kiroAccountCatalogues } from './account-models';
+import { resolveKiroModel } from '../config/model-specs';
 import { adminEventBus } from '@/core/events';
 import { assertAccountSlotAvailable, capRotationPool } from '@/core/rotation-pool';
 import { loadAccountsFile, saveAccountsFile } from './storage';
@@ -39,6 +41,8 @@ export interface KiroPoolDeps {
   rotation(): RotationConfig;
   /** Told whenever accounts or cooldowns change, so the dashboard's SSE feed stays live. */
   notify?(event: 'update' | 'cooldown', payload: unknown): void;
+  /** The accounts a request for a model may go to, by each account's own catalogue. All, when absent. */
+  eligible?(accounts: KiroAccount[], modelId: string | undefined): KiroAccount[];
 }
 
 export class KiroAccountPool {
@@ -234,9 +238,10 @@ export class KiroAccountPool {
     const now = Date.now();
     const scope = cooldownScope(options.modelId);
     const exclude = options.excludeIds ?? [];
-    const usable = this.accounts.filter(
+    const candidates = this.accounts.filter(
       (account) => !account.invalidatedAt && !exclude.includes(account.id) && this.cooldownUntil(account, scope) <= now,
     );
+    const usable = this.deps.eligible ? this.deps.eligible(candidates, options.modelId) : candidates;
     if (usable.length === 0) return null;
 
     if (options.clientId && exclude.length === 0) {
@@ -298,6 +303,10 @@ export const kiroAccounts = new KiroAccountPool({
   scoring: () => getProxyConfig().scoring,
   rotation: () => getProxyConfig().rotation,
   notify: (event, payload) => adminEventBus.emit(event, payload),
+  // An account whose own catalogue lacks the model is passed over while another's has it. Matched on
+  // the model Kiro is sent, without the gateway's variant suffix, as the catalogue spells it.
+  eligible: (accounts, modelId) =>
+    kiroAccountCatalogues.eligible(accounts, (account) => account.id, modelId ? resolveKiroModel(modelId).upstream.toLowerCase() : undefined),
 });
 
 export async function initKiroAccounts(): Promise<void> {

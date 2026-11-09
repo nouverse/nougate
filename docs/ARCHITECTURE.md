@@ -243,9 +243,8 @@ memory; nothing on the request path waits on the network.
 
 Accounts on different plans are offered different models, so every account is asked, one after
 another (at most twenty), and the list is the union; an account that cannot answer keeps what its last
-answer listed, and only when none answers does the last list stay. Antigravity also keeps each
-account's own list, to send a request only to an account that has the model (§5); the other providers
-do not route by account.
+answer listed, and only when none answers does the last list stay. Each account's own list is kept
+beside the union, and decides where a request goes (§5).
 
 What each offers is its own rule, read from its upstream's fields: Codex what its CLI's picker shows;
 Claude Code every listed model, a dated snapshot reachable by its undated id; Copilot the chat models
@@ -344,6 +343,15 @@ request of a conversation to the next account, which wrote the conversation's pr
 its own cache instead of reading it. Cooling, invalidated, removed or already tried this
 request, the account gives the conversation up to whichever answers instead. Kept in
 memory for an hour after the last answer, at most ten thousand conversations.
+
+**Every account is offered the models its own list has.** Codex, Claude Code, Copilot and Kiro send
+a request for a model to an account whose last list has it, or to one with no list yet; only a model
+no account's list has — an id asked for by name — may go to any account, and the upstream's answer
+decides. An account that answers it does not have the model (Codex's 400 `model_not_found`,
+Anthropic's 404 `not_found_error`, Copilot's 400 `model_not_supported`, Kiro's 400
+`INVALID_MODEL_ID`) hands the request to the next eligible account and loses nothing; that answer
+reaches the client only once no account is left. Antigravity keeps its accounts' lists on the
+accounts themselves, and is stricter, for the reason below.
 
 **An Antigravity account is offered only the models its own list has.** Google moves
 accounts to a new model generation one by one, and an account asked for a model it does
