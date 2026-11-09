@@ -383,10 +383,27 @@ describe("a provider's list as the union of its accounts' lists", () => {
     expect(asked).toHaveLength(MAX_ACCOUNTS_ASKED);
   });
 
+  test("each account's list decides where a model goes: one that lists it, one with no list yet, or any when none lists it", async () => {
+    const lists = new UnitedAccountLists<Account, Entry>();
+    await lists.ask(source([{ id: 'a' }, { id: 'b' }], { a: [entry('only-a', 'a')], b: [entry('only-b', 'b')] }));
+    const all = [{ id: 'a' }, { id: 'b' }, { id: 'fresh' }];
+    const ids = (accounts: Account[]) => accounts.map((account) => account.id);
+
+    expect(lists.listed('a', 'only-a')).toBe(true);
+    expect(lists.listed('a', 'only-b')).toBe(false);
+    expect(lists.listed('fresh', 'only-a')).toBeUndefined();
+    expect(ids(lists.eligible(all, (account) => account.id, 'only-a'))).toEqual(['a', 'fresh']);
+    expect(ids(lists.eligible(all, (account) => account.id, 'only-b'))).toEqual(['b', 'fresh']);
+    expect(ids(lists.eligible(all, (account) => account.id, 'nowhere'))).toEqual(['a', 'b', 'fresh']);
+    expect(ids(lists.eligible(all, (account) => account.id, undefined))).toEqual(['a', 'b', 'fresh']);
+  });
+
   test('an account removed is forgotten: back again and failing, it brings none of its old models', async () => {
     const lists = new UnitedAccountLists<Account, Entry>();
     await lists.ask(source([{ id: 'a' }, { id: 'b' }], { a: [entry('only-a', 'a')], b: [entry('only-b', 'b')] }));
     await lists.ask(source([{ id: 'a' }], { a: [entry('only-a', 'a')] }));
+    // What only the removed account listed no longer keeps the others from a request for it.
+    expect(lists.eligible([{ id: 'a' }], (account) => account.id, 'only-b')).toEqual([{ id: 'a' }]);
     const united = await lists.ask(source([{ id: 'a' }, { id: 'b' }], { a: [entry('only-a', 'a')], b: new Error('down') }));
     expect(united?.map((item) => item.id)).toEqual(['only-a']);
   });

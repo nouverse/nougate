@@ -15,7 +15,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { addOAuthAccount, getAccounts, initManager } from '@/providers/codex/auth/manager';
+import { addOAuthAccount, getAccounts, getBestAccount, initManager } from '@/providers/codex/auth/manager';
 import { ProviderResponseError } from '@/core/upstream-errors';
 import { CodexExecutor } from '@/providers/codex/upstream/executor';
 import { codexModelList } from '@/providers/codex/api/models';
@@ -272,5 +272,85 @@ describe('with more than one account', () => {
       await initManager();
       rmSync(otherHome, { recursive: true, force: true });
     }
+  });
+});
+
+describe("routing by each account's own list", () => {
+  const otherHome = mkdtempSync(join(tmpdir(), 'nougate-codex-routing-'));
+  const PRO = { models: [{ slug: 'gpt-6-astra', display_name: 'GPT-6-Astra', visibility: 'list', context_window: 272000 }] };
+  const sse = (...events: object[]) =>
+    new Response(events.map((event: any) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(''), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  const answered = () =>
+    sse(
+      { type: 'response.created', response: { id: 'resp_1', status: 'in_progress' } },
+      { type: 'response.output_text.delta', output_index: 0, delta: 'ok' },
+      { type: 'response.completed', response: { usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } },
+    );
+  const refused = (model: string) =>
+    Response.json({ detail: `The '${model}' model is not supported when using Codex with a ChatGPT account.`, error: { type: 'invalid_request_error', code: 'model_not_found', message: `The '${model}' model is not supported when using Codex with a ChatGPT account.` } }, { status: 400 });
+
+  beforeAll(async () => {
+    process.env.NOUGATE_HOME = otherHome;
+    await initManager();
+    await addOAuthAccount({ accessToken: 'test-access-plus', refreshToken: 'test-refresh-plus', expiresInSeconds: 10 * 24 * 3600, label: 'plus' });
+    await addOAuthAccount({ accessToken: 'test-access-pro', refreshToken: 'test-refresh-pro', expiresInSeconds: 10 * 24 * 3600, label: 'pro' });
+    globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) =>
+      new Headers(init?.headers).get('authorization') === 'Bearer test-access-plus' ? Response.json(LIVE) : Response.json(PRO)) as typeof fetch;
+    await codexModelList.refresh();
+  });
+
+  afterAll(async () => {
+    process.env.NOUGATE_HOME = home;
+    await initManager();
+    rmSync(otherHome, { recursive: true, force: true });
+  });
+
+  test('a model goes to the account whose list has it, whichever is first', async () => {
+    expect((await getBestAccount('gpt-6-astra'))?.label).toBe('pro');
+    expect((await getBestAccount('gpt-6-luna'))?.label).toBe('plus');
+  });
+
+  test('an account with no list yet may be asked, and a model no list has may go to any account', async () => {
+    await addOAuthAccount({ accessToken: 'test-access-new', refreshToken: 'test-refresh-new', expiresInSeconds: 10 * 24 * 3600, label: 'new' });
+    try {
+      const pro = getAccounts().find((account) => account.label === 'pro')!.id;
+      expect((await getBestAccount('gpt-6-astra', [pro]))?.label).toBe('new');
+      expect((await getBestAccount('gpt-7-nowhere'))?.label).toBe('plus');
+    } finally {
+      getAccounts().splice(getAccounts().findIndex((account) => account.label === 'new'), 1);
+    }
+  });
+
+  test('an account that answers "not supported" hands the request to the next, at no cost', async () => {
+    const health = getAccounts().map((account) => account.healthScore);
+    const asked: string[] = [];
+    globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+      const token = String(new Headers(init?.headers).get('authorization'));
+      asked.push(token);
+      return token === 'Bearer test-access-plus' ? refused('gpt-7-nowhere') : answered();
+    }) as typeof fetch;
+
+    const result = await new CodexExecutor().execute({ body: { input: [] }, modelSpec: getModelSpec('gpt-7-nowhere')! });
+
+    expect(asked).toEqual(['Bearer test-access-plus', 'Bearer test-access-pro']);
+    expect(await result.response.text()).toContain('ok');
+    expect(getAccounts()[0]!.healthScore).toBe(health[0]!);
+  });
+
+  test('when every account answers "not supported", that answer is the error, and no account pays', async () => {
+    const health = getAccounts().map((account) => account.healthScore);
+    const asked: string[] = [];
+    globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+      asked.push(String(new Headers(init?.headers).get('authorization')));
+      return refused('gpt-7-nowhere');
+    }) as typeof fetch;
+
+    const thrown = await new CodexExecutor().execute({ body: { input: [] }, modelSpec: getModelSpec('gpt-7-nowhere')! }).catch((error: unknown) => error);
+
+    expect(asked).toEqual(['Bearer test-access-plus', 'Bearer test-access-pro']);
+    expect(thrown).toBeInstanceOf(ProviderResponseError);
+    expect(thrown).toMatchObject({ status: 400 });
+    expect((thrown as Error).message).toContain('not supported when using Codex');
+    expect(getAccounts().map((account) => account.healthScore)).toEqual(health);
   });
 });

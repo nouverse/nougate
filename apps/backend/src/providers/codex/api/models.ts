@@ -7,9 +7,10 @@
  * claim. Every account is asked and the lists are united: plans differ (`UnitedAccountLists`).
  */
 
-import { fetchModelList, LiveModelList, UnitedAccountLists } from '@/core/live-models';
+import { fetchModelList, LiveModelList } from '@/core/live-models';
 import type { IModelSpec } from '@/core/interfaces';
 import { getAccounts } from '../auth/manager';
+import { codexAccountLists } from '../auth/account-models';
 import type { CodexAccount } from '../auth/types';
 import { codexLiveSpecs, codexModelRegistry, type CodexListedModel } from '../config/model-specs';
 import { getCodexConfig } from '../config/provider-config';
@@ -34,11 +35,9 @@ async function accountModels(account: CodexAccount): Promise<IModelSpec[]> {
   return codexLiveSpecs(data.models);
 }
 
-const lists = new UnitedAccountLists<CodexAccount, IModelSpec>();
-
 /** What ChatGPT offers the accounts now, united, or `null` with no account to ask. */
 export async function fetchCodexModels(): Promise<IModelSpec[] | null> {
-  return lists.ask({
+  return codexAccountLists.ask({
     accounts: getAccounts().filter((account) => !account.invalidatedAt),
     accountId: (account) => account.id,
     ask: accountModels,

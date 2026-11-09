@@ -7,7 +7,7 @@
 
 import { randomUUID } from 'node:crypto';
 import type { IModelSpec } from '@/core/interfaces';
-import { ProviderResponseError, upstreamMessage } from '@/core/upstream-errors';
+import { classifyUpstreamError, ProviderResponseError, upstreamMessage } from '@/core/upstream-errors';
 import { reframeResponse } from '@/core/response-framing';
 import {
   cooldownScope,
@@ -137,12 +137,15 @@ export class CodexExecutor {
     const tried: string[] = [];
     let attempts = 0;
     let refreshedThisAccount = false;
+    /** The last "model not supported" answer: given to the client when no other account is left. */
+    let modelRefusal: ProviderResponseError | undefined;
 
     accounts: while (attempts < maxAttempts) {
       attempts++;
 
       const account = await getBestAccount(modelId, tried, options.conversation);
       if (!account) {
+        if (modelRefusal) throw modelRefusal;
         throw new Error(
           tried.length > 0
             ? `Every Codex credential failed or is cooling down (${tried.length} tried).`
@@ -236,10 +239,18 @@ export class CodexExecutor {
           // up on it: asking for six models a plan does not include took a healthy credential from
           // 100 to 0 in six requests, and left a red badge describing a caller's typo.
           if (response.status >= 400 && response.status < 500) {
-            throw new ProviderResponseError(upstreamMessage(text, 'the upstream refused the request'), {
+            const refusal = new ProviderResponseError(upstreamMessage(text, 'the upstream refused the request'), {
               status: response.status,
               clientCode: 'upstream_error',
             });
+            // A model this account's plan is not served ("not supported when using Codex with a ChatGPT
+            // account") may be served on another's: the next eligible account is asked, and this one
+            // loses nothing. The refusal is the answer only once no account is left.
+            if (classifyUpstreamError({ status: response.status, body: text }).kind === 'model_unsupported') {
+              modelRefusal = refusal;
+              continue;
+            }
+            throw refusal;
           }
 
           await updateAccountUsage(account.id, false);
@@ -334,6 +345,7 @@ export class CodexExecutor {
       }
     }
 
+    if (modelRefusal) throw modelRefusal;
     throw new Error(`Upstream request failed after ${attempts} attempts.`);
   }
 }

@@ -125,15 +125,24 @@ export interface AccountListSource<A, T> {
  * provider's. Each is asked in turn, at most `MAX_ACCOUNTS_ASKED`. One that cannot answer keeps what
  * its last answer listed, so a failing account does not take from the list what only it had; when
  * none answers, `ask` throws and the provider's last list stays.
+ *
+ * What each account listed is kept too, for routing (`eligible`): a request for a model goes to an
+ * account that has it.
  */
 export class UnitedAccountLists<A, T> {
   private readonly last = new Map<string, T[]>();
+  private readonly lastKeys = new Map<string, Set<string>>();
 
   async ask(source: AccountListSource<A, T>): Promise<T[] | null> {
     const accounts = source.accounts.slice(0, MAX_ACCOUNTS_ASKED);
     if (accounts.length === 0) return null;
     const asked = new Set(accounts.map(source.accountId));
-    for (const id of [...this.last.keys()]) if (!asked.has(id)) this.last.delete(id);
+    for (const id of [...this.last.keys()]) {
+      if (!asked.has(id)) {
+        this.last.delete(id);
+        this.lastKeys.delete(id);
+      }
+    }
 
     const united = new Map<string, T>();
     let answered = 0;
@@ -144,6 +153,7 @@ export class UnitedAccountLists<A, T> {
       try {
         entries = await source.ask(account);
         this.last.set(id, entries);
+        this.lastKeys.set(id, new Set(entries.map(source.key)));
         answered += 1;
       } catch (error) {
         failure ??= error;
@@ -156,6 +166,23 @@ export class UnitedAccountLists<A, T> {
     }
     if (answered === 0) throw failure;
     return [...united.values()];
+  }
+
+  /** Whether an account's last list has a model, by key; `undefined` when the account has no list yet. */
+  listed(accountId: string, key: string): boolean | undefined {
+    return this.lastKeys.get(accountId)?.has(key);
+  }
+
+  /**
+   * The accounts a request for a model may go to: those whose last list has it, and those with no list
+   * yet. When no account's list has it — an id asked for by name — every account may, and the
+   * upstream's answer decides. No key (no model named) leaves the accounts as they are.
+   */
+  eligible<X>(accounts: X[], accountId: (account: X) => string, key: string | undefined): X[] {
+    if (key === undefined) return accounts;
+    const listedAnywhere = [...this.lastKeys.values()].some((keys) => keys.has(key));
+    if (!listedAnywhere) return accounts;
+    return accounts.filter((account) => this.listed(accountId(account), key) !== false);
   }
 }
 

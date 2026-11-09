@@ -12,6 +12,7 @@ import type { CodexAccount, SelectionStrategy } from './types';
 import { credentialHint, decodeAccountId } from './credential';
 import { CODEX_OAUTH, isRefreshStale } from './oauth';
 import { loadConfig, saveConfig } from './storage';
+import { codexAccountLists } from './account-models';
 
 let accounts: CodexAccount[] = [];
 let strategy: SelectionStrategy = 'healthiest';
@@ -177,9 +178,15 @@ export async function getBestAccount(
   conversation?: string,
 ): Promise<CodexAccount | null> {
   const scope = cooldownScope(modelId);
-  const usable = accounts.filter(
-    (account) =>
-      !account.invalidatedAt && !excludeIds.includes(account.id) && !cooling(account, scope),
+  // An account whose own model list lacks the model is passed over while another's has it: plans
+  // differ. When no account's list has it — an id asked for by name — any account may be asked.
+  const usable = codexAccountLists.eligible(
+    accounts.filter(
+      (account) =>
+        !account.invalidatedAt && !excludeIds.includes(account.id) && !cooling(account, scope),
+    ),
+    (account) => account.id,
+    modelId,
   );
   if (usable.length === 0) return null;
 

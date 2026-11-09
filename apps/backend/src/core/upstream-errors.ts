@@ -59,12 +59,14 @@ const CAPACITY_MARKERS = ['overloaded', 'model_capacity', 'capacity', 'try again
 const UNSUPPORTED_MARKERS = ['not found', 'not supported', 'unknown model', 'does not exist'];
 
 /**
- * Codes an OpenAI-style upstream such as Copilot answers a 400 with when the model, not the account,
- * is the problem: `unsupported_api_for_model` for one served on another endpoint ("model … is not
- * accessible via the /chat/completions endpoint"), `model_not_supported` for one it does not know
- * ("The requested model is not supported.", Copilot, 2026-11-10). Every account gets the same answer.
+ * Codes an OpenAI-style upstream answers a 400 with when the model, not the request, is the problem:
+ * `unsupported_api_for_model` for one served on another endpoint ("model … is not accessible via the
+ * /chat/completions endpoint", Copilot), `model_not_supported` for one it does not know ("The requested
+ * model is not supported.", Copilot, 2026-11-10), `model_not_found` for one the account's plan is not
+ * served ("The 'gpt-5.5' model is not supported when using Codex with a ChatGPT account.", Codex,
+ * 2026-11-10). No account's health pays for it; another account, on another plan, may have the model.
  */
-const MODEL_REFUSED_MARKERS = ['unsupported_api_for_model', 'model_not_supported'];
+const MODEL_REFUSED_MARKERS = ['unsupported_api_for_model', 'model_not_supported', 'model_not_found'];
 
 function contains(haystack: string, needles: string[]): boolean {
   return needles.some((needle) => haystack.includes(needle));
@@ -138,8 +140,8 @@ export function classifyUpstreamError({ status, body, error }: ClassifyInput): U
     return {
       kind: 'model_unsupported',
       retryable: false,
-      // As above: the model is the problem, so another account cannot change the answer. Read as
-      // unknown, it was retried on every account and charged to each, for a request that could not work.
+      // The model is the problem, not the account: read as unknown, it was retried on every account and
+      // charged to each. An executor may still ask an account on another plan, at no cost to this one.
       rotate: false,
       modelScoped: true,
       message: 'The upstream does not serve this model here.',
