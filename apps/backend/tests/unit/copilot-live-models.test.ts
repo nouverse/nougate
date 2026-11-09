@@ -17,7 +17,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { getAccounts } from '@/providers/copilot/auth/manager';
 import type { CopilotAccount } from '@/providers/copilot/auth/types';
-import { copilotLiveSpecs, copilotModelRegistry } from '@/providers/copilot/config/model-specs';
+import { copilotLiveSpecs, copilotModelRegistry, servedOnChatCompletions } from '@/providers/copilot/config/model-specs';
 import { copilotModelList } from '@/providers/copilot/upstream/models';
 
 const chat = (
@@ -71,6 +71,29 @@ const LIVE = {
     // Not in the 2026-11-09 answer: a model an organisation's admin turned off.
     chat('claude-fable-6', 'Claude Fable 6', ['/chat/completions'], { max_output_tokens: 64000 }, { policy: { state: 'disabled', terms: '' } }),
   ],
+};
+
+/**
+ * Every model the live account's answer listed on 2026-11-09, with the endpoints Copilot said serve it
+ * (`supported_endpoints`; `undefined` where the entry named none). A request to `copilot:gpt-6-luna`
+ * and one to `copilot:gpt-5.6-luna` on `/chat/completions` that day were each refused with 400
+ * `unsupported_api_for_model`.
+ */
+const CHAT = ['/v1/messages', '/chat/completions'];
+const RESPONSES = ['/responses', 'ws:/responses'];
+const ENDPOINTS_2026_11_09: Record<string, string[] | undefined> = {
+  'claude-haiku-5.5': CHAT, 'claude-opus-4.8': CHAT, 'claude-opus-5.5': CHAT, 'claude-opus-5': CHAT,
+  'claude-sonnet-5.5': CHAT, 'claude-sonnet-5': CHAT, 'claude-haiku-4.5': ['/chat/completions', '/v1/messages'],
+  'gemini-3.8-flash': ['/chat/completions'], 'gemini-4-argon': ['/chat/completions'],
+  'gpt-5.3-codex': RESPONSES, 'gpt-5.4-nano': RESPONSES, 'gpt-5.6-luna': RESPONSES, 'gpt-5.6-sol': RESPONSES,
+  'gpt-5.6-terra': RESPONSES, 'gpt-6.1-sol': RESPONSES, 'gpt-6.1-terra': RESPONSES, 'gpt-6-astra': RESPONSES,
+  'gpt-6-luna': RESPONSES, 'gpt-6-sol': RESPONSES, 'mai-code-1.1-flash': RESPONSES,
+  'grok-4.6': ['/responses'], 'grok-4.7': ['/responses'], 'gpt-6-luna-decisions': ['/v1/decisions'],
+  'gpt-4o-mini-2024-07-18': undefined, 'gpt-4o-2024-11-20': undefined, 'gpt-4o-2024-08-06': undefined,
+  'text-embedding-3-small': undefined, 'text-embedding-3-small-inference': undefined,
+  'gpt-4.1-2025-04-14': undefined, 'gpt-3.5-turbo-0613': undefined, 'gpt-4': undefined, 'gpt-4-0613': undefined,
+  'gpt-4-0125-preview': undefined, 'gpt-4o-2024-05-13': undefined, 'gpt-4-o-preview': undefined, 'gpt-4.1': undefined,
+  'gpt-3.5-turbo': undefined, 'gpt-4o-mini': undefined, 'gpt-4o': undefined, 'text-embedding-ada-002': undefined,
 };
 
 const HOUR = 3_600_000;
@@ -187,7 +210,7 @@ describe('what Copilot then lists', () => {
     upstream(() => Response.json(LIVE));
     await copilotModelList.refresh();
 
-    for (const left of ['gpt-6.1-sol', 'grok-4.7', 'gpt-5.4-nano', 'gpt-4o-2024-11-20', 'gpt-6-luna-decisions', 'text-embedding-3-small', 'claude-fable-6']) {
+    for (const left of ['gpt-6-luna', 'gpt-6.1-sol', 'grok-4.7', 'gpt-5.4-nano', 'gpt-4o-2024-11-20', 'gpt-6-luna-decisions', 'text-embedding-3-small', 'claude-fable-6']) {
       expect(copilotModelRegistry.listModelIds()).not.toContain(left);
     }
   });
@@ -223,6 +246,25 @@ describe('what Copilot then lists', () => {
     expect(before).toBe(3);
     expect(asked.map((call) => call.url)).toEqual(['https://api.github.com/copilot_internal/v2/token']);
     expect(copilotModelRegistry.liveModelIds()).toEqual(['claude-opus-4.8', 'gemini-4-argon']);
+  });
+});
+
+describe('the written list', () => {
+  test('holds only models Copilot serves on /chat/completions, by the rule the live list follows', () => {
+    const live = new Set(copilotModelRegistry.liveModelIds());
+    const written = copilotModelRegistry.listModelIds().filter((id) => !live.has(id));
+    const judged = written.filter((id) => Object.hasOwn(ENDPOINTS_2026_11_09, id));
+
+    // Most written models were in that answer; the rest (Fable) were not listed for the account.
+    expect(judged.length).toBeGreaterThanOrEqual(9);
+    const refused = judged.filter((id) => !servedOnChatCompletions({ supported_endpoints: ENDPOINTS_2026_11_09[id] }));
+    expect(refused).toEqual([]);
+  });
+
+  test('no longer offers the GPT-5.6 and GPT-6 models Copilot serves only on /responses', () => {
+    for (const id of ['gpt-5.6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-6-astra', 'gpt-6-luna', 'gpt-6-sol', 'gpt-6-terra']) {
+      expect(copilotModelRegistry.getSpec(id)).toBeNull();
+    }
   });
 });
 

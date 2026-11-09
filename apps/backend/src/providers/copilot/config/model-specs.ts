@@ -7,8 +7,9 @@
  * (`upstream/models.ts`): the chat models its picker shows, whose policy is not `disabled`, served on
  * `/chat/completions`. Copilot states the endpoints that serve each model (`supported_endpoints`), and
  * this provider sends every request to `/chat/completions` (`upstream/executor.ts`), so a model it
- * serves only on `/responses` — its GPT-5 and later, Grok and MAI on 2026-11-09 — is not offered. A model
- * whose entry names no endpoints is the older kind, served there.
+ * serves only on `/responses` — its GPT-5 and later, Grok and MAI on 2026-11-09 — is not offered, and
+ * the written list holds none either. A model whose entry names no endpoints is the older kind,
+ * served there. A `/responses` path for this provider is what would bring those models back.
  *
  * A written model keeps its spec; one only Copilot lists gets the output limit its entry states, the
  * prompt limit as its window, no price, and the defaults below. An override file
@@ -20,6 +21,11 @@ import { getProxyConfig } from '@/config/manager';
 import { LayeredModelRegistry, statedTokens } from '@/core/live-models';
 import { dataPath } from '@/core/paths';
 
+/**
+ * Written models. Each is one Copilot serves on `/chat/completions` (`servedOnChatCompletions`):
+ * its GPT-5.6 and GPT-6 models were here until 2026-11-09, when Copilot listed them for
+ * `/responses` only and refused each on `/chat/completions` with `unsupported_api_for_model`.
+ */
 const MODEL_REGISTRY: Record<string, IModelSpec> = {
   'gpt-4o': {
     modelId: 'gpt-4o',
@@ -37,69 +43,6 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
     isThinking: false,
     maxOutputTokens: 8192,
     upstreamModelId: 'gpt-4.1',
-    timeoutMs: 60000,
-  },
-  'gpt-5.6-luna': {
-    modelId: 'gpt-5.6-luna',
-    displayName: 'GPT-5.6 Luna',
-    pool: 'cli',
-    isThinking: false,
-    maxOutputTokens: 8192,
-    upstreamModelId: 'gpt-5.6-luna',
-    timeoutMs: 60000,
-  },
-  'gpt-5.6-terra': {
-    modelId: 'gpt-5.6-terra',
-    displayName: 'GPT-5.6 Terra',
-    pool: 'cli',
-    isThinking: false,
-    maxOutputTokens: 8192,
-    upstreamModelId: 'gpt-5.6-terra',
-    timeoutMs: 60000,
-  },
-  'gpt-5.6-sol': {
-    modelId: 'gpt-5.6-sol',
-    displayName: 'GPT-5.6 Sol',
-    pool: 'cli',
-    isThinking: false,
-    maxOutputTokens: 8192,
-    upstreamModelId: 'gpt-5.6-sol',
-    timeoutMs: 60000,
-  },
-  'gpt-6-luna': {
-    modelId: 'gpt-6-luna',
-    displayName: 'GPT-6 Luna',
-    pool: 'cli',
-    isThinking: false,
-    maxOutputTokens: 8192,
-    upstreamModelId: 'gpt-6-luna',
-    timeoutMs: 60000,
-  },
-  'gpt-6-terra': {
-    modelId: 'gpt-6-terra',
-    displayName: 'GPT-6 Terra',
-    pool: 'cli',
-    isThinking: false,
-    maxOutputTokens: 8192,
-    upstreamModelId: 'gpt-6-terra',
-    timeoutMs: 60000,
-  },
-  'gpt-6-sol': {
-    modelId: 'gpt-6-sol',
-    displayName: 'GPT-6 Sol',
-    pool: 'cli',
-    isThinking: false,
-    maxOutputTokens: 8192,
-    upstreamModelId: 'gpt-6-sol',
-    timeoutMs: 60000,
-  },
-  'gpt-6-astra': {
-    modelId: 'gpt-6-astra',
-    displayName: 'GPT-6 Astra',
-    pool: 'cli',
-    isThinking: false,
-    maxOutputTokens: 8192,
-    upstreamModelId: 'gpt-6-astra',
     timeoutMs: 60000,
   },
   'claude-haiku-5.5': {
@@ -275,6 +218,14 @@ export interface CopilotListedModel {
 const CHAT_ENDPOINT = '/chat/completions';
 
 /**
+ * Whether Copilot serves a listed model where this provider sends it. An entry that names no
+ * endpoints is the older kind, served there.
+ */
+export function servedOnChatCompletions(model: CopilotListedModel): boolean {
+  return !Array.isArray(model.supported_endpoints) || model.supported_endpoints.includes(CHAT_ENDPOINT);
+}
+
+/**
  * The output limit of a listed model whose entry states none: a conservative default, the one most
  * written models here carry.
  */
@@ -289,7 +240,7 @@ export function copilotLiveSpecs(models: CopilotListedModel[]): IModelSpec[] {
     const id = typeof model?.id === 'string' ? model.id.trim() : '';
     if (!id || model.capabilities?.type !== 'chat' || model.model_picker_enabled !== true) continue;
     if (model.policy?.state === 'disabled') continue;
-    if (Array.isArray(model.supported_endpoints) && !model.supported_endpoints.includes(CHAT_ENDPOINT)) continue;
+    if (!servedOnChatCompletions(model)) continue;
     const limits = model.capabilities.limits;
     // The prompt limit, not the larger window it shares with the answer: Copilot refuses a prompt past
     // it, and a client that budgets by the window would send one.
