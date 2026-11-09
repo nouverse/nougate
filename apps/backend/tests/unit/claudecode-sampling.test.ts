@@ -8,9 +8,17 @@
  * list rather than a rule.
  */
 
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { loadProxyConfig } from '@/config/manager';
+import type { ProviderExecuteParams } from '@/core/interfaces';
+import type { RequestContext } from '@/core/request-context';
+import { ClaudeCodeProvider } from '@/providers/claudecode';
+import * as manager from '@/providers/claudecode/auth/manager';
 import { dropDeprecatedSampling } from '@/providers/claudecode/mappers/sampling';
-import { deprecatesSamplingParams, claudeCodeModelRegistry } from '@/providers/claudecode/config/model-specs';
+import { claudeLiveSpecs, deprecatesSamplingParams, claudeCodeModelRegistry } from '@/providers/claudecode/config/model-specs';
 
 describe('which models refuse sampling parameters', () => {
   test('the split runs through both families, not along them', () => {
@@ -83,5 +91,73 @@ describe('dropDeprecatedSampling', () => {
   test('survives a body that is not an object', () => {
     expect(dropDeprecatedSampling(null, 'claude-opus-5')).toBeNull();
     expect(dropDeprecatedSampling('not-json', 'claude-opus-5')).toBe('not-json');
+  });
+});
+
+/**
+ * A model only Anthropic's own list has counts as refusing them. Every written model released from Opus
+ * 4.7 on refuses them and the three that accept are the oldest written, so a model newer than the
+ * written list is far likelier to refuse than to need them; and a dropped temperature still answers,
+ * where one sent to a model that refuses it is a 400.
+ */
+describe('a model only Anthropic lists', () => {
+  const realFetch = globalThis.fetch;
+  const dirs: string[] = [];
+
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+    claudeCodeModelRegistry.mergeLive([]);
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+    delete process.env.CLAUDE_CODE_ACCOUNTS_FILE;
+  });
+
+  test('counts as refusing sampling; a written model that accepts it still does', () => {
+    for (const live of ['claude-opus-4-5-20251101', 'claude-opus-6', 'claude-sonnet-6.1']) {
+      expect(deprecatesSamplingParams(live)).toBe(true);
+    }
+    for (const written of ['claude-sonnet-4-6', 'claude-sonnet-4.6', 'claude-opus-4-6', 'claude-haiku-4-5']) {
+      expect(deprecatesSamplingParams(written)).toBe(false);
+    }
+  });
+
+  /** One request on the Anthropic wire with sampling set; the body Anthropic is sent. */
+  async function sent(modelId: string): Promise<Record<string, unknown>> {
+    await loadProxyConfig();
+    const dir = mkdtempSync(join(tmpdir(), 'nougate-claudecode-sampling-'));
+    dirs.push(dir);
+    process.env.CLAUDE_CODE_ACCOUNTS_FILE = join(dir, 'accounts.json');
+    await manager.initManager();
+    await manager.addAccount('sk-ant-api03-sampling-test');
+    let body: Record<string, unknown> = {};
+    globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+      body = JSON.parse(String(init?.body));
+      return Response.json({
+        id: 'msg_1', type: 'message', role: 'assistant', model: modelId,
+        content: [{ type: 'text', text: 'ok' }], stop_reason: 'end_turn', usage: { input_tokens: 1, output_tokens: 1 },
+      });
+    }) as typeof fetch;
+
+    const provider = new ClaudeCodeProvider();
+    const response = await provider.execute({
+      protocol: 'anthropic',
+      body: { model: `claudecode:${modelId}`, max_tokens: 16, temperature: 0.7, top_p: 0.9, messages: [{ role: 'user', content: 'hello' }] },
+      resolvedModel: { providerId: 'claudecode', modelId, raw: `claudecode:${modelId}` },
+      modelSpec: claudeCodeModelRegistry.getSpec(modelId)!,
+      ctx: { sessionId: 'sampling', clientId: 'test' } as unknown as RequestContext,
+    } as ProviderExecuteParams);
+    expect(response.status).toBe(200);
+    await response.text();
+    return body;
+  }
+
+  test('is sent no sampling parameters, where a written model that accepts them is', async () => {
+    claudeCodeModelRegistry.mergeLive(claudeLiveSpecs([{ type: 'model', id: 'claude-opus-6-test', display_name: 'Claude Opus 6 Test', max_tokens: 128_000 }]));
+    const live = await sent('claude-opus-6-test');
+    expect(live.model).toBe('claude-opus-6-test');
+    expect(live).not.toHaveProperty('temperature');
+    expect(live).not.toHaveProperty('top_p');
+
+    const written = await sent('claude-sonnet-4-6');
+    expect(written).toMatchObject({ temperature: 0.7, top_p: 0.9 });
   });
 });

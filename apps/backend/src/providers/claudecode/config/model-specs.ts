@@ -74,6 +74,9 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
   'claude-fable-5': spec('claude-fable-5', 'Claude Fable 5', 128_000, 10, 50),
 };
 
+/** Anthropic's ids are dashed; a client that writes the version with a dot (`claude-opus-5.5`) means the same model. */
+const dashed = (modelId: string) => modelId.replace(/\./g, '-');
+
 /**
  * Models that refuse `temperature`, `top_p` and `top_k`.
  *
@@ -82,10 +85,17 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
  * `claude-sonnet-5` refuses, `claude-sonnet-4-6` accepts, and the same split runs through Opus. That
  * is why this is a list and not a rule; there is no reliable way to read it off the name.
  *
- * Listed explicitly rather than defaulted, because both defaults are wrong in a different direction.
- * Assume "accepts" and a new model 400s on every request that tunes sampling. Assume "refuses" and a
- * model that honours temperature silently stops honouring it. An explicit list makes the question
- * visible when a model is added, which is the only place it can honestly be answered.
+ * Listed explicitly for the written models, because both defaults are wrong in a different
+ * direction. Assume "accepts" and a new model 400s on every request that tunes sampling. Assume
+ * "refuses" and a model that honours temperature silently stops honouring it. An explicit list makes
+ * the question visible when a model is added, which is the only place it can honestly be answered.
+ *
+ * A model only Anthropic's own list has (`api/models.ts`) is not written, so nobody answered it: it
+ * counts as refusing. Every written model Anthropic released from Opus 4.7 (2026-04-14) on refuses,
+ * and the three that accept are the oldest here, so a model newer than this list is far likelier to
+ * refuse than to need them. And the two mistakes are not alike: a dropped temperature still answers,
+ * one sent to a model that refuses it is a 400 and no answer. The cost falls on an older model only
+ * Anthropic lists, `claude-opus-4-5-20251101` on 2026-11-09, whose sampling is dropped.
  *
  * Checked against the live API on 2026-09-06.
  */
@@ -101,13 +111,11 @@ const SAMPLING_DEPRECATED = new Set([
   'claude-fable-5-1',
 ]);
 
-/** Whether this model rejects the sampling parameters outright. */
+/** Whether this model rejects the sampling parameters outright: listed as refusing, or not written at all. */
 export function deprecatesSamplingParams(modelId: string): boolean {
-  return SAMPLING_DEPRECATED.has(modelId) || SAMPLING_DEPRECATED.has(modelId.replace(/\./g, '-'));
+  const key = dashed(modelId);
+  return SAMPLING_DEPRECATED.has(key) || !Object.hasOwn(MODEL_REGISTRY, key);
 }
-
-/** Anthropic's ids are dashed; a client that writes the version with a dot (`claude-opus-5.5`) means the same model. */
-const dashed = (modelId: string) => modelId.replace(/\./g, '-');
 
 export const claudeCodeModelRegistry = new LayeredModelRegistry({ written: MODEL_REGISTRY, key: dashed });
 
