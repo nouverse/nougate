@@ -59,11 +59,12 @@ const CAPACITY_MARKERS = ['overloaded', 'model_capacity', 'capacity', 'try again
 const UNSUPPORTED_MARKERS = ['not found', 'not supported', 'unknown model', 'does not exist'];
 
 /**
- * Body fragments that mean the model is served, but not on the endpoint this request went to — the
- * code an OpenAI-style upstream such as Copilot answers a 400 with ("model … is not accessible via the
- * /chat/completions endpoint"). Every account gets the same answer.
+ * Codes an OpenAI-style upstream such as Copilot answers a 400 with when the model, not the account,
+ * is the problem: `unsupported_api_for_model` for one served on another endpoint ("model … is not
+ * accessible via the /chat/completions endpoint"), `model_not_supported` for one it does not know
+ * ("The requested model is not supported.", Copilot, 2026-11-10). Every account gets the same answer.
  */
-const WRONG_ENDPOINT_MARKERS = ['unsupported_api_for_model'];
+const MODEL_REFUSED_MARKERS = ['unsupported_api_for_model', 'model_not_supported'];
 
 function contains(haystack: string, needles: string[]): boolean {
   return needles.some((needle) => haystack.includes(needle));
@@ -133,15 +134,15 @@ export function classifyUpstreamError({ status, body, error }: ClassifyInput): U
     };
   }
 
-  if (status === 400 && contains(haystack, WRONG_ENDPOINT_MARKERS)) {
+  if (status === 400 && contains(haystack, MODEL_REFUSED_MARKERS)) {
     return {
       kind: 'model_unsupported',
       retryable: false,
-      // As above: the endpoint is the model's, so another account cannot change the answer. Read as
+      // As above: the model is the problem, so another account cannot change the answer. Read as
       // unknown, it was retried on every account and charged to each, for a request that could not work.
       rotate: false,
       modelScoped: true,
-      message: 'The upstream does not serve this model on this endpoint.',
+      message: 'The upstream does not serve this model here.',
     };
   }
 

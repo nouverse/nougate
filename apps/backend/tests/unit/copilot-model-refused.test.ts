@@ -85,6 +85,14 @@ describe('a model Copilot will not serve here', () => {
     expect(result).toEqual({ name: 'ModelUnavailableError', status: 404, clientCode: 'model_not_found', calls: 1, health: 100, failures: 0 });
   });
 
+  test('not known to Copilot, as it answers a 400 for that: the same', async () => {
+    const result = await refused(
+      400,
+      '{"error":{"message":"The requested model is not supported.","code":"model_not_supported","param":"model","type":"invalid_request_error"}}',
+    );
+    expect(result).toEqual({ name: 'ModelUnavailableError', status: 404, clientCode: 'model_not_found', calls: 1, health: 100, failures: 0 });
+  });
+
   test('not known at all: the same', async () => {
     const result = await refused(404, '{"error":{"message":"The requested model is not supported.","code":"model_not_supported"}}');
     expect(result).toEqual({ name: 'ModelUnavailableError', status: 404, clientCode: 'model_not_found', calls: 1, health: 100, failures: 0 });

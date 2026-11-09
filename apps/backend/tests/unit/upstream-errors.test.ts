@@ -87,6 +87,17 @@ describe('credentials and unknown models', () => {
     expect(result.modelScoped).toBe(true);
   });
 
+  test("a model the upstream does not know, in Copilot's words, is the model's too", () => {
+    // Copilot's answer on 2026-11-10 to a model id it has never heard of, word for word.
+    const result = classifyUpstreamError({
+      status: 400,
+      body: '{"error":{"message":"The requested model is not supported.","code":"model_not_supported","param":"model","type":"invalid_request_error"}}',
+    });
+    expect(result.kind).toBe('model_unsupported');
+    expect(result.rotate).toBe(false);
+    expect(result.retryable).toBe(false);
+  });
+
   test('any other 400 stays unknown', () => {
     expect(classifyUpstreamError({ status: 400, body: '{"error":{"message":"bad request","code":"invalid_value"}}' }).kind).toBe('unknown');
   });
