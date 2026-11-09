@@ -1,3 +1,29 @@
+/**
+ * The models Antigravity offers, written by hand.
+ *
+ * ## Why Google's own list does not add models here
+ *
+ * The other providers lay their upstream's model list over their written one (`core/live-models.ts`).
+ * Antigravity reads Google's list too — `fetchAvailableModels`, per account, kept as
+ * `availableModels` (`api/quota.ts`) — but only to choose which account may serve a model
+ * (`isModelUnlistedFor` in `auth/manager.ts`), never to add one, for two reasons.
+ *
+ * A Google request is assembled per model, and partly by its name: the mappers give function calls
+ * an id only for `claude` and `gemini-3` ids, ask Claude for validated tool calls, send thought
+ * signatures only to a thinking `gemini-3`, turn thinking on from the spec except for a `flash` id,
+ * and the executor picks its headers by whether the id names Claude. A model Nougate has no written
+ * spec for would be sent shaped for whichever family its name happens to match; a short answer could
+ * come back while tool calls or thinking break.
+ *
+ * And what Google's list adds today is nothing a person should pick. On 2026-11-09 the ids two live
+ * accounts listed beyond this file were: `gemini-2.5-flash`, `gemini-2.5-flash-lite` and
+ * `gemini-2.5-flash-thinking`, each of which Google itself names "Gemini 3.5 Flash Lite", a model
+ * listed here already; `gpt-oss-120b-medium`, whose own entry says "GPT-OSS will be removed from
+ * Antigravity on November 18, 2026"; `gemini-3.8-flash-tiered`, the family the three Gemini 3.8 Flash
+ * levels below are sent as; `chat_20706` and `chat_23310`, internal (`isInternal`); and two
+ * `tab_*` completion models. A new model is added here, with the facts checked, when Google ships one.
+ */
+
 import type { IModelRegistry, IModelSpec } from '@/core/interfaces';
 import { getProxyConfig } from '@/config/manager';
 import { dataPath } from '@/core/paths';
