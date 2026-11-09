@@ -14,6 +14,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import { ClaudeCodeProvider } from '@/providers/claudecode';
+import { resolvePricing } from '@/core/metrics/pricing';
+import { clearSeeds, seedClaudeCode } from './fixtures/upstream-models';
 import { credentialKind } from '@/providers/claudecode/auth/credential';
 
 describe('what the dashboard is told to render', () => {
@@ -87,18 +89,26 @@ describe('what the dashboard is told to render', () => {
   });
 
   test('every model it offers is addressable and priced', () => {
-    const provider = new ClaudeCodeProvider();
-    const registry = provider.getModelRegistry();
-    const ids = registry.listModelIds();
+    // The models Anthropic listed on 2026-11-09: a provider's models are its upstream's.
+    seedClaudeCode();
+    try {
+      const provider = new ClaudeCodeProvider();
+      const registry = provider.getModelRegistry();
+      const ids = registry.listModelIds();
 
-    expect(ids.length).toBeGreaterThan(0);
-    for (const id of ids) {
-      const spec = registry.getSpec(id)!;
-      // An unpriced model reports a cost of zero, which on a dashboard is indistinguishable from a
-      // free one — the same failure the shared price book exists to avoid.
-      expect(spec.inputPricePer1M).toBeGreaterThan(0);
-      expect(spec.outputPricePer1M).toBeGreaterThan(0);
-      expect(spec.maxOutputTokens).toBeGreaterThan(0);
+      expect(ids.length).toBeGreaterThan(0);
+      for (const id of ids) {
+        const spec = registry.getSpec(id)!;
+        // An unpriced model reports a cost of zero, which on a dashboard is indistinguishable from a
+        // free one. The list states no price, so the shared price book prices each by its family.
+        const pricing = resolvePricing(spec);
+        expect([id, pricing.isPriced]).toEqual([id, true]);
+        expect(pricing.inputPricePer1M).toBeGreaterThan(0);
+        expect(pricing.outputPricePer1M).toBeGreaterThan(0);
+        expect(spec.maxOutputTokens).toBeGreaterThan(0);
+      }
+    } finally {
+      clearSeeds();
     }
   });
 });

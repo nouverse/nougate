@@ -1,32 +1,20 @@
 /**
- * The models this provider offers, and what they cost.
+ * The models this provider offers: the ones Anthropic's `/v1/models` lists for the credential.
+ *
+ * No id is written down here. `api/models.ts` reads the list, every page of it; the last good answer
+ * is kept on disk (`core/live-models.ts`). What follows is what that list does not state.
  *
  * ## `isThinking` is false on every one of them, and that is not an oversight
  *
  * On Antigravity that flag decides whether the mapper turns thinking on, because a Google request
  * has to be assembled. Here the upstream *is* Anthropic and the anthropic protocol is a passthrough,
- * so `thinking` is the caller's parameter and arrives untouched. A flag claiming nougate enables
- * thinking would describe a decision nougate does not make — and on the current models it would be
- * describing it wrongly, since `budget_tokens` is rejected outright and depth is set with
- * `output_config.effort` instead.
+ * so `thinking` is the caller's parameter and arrives untouched.
  *
- * ## Prices are reference rates, and on a subscription credential they are fiction
+ * ## No prices
  *
- * They exist so the dashboard can put a number on traffic. With an API key that number is the bill.
- * With an OAuth token the request draws on a subscription and the real marginal cost is zero — the
- * figure is then "what this would have cost at list", which is what the shared price book already
- * says about Copilot and Antigravity.
- *
- * Checked against Anthropic's published rates on 2026-06-24. They drift; when you change one, put
- * the date you checked in the commit message rather than in a comment that will rot.
- *
- * ## The written list, and the one Anthropic gives
- *
- * On top of the list below come the models `GET /v1/models` lists for the credential
- * (`api/models.ts`). A written model keeps its spec, price included; one only Anthropic lists gets
- * the output limit and window its list states, no price, and the provider's other defaults.
- * Anthropic lists an older model by its dated snapshot (`claude-haiku-4-5-20251001`), which is the
- * model its undated id names; a snapshot whose undated id is listed already is not listed again.
+ * The list states none, and an invented rate would put a plausible wrong number on every chart. The
+ * shared price book still prices a model by its family (`core/metrics`), and on a subscription
+ * credential the marginal cost is zero anyway.
  */
 
 import type { IModelSpec } from '@/core/interfaces';
@@ -38,86 +26,53 @@ import { LayeredModelRegistry, statedTokens } from '@/core/live-models';
  */
 const TIMEOUT_MS = 600_000;
 
-/** Every current model takes the same shape here, so the differences stay visible. */
-const spec = (
-  modelId: string,
-  displayName: string,
-  maxOutputTokens: number,
-  inputPricePer1M: number,
-  outputPricePer1M: number,
-): IModelSpec => ({
-  modelId,
-  displayName,
-  pool: 'cli',
-  isThinking: false,
-  maxOutputTokens,
-  upstreamModelId: modelId,
-  timeoutMs: TIMEOUT_MS,
-  inputPricePer1M,
-  outputPricePer1M,
-});
-
-const MODEL_REGISTRY: Record<string, IModelSpec> = {
-  'claude-opus-5-5': spec('claude-opus-5-5', 'Claude Opus 5.5', 128_000, 5, 25),
-  'claude-opus-5': spec('claude-opus-5', 'Claude Opus 5', 128_000, 5, 25),
-  'claude-opus-4-8': spec('claude-opus-4-8', 'Claude Opus 4.8', 128_000, 5, 25),
-  'claude-opus-4-7': spec('claude-opus-4-7', 'Claude Opus 4.7', 128_000, 5, 25),
-  'claude-opus-4-6': spec('claude-opus-4-6', 'Claude Opus 4.6', 128_000, 5, 25),
-  'claude-sonnet-5-5': spec('claude-sonnet-5-5', 'Claude Sonnet 5.5', 128_000, 2, 10),
-  'claude-sonnet-5': spec('claude-sonnet-5', 'Claude Sonnet 5', 128_000, 2, 10),
-  'claude-sonnet-4-6': spec('claude-sonnet-4-6', 'Claude Sonnet 4.6', 128_000, 3, 15),
-  // List rate for prompts up to 100K tokens; above that Anthropic charges 0.5 / 2.5, which a flat
-  // per-model rate cannot express, so long-prompt Haiku traffic is under-reported.
-  'claude-haiku-5-5': spec('claude-haiku-5-5', 'Claude Haiku 5.5', 128_000, 0.1, 0.5),
-  'claude-haiku-4-5': spec('claude-haiku-4-5', 'Claude Haiku 4.5', 64_000, 1, 5),
-  'claude-fable-5-1': spec('claude-fable-5-1', 'Claude Fable 5.1', 128_000, 10, 50),
-  'claude-fable-5': spec('claude-fable-5', 'Claude Fable 5', 128_000, 10, 50),
-};
-
 /** Anthropic's ids are dashed; a client that writes the version with a dot (`claude-opus-5.5`) means the same model. */
 const dashed = (modelId: string) => modelId.replace(/\./g, '-');
 
+/** A dated snapshot id, `claude-haiku-4-5-20251001`: the date is its last segment. */
+const SNAPSHOT_DATE = /-\d{8}$/;
+
+/** The model an id names, whatever its spelling or snapshot: `claude-haiku-4.5-20251001` is `claude-haiku-4-5`. */
+const undated = (modelId: string) => dashed(modelId.trim()).replace(SNAPSHOT_DATE, '');
+
 /**
- * Models that refuse `temperature`, `top_p` and `top_k`.
+ * The models known to accept `temperature`, `top_p` and `top_k`. Every other model has them dropped.
  *
  * Anthropic answers a 400 — "`temperature` is deprecated for this model" — rather than ignoring the
- * field, so a client that sets one gets no answer at all. It is per model and not per family:
- * `claude-sonnet-5` refuses, `claude-sonnet-4-6` accepts, and the same split runs through Opus. That
- * is why this is a list and not a rule; there is no reliable way to read it off the name.
+ * field, so a client that sets one gets no answer at all from a model that refuses. It is per model
+ * and not per family: `claude-sonnet-5` refuses, `claude-sonnet-4-6` accepts. The model list states
+ * neither, so it is kept by hand, and only for the models that accept: every model Anthropic released
+ * from Opus 4.7 (2026-04-14) on refuses, so a model this table does not name is far likelier to refuse
+ * than to need them, and the two mistakes are not alike — a dropped temperature still answers, a
+ * refused one does not.
  *
- * Listed explicitly for the written models, because both defaults are wrong in a different
- * direction. Assume "accepts" and a new model 400s on every request that tunes sampling. Assume
- * "refuses" and a model that honours temperature silently stops honouring it. An explicit list makes
- * the question visible when a model is added, which is the only place it can honestly be answered.
- *
- * A model only Anthropic's own list has (`api/models.ts`) is not written, so nobody answered it: it
- * counts as refusing. Every written model Anthropic released from Opus 4.7 (2026-04-14) on refuses,
- * and the three that accept are the oldest here, so a model newer than this list is far likelier to
- * refuse than to need them. And the two mistakes are not alike: a dropped temperature still answers,
- * one sent to a model that refuses it is a 400 and no answer. The cost falls on an older model only
- * Anthropic lists, `claude-opus-4-5-20251101` on 2026-11-09, whose sampling is dropped.
- *
- * Checked against the live API on 2026-09-06.
+ * Checked against the live API on 2026-09-06. Names a model only to say this about it: a model this
+ * table names that Anthropic does not list is not offered.
  */
-const SAMPLING_DEPRECATED = new Set([
-  'claude-opus-5-5',
-  'claude-opus-5',
-  'claude-opus-4-8',
-  'claude-opus-4-7',
-  'claude-sonnet-5-5',
-  'claude-sonnet-5',
-  'claude-haiku-5-5',
-  'claude-fable-5',
-  'claude-fable-5-1',
-]);
+const SAMPLING_ACCEPTED = new Set(['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5']);
 
-/** Whether this model rejects the sampling parameters outright: listed as refusing, or not written at all. */
+/** Whether this model rejects the sampling parameters outright: any model not known to accept them. */
 export function deprecatesSamplingParams(modelId: string): boolean {
-  const key = dashed(modelId);
-  return SAMPLING_DEPRECATED.has(key) || !Object.hasOwn(MODEL_REGISTRY, key);
+  return !SAMPLING_ACCEPTED.has(undated(modelId));
 }
 
-export const claudeCodeModelRegistry = new LayeredModelRegistry({ written: MODEL_REGISTRY, key: dashed });
+/**
+ * An id the list does not have under that spelling: the newest snapshot of the model it names, if the
+ * list has one. Anthropic lists an older model only by a dated snapshot (`claude-haiku-4-5-20251001`)
+ * and answers its undated id as an alias of it, so a client set up with `claude-haiku-4-5` still
+ * reaches the model.
+ */
+function snapshotOf(modelId: string): IModelSpec | null {
+  const model = undated(modelId);
+  const snapshots = claudeCodeModelRegistry
+    .listModelIds()
+    .filter((id) => SNAPSHOT_DATE.test(id) && id.replace(SNAPSHOT_DATE, '') === model)
+    .sort();
+  const newest = snapshots.at(-1);
+  return newest ? claudeCodeModelRegistry.getSpec(newest) : null;
+}
+
+export const claudeCodeModelRegistry = new LayeredModelRegistry({ written: {}, key: dashed, unknown: snapshotOf });
 
 export function getModelSpec(modelId: string): IModelSpec | null {
   return claudeCodeModelRegistry.getSpec(modelId);
@@ -138,27 +93,27 @@ export interface ClaudeListedModel {
  * The output limit of a listed model whose list states none: a conservative default. Every model
  * Anthropic listed on 2026-11-09 stated its own, 64K or 128K.
  */
-const DEFAULT_LIVE_MAX_OUTPUT_TOKENS = 32_000;
+const DEFAULT_MAX_OUTPUT_TOKENS = 32_000;
 
-/** A dated snapshot id, `claude-haiku-4-5-20251001`: the date is its last segment. */
-const SNAPSHOT_DATE = /-\d{8}$/;
-
-/** The models a `/v1/models` list offers, as specs. */
+/**
+ * The models a `/v1/models` list offers, as specs. A dated snapshot whose undated id the list also
+ * has is that model, and is not listed again.
+ */
 export function claudeLiveSpecs(models: ClaudeListedModel[]): IModelSpec[] {
   const ids = new Set(models.map((model) => (typeof model?.id === 'string' ? dashed(model.id.trim()) : '')));
   const specs: IModelSpec[] = [];
   for (const model of models) {
     const id = typeof model?.id === 'string' ? dashed(model.id.trim()) : '';
     if (!id || (model.type !== undefined && model.type !== 'model')) continue;
-    const undated = id.replace(SNAPSHOT_DATE, '');
-    if (undated !== id && (Object.hasOwn(MODEL_REGISTRY, undated) || ids.has(undated))) continue;
+    const plain = id.replace(SNAPSHOT_DATE, '');
+    if (plain !== id && ids.has(plain)) continue;
     const contextWindow = statedTokens(model.max_input_tokens);
     specs.push({
       modelId: id,
       displayName: model.display_name?.trim() || id,
       pool: 'cli',
       isThinking: false,
-      maxOutputTokens: statedTokens(model.max_tokens) ?? DEFAULT_LIVE_MAX_OUTPUT_TOKENS,
+      maxOutputTokens: statedTokens(model.max_tokens) ?? DEFAULT_MAX_OUTPUT_TOKENS,
       upstreamModelId: id,
       timeoutMs: TIMEOUT_MS,
       ...(contextWindow ? { contextWindow } : {}),

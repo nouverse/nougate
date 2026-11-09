@@ -23,6 +23,8 @@ const PRICE_BOOK: PriceEntry[] = [
   { pattern: /claude.*opus/, input: 5, output: 25 },
   { pattern: /claude.*sonnet/, input: 3, output: 15 },
   { pattern: /claude.*haiku/, input: 1, output: 5 },
+  // Fable 5 and 5.1 at Anthropic's published rate, checked 2026-06-24.
+  { pattern: /claude.*fable/, input: 10, output: 50 },
 
   // Google Gemini family
   { pattern: /gemini.*flash.*lite/, input: 0.1, output: 0.4 },

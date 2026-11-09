@@ -1,7 +1,8 @@
-import { describe, expect, test, beforeAll } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mapOpenAIToGoogle } from "@/providers/antigravity/mappers/openai-in";
 import { antigravityModelRegistry } from "@/providers/antigravity/config/model-specs";
 import { claudeCodeModelRegistry } from "@/providers/claudecode/config/model-specs";
+import { clearSeeds, seedClaudeCode } from "./fixtures/upstream-models";
 import { mapOpenAIToAnthropic } from "@/core/mappers/openai-to-anthropic";
 import { mapOpenAIToResponses } from "@/providers/codex/mappers/openai-to-responses";
 import { UnsupportedContentPartError } from "@/core/upstream-errors";
@@ -195,6 +196,10 @@ describe("Mappers that cannot carry input_audio refuse it by name", () => {
 });
 
 describe("/models declares what each route can deliver", () => {
+  // A provider's models are its upstream's: these are the ones they listed on 2026-11-09.
+  beforeAll(() => seedClaudeCode());
+  afterAll(() => clearSeeds());
+
   async function listModels(handler: OpenAIProtocolHandler | AnthropicProtocolHandler, path: string) {
     const req = new Request(`http://localhost:3000${path}`, { method: "GET" });
     const response = await handler.handle({

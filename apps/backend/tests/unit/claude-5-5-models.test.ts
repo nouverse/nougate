@@ -5,16 +5,20 @@
  * Copilot the dotted one — and a client may send either, so both spellings are asserted here.
  */
 
-import { describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { claudeCodeModelRegistry, deprecatesSamplingParams } from '@/providers/claudecode/config/model-specs';
 import { copilotModelRegistry } from '@/providers/copilot/config/model-specs';
+import { clearSeeds, seedClaudeCode } from './fixtures/upstream-models';
+
+// A provider's models are its upstream's: these are the ones Anthropic listed.
+beforeAll(() => seedClaudeCode());
+afterAll(() => clearSeeds());
 
 describe('claudecode: 5.5 models', () => {
-  test('both spellings resolve to the same spec, priced at the published rate', () => {
-    // Anthropic list prices, checked 2026-10-14. Haiku's is the <=100K-prompt tier.
-    for (const [hyphen, dot, name, maxOut, input, output] of [
-      ['claude-sonnet-5-5', 'claude-sonnet-5.5', 'Claude Sonnet 5.5', 128_000, 2, 10],
-      ['claude-haiku-5-5', 'claude-haiku-5.5', 'Claude Haiku 5.5', 128_000, 0.1, 0.5],
+  test('both spellings resolve to the same spec, as Anthropic lists it', () => {
+    for (const [hyphen, dot, name, maxOut] of [
+      ['claude-sonnet-5-5', 'claude-sonnet-5.5', 'Claude Sonnet 5.5', 128_000],
+      ['claude-haiku-5-5', 'claude-haiku-5.5', 'Claude Haiku 5.5', 128_000],
     ] as const) {
       const spec = claudeCodeModelRegistry.getSpec(hyphen);
       expect(spec).not.toBeNull();
@@ -22,8 +26,6 @@ describe('claudecode: 5.5 models', () => {
       expect(spec!.displayName).toBe(name);
       expect(spec!.upstreamModelId).toBe(hyphen);
       expect(spec!.maxOutputTokens).toBe(maxOut);
-      expect(spec!.inputPricePer1M).toBe(input);
-      expect(spec!.outputPricePer1M).toBe(output);
       expect(claudeCodeModelRegistry.listModelIds()).toContain(hyphen);
     }
   });

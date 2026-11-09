@@ -19,7 +19,7 @@ import { ClaudeCodeProvider } from '@/providers/claudecode';
 import * as manager from '@/providers/claudecode/auth/manager';
 import { CodexProvider } from '@/providers/codex';
 import * as codex from '@/providers/codex/auth/manager';
-import { clearSeeds, seedCodex } from './fixtures/upstream-models';
+import { clearSeeds, seedClaudeCode, seedCodex } from './fixtures/upstream-models';
 
 let dir = '';
 const realFetch = globalThis.fetch;
@@ -37,6 +37,7 @@ beforeAll(async () => {
   await loadProxyConfig();
   // A provider's models are its upstream's: these are the ones they listed.
   seedCodex();
+  seedClaudeCode();
 });
 
 afterAll(() => clearSeeds());

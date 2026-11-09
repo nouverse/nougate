@@ -19,6 +19,7 @@ import { ClaudeCodeProvider } from '@/providers/claudecode';
 import * as manager from '@/providers/claudecode/auth/manager';
 import { dropDeprecatedSampling } from '@/providers/claudecode/mappers/sampling';
 import { claudeLiveSpecs, deprecatesSamplingParams, claudeCodeModelRegistry } from '@/providers/claudecode/config/model-specs';
+import { CLAUDE_ANSWER } from './fixtures/upstream-models';
 
 describe('which models refuse sampling parameters', () => {
   test('the split runs through both families, not along them', () => {
@@ -31,22 +32,12 @@ describe('which models refuse sampling parameters', () => {
     expect(deprecatesSamplingParams('claude-haiku-4-5')).toBe(false);
   });
 
-  test('every listed id is a model this provider actually offers', () => {
-    // A typo here would silently do nothing, and the symptom would be the 400 it was meant to stop.
-    for (const modelId of claudeCodeModelRegistry.listModelIds()) {
-      // Just asserting the registry resolves them; the point is the loop below.
-      expect(claudeCodeModelRegistry.getSpec(modelId)).not.toBeNull();
-    }
-    for (const modelId of [
-      'claude-opus-5',
-      'claude-opus-4-8',
-      'claude-sonnet-5-5',
-      'claude-sonnet-5',
-      'claude-haiku-5-5',
-      'claude-fable-5-1',
-    ]) {
-      expect(deprecatesSamplingParams(modelId)).toBe(true);
-      expect(claudeCodeModelRegistry.getSpec(modelId)).not.toBeNull();
+  test('the models that accept them are named only to say so, and a snapshot of one accepts too', () => {
+    // A name in that table makes no model exist: before Anthropic answers, none is listed.
+    expect(claudeCodeModelRegistry.listModelIds()).toEqual([]);
+    expect(claudeCodeModelRegistry.getSpec('claude-sonnet-4-6')).toBeNull();
+    for (const accepts of ['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5', 'claude-haiku-4-5-20251001', 'claude-haiku-4.5']) {
+      expect(deprecatesSamplingParams(accepts)).toBe(false);
     }
   });
 });
@@ -95,12 +86,12 @@ describe('dropDeprecatedSampling', () => {
 });
 
 /**
- * A model only Anthropic's own list has counts as refusing them. Every written model released from Opus
- * 4.7 on refuses them and the three that accept are the oldest written, so a model newer than the
- * written list is far likelier to refuse than to need them; and a dropped temperature still answers,
- * where one sent to a model that refuses it is a 400.
+ * A model not named as accepting them counts as refusing them. Every model Anthropic released from Opus
+ * 4.7 on refuses them and the three that accept are older, so a model the table does not name is far
+ * likelier to refuse than to need them; and a dropped temperature still answers, where one sent to a
+ * model that refuses it is a 400.
  */
-describe('a model only Anthropic lists', () => {
+describe('a model not known to accept sampling', () => {
   const realFetch = globalThis.fetch;
   const dirs: string[] = [];
 
@@ -111,12 +102,12 @@ describe('a model only Anthropic lists', () => {
     delete process.env.CLAUDE_CODE_ACCOUNTS_FILE;
   });
 
-  test('counts as refusing sampling; a written model that accepts it still does', () => {
-    for (const live of ['claude-opus-4-5-20251101', 'claude-opus-6', 'claude-sonnet-6.1']) {
-      expect(deprecatesSamplingParams(live)).toBe(true);
+  test('counts as refusing sampling unless it is known to accept it', () => {
+    for (const refuses of ['claude-opus-4-5-20251101', 'claude-opus-5-5', 'claude-opus-6', 'claude-sonnet-6.1']) {
+      expect(deprecatesSamplingParams(refuses)).toBe(true);
     }
-    for (const written of ['claude-sonnet-4-6', 'claude-sonnet-4.6', 'claude-opus-4-6', 'claude-haiku-4-5']) {
-      expect(deprecatesSamplingParams(written)).toBe(false);
+    for (const accepts of ['claude-sonnet-4-6', 'claude-sonnet-4.6', 'claude-opus-4-6', 'claude-haiku-4-5']) {
+      expect(deprecatesSamplingParams(accepts)).toBe(false);
     }
   });
 
@@ -150,8 +141,10 @@ describe('a model only Anthropic lists', () => {
     return body;
   }
 
-  test('is sent no sampling parameters, where a written model that accepts them is', async () => {
-    claudeCodeModelRegistry.mergeLive(claudeLiveSpecs([{ type: 'model', id: 'claude-opus-6-test', display_name: 'Claude Opus 6 Test', max_tokens: 128_000 }]));
+  test('is sent no sampling parameters, where a model known to accept them is', async () => {
+    claudeCodeModelRegistry.mergeLive(
+      claudeLiveSpecs([...CLAUDE_ANSWER, { type: 'model', id: 'claude-opus-6-test', display_name: 'Claude Opus 6 Test', max_tokens: 128_000 }]),
+    );
     const live = await sent('claude-opus-6-test');
     expect(live.model).toBe('claude-opus-6-test');
     expect(live).not.toHaveProperty('temperature');

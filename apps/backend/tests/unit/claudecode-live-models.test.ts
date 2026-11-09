@@ -1,10 +1,10 @@
 /**
- * Claude Code lists the models Anthropic lists for its credential, not only the ones written down.
+ * Claude Code lists the models Anthropic lists for its credential, and only those.
  *
  * The provider reads `GET /v1/models` — at start, after an account is added, every six hours — with
  * the credential a request uses: on the subscription login, `Bearer` with the `oauth-2025-04-20` gate.
- * A written model keeps its spec, price included. Anthropic lists older models by a dated snapshot
- * (`claude-haiku-4-5-20251001`) beside the written undated id; that is one model, listed once.
+ * No id is written down. Anthropic lists older models only by a dated snapshot
+ * (`claude-haiku-4-5-20251001`); its undated id still reaches it, as Anthropic answers that id too.
  *
  * The fixture is the answer a live subscription login gave on 2026-11-09, its fields as Anthropic
  * sends them (capabilities left out), split into two pages to walk the paging. The accounts are
@@ -17,8 +17,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as manager from '@/providers/claudecode/auth/manager';
 import { claudeCodeModelList } from '@/providers/claudecode/api/models';
-import { claudeCodeModelRegistry, claudeLiveSpecs } from '@/providers/claudecode/config/model-specs';
+import { claudeCodeModelRegistry, claudeLiveSpecs, type ClaudeListedModel } from '@/providers/claudecode/config/model-specs';
 import { ClaudeCodeProvider } from '@/providers/claudecode';
+import { CLAUDE_ANSWER } from './fixtures/upstream-models';
 
 // The list keeps its answer on disk: in a scratch data directory, never the real one.
 const modelsHome = mkdtempSync(join(tmpdir(), 'nougate-models-home-'));
@@ -30,32 +31,8 @@ afterAll(() => {
   rmSync(modelsHome, { recursive: true, force: true });
 });
 
-const model = (id: string, display_name: string, created_at: string, max_input_tokens: number, max_tokens: number) => ({
-  type: 'model',
-  id,
-  display_name,
-  created_at,
-  line: id.split('-')[1],
-  max_input_tokens,
-  max_tokens,
-});
-
-/** What a live subscription login was listed on 2026-11-09, newest first, as Anthropic orders it. */
-const LIVE = [
-  model('claude-haiku-5-5', 'Claude Haiku 5.5', '2026-10-07T18:00:00Z', 1_000_000, 128_000),
-  model('claude-sonnet-5-5', 'Claude Sonnet 5.5', '2026-09-28T00:00:00Z', 1_000_000, 128_000),
-  model('claude-opus-5-5', 'Claude Opus 5.5', '2026-09-21T16:24:00Z', 1_000_000, 128_000),
-  model('claude-fable-5-1', 'Claude Fable 5.1', '2026-08-28T00:00:00Z', 1_000_000, 128_000),
-  model('claude-opus-5', 'Claude Opus 5', '2026-07-24T00:00:00Z', 1_000_000, 128_000),
-  model('claude-sonnet-5', 'Claude Sonnet 5', '2026-06-29T00:00:00Z', 1_000_000, 128_000),
-  model('claude-fable-5', 'Claude Fable 5', '2026-06-07T00:00:00Z', 1_000_000, 128_000),
-  model('claude-opus-4-8', 'Claude Opus 4.8', '2026-05-28T00:00:00Z', 1_000_000, 128_000),
-  model('claude-opus-4-7', 'Claude Opus 4.7', '2026-04-14T00:00:00Z', 1_000_000, 128_000),
-  model('claude-sonnet-4-6', 'Claude Sonnet 4.6', '2026-02-17T00:00:00Z', 1_000_000, 128_000),
-  model('claude-opus-4-6', 'Claude Opus 4.6', '2026-02-04T00:00:00Z', 1_000_000, 128_000),
-  model('claude-opus-4-5-20251101', 'Claude Opus 4.5', '2025-11-24T00:00:00Z', 200_000, 64_000),
-  model('claude-haiku-4-5-20251001', 'Claude Haiku 4.5', '2025-10-15T00:00:00Z', 200_000, 64_000),
-];
+const LIVE = CLAUDE_ANSWER as Array<ClaudeListedModel & { id: string }>;
+const ALL = LIVE.map((model) => model.id).sort();
 
 /** The same list in two pages, as `has_more` and `last_id` page it. */
 const page = (models: typeof LIVE, has_more: boolean) =>
@@ -172,12 +149,12 @@ describe('the list Anthropic is asked for', () => {
 });
 
 describe('what Claude Code then lists', () => {
-  test('a model only Anthropic lists, with the limits its list states and no price', async () => {
+  test('every model Anthropic lists, with the limits its list states and no price', async () => {
     await subscription();
     upstream(FIRST_PAGE, SECOND_PAGE);
     await claudeCodeModelList.refresh();
 
-    expect(claudeCodeModelRegistry.liveModelIds()).toEqual(['claude-opus-4-5-20251101']);
+    expect(claudeCodeModelRegistry.listModelIds()).toEqual(ALL);
     const spec = claudeCodeModelRegistry.getSpec('claude-opus-4-5-20251101')!;
     expect(spec).toMatchObject({
       displayName: 'Claude Opus 4.5',
@@ -188,29 +165,35 @@ describe('what Claude Code then lists', () => {
     });
     expect(spec.inputPricePer1M).toBeUndefined();
     expect(spec.outputPricePer1M).toBeUndefined();
+    expect(claudeCodeModelRegistry.getSpec('claude-opus-5-5')).toMatchObject({ maxOutputTokens: 128_000, contextWindow: 1_000_000 });
   });
 
-  test('a dated snapshot of a written model is that model, listed once', async () => {
+  test('nothing before Anthropic has answered: no id is written down', () => {
+    expect(claudeCodeModelRegistry.listModelIds()).toEqual([]);
+    expect(claudeCodeModelRegistry.getSpec('claude-opus-5-5')).toBeNull();
+  });
+
+  test('either spelling of a model is the one entry, and an undated id reaches its newest snapshot', async () => {
     await subscription();
     upstream(FIRST_PAGE, SECOND_PAGE);
     await claudeCodeModelList.refresh();
 
-    const ids = claudeCodeModelRegistry.listModelIds();
-    expect(ids).not.toContain('claude-haiku-4-5-20251001');
-    expect(ids).toContain('claude-haiku-4-5');
-    expect(new Set(ids).size).toBe(ids.length);
+    expect(claudeCodeModelRegistry.getSpec('claude-opus-5.5')).toEqual(claudeCodeModelRegistry.getSpec('claude-opus-5-5'));
+    // Anthropic lists Haiku 4.5 only by its snapshot, and answers the undated id as its alias.
+    expect(claudeCodeModelRegistry.listModelIds()).not.toContain('claude-haiku-4-5');
+    expect(claudeCodeModelRegistry.getSpec('claude-haiku-4-5')?.upstreamModelId).toBe('claude-haiku-4-5-20251001');
+    expect(claudeCodeModelRegistry.getSpec('claude-haiku-4.5')?.upstreamModelId).toBe('claude-haiku-4-5-20251001');
+    expect(claudeCodeModelRegistry.getSpec('claude-haiku-9')).toBeNull();
   });
 
-  test('a written model keeps its spec, price included, under either spelling', async () => {
-    const written = claudeCodeModelRegistry.getSpec('claude-opus-5-5');
-    await subscription();
-    upstream(FIRST_PAGE, SECOND_PAGE);
-    await claudeCodeModelList.refresh();
-
-    expect(claudeCodeModelRegistry.getSpec('claude-opus-5-5')).toEqual(written);
-    expect(claudeCodeModelRegistry.getSpec('claude-opus-5.5')).toEqual(written);
-    expect(written).toMatchObject({ inputPricePer1M: 5, outputPricePer1M: 25, maxOutputTokens: 128_000 });
-    expect(claudeCodeModelRegistry.getSpec('claude-opus-5-5')?.contextWindow).toBeUndefined();
+  test('of two snapshots of one model, the undated id reaches the newer', () => {
+    claudeCodeModelRegistry.mergeLive(
+      claudeLiveSpecs([
+        { type: 'model', id: 'claude-test-1-20260101', max_tokens: 1000 },
+        { type: 'model', id: 'claude-test-1-20260301', max_tokens: 2000 },
+      ]),
+    );
+    expect(claudeCodeModelRegistry.getSpec('claude-test-1')?.upstreamModelId).toBe('claude-test-1-20260301');
   });
 
   test('a failed answer, or one with no list in it, keeps the last list', async () => {
@@ -225,7 +208,7 @@ describe('what Claude Code then lists', () => {
     for (let call = 0; call < 4; call += 1) await claudeCodeModelList.refresh();
 
     expect(asked).toHaveLength(5);
-    expect(claudeCodeModelRegistry.liveModelIds()).toEqual(['claude-opus-4-5-20251101']);
+    expect(claudeCodeModelRegistry.liveModelIds()).toEqual(ALL);
   });
 
   test('no account, no question', async () => {
