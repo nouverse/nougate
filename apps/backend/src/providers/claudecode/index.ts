@@ -118,8 +118,8 @@ export class ClaudeCodeProvider implements IProvider {
   async init(): Promise<void> {
     await loadClaudeCodeConfig();
     await initManager();
-    // In the background: boot does not wait on Anthropic, and the written list serves meanwhile.
-    claudeCodeModelList.start();
+    // The kept list is read before boot goes on; Anthropic is asked in the background.
+    await claudeCodeModelList.start();
   }
 
   getJitterConfig(): JitterConfig {

@@ -13,12 +13,23 @@
  */
 
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getAccounts } from '@/providers/copilot/auth/manager';
 import type { CopilotAccount } from '@/providers/copilot/auth/types';
 import { copilotLiveSpecs, copilotModelRegistry, servedOnChatCompletions } from '@/providers/copilot/config/model-specs';
 import { copilotModelList } from '@/providers/copilot/upstream/models';
+
+// The list keeps its answer on disk: in a scratch data directory, never the real one.
+const modelsHome = mkdtempSync(join(tmpdir(), 'nougate-models-home-'));
+const previousModelsHome = process.env.NOUGATE_HOME;
+process.env.NOUGATE_HOME = modelsHome;
+afterAll(() => {
+  if (previousModelsHome === undefined) delete process.env.NOUGATE_HOME;
+  else process.env.NOUGATE_HOME = previousModelsHome;
+  rmSync(modelsHome, { recursive: true, force: true });
+});
 
 const chat = (
   id: string,

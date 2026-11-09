@@ -61,8 +61,8 @@ export class KiroProvider implements IProvider {
   async init(): Promise<void> {
     await loadKiroConfig();
     await initKiroAccounts();
-    // In the background: boot must not wait on AWS, and the static catalogue serves meanwhile.
-    kiroModelList.start();
+    // The kept list is read before boot goes on; AWS is asked in the background.
+    await kiroModelList.start();
   }
 
   getJitterConfig(): JitterConfig {

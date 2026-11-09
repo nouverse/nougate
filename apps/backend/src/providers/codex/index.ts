@@ -93,8 +93,8 @@ export class CodexProvider implements IProvider {
   async init(): Promise<void> {
     await loadCodexConfig();
     await initManager();
-    // In the background: boot does not wait on ChatGPT, and the written list serves meanwhile.
-    codexModelList.start();
+    // The kept list is read before boot goes on; ChatGPT is asked in the background.
+    await codexModelList.start();
   }
 
   getJitterConfig(): JitterConfig {

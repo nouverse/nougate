@@ -1,26 +1,31 @@
 /**
- * The models an upstream lists itself, laid over the ones a provider writes down.
+ * A provider's models are the ones its upstream lists.
  *
  * ## Why
  *
- * Each provider's model list was written by hand, and it went stale the day its upstream added a
- * model: ChatGPT offered `gpt-6-luna` through Codex while the gateway did not list it, so no client
- * could pick it. So each provider asks its upstream which models it offers — at start, after an
- * account is added, and every six hours — and lists those its own list lacks.
+ * Each provider's model list used to be written by hand, and it went stale the day its upstream added
+ * a model: ChatGPT offered `gpt-6-luna` through Codex while the gateway did not list it, so no client
+ * could pick it. Now each provider asks its upstream which models it offers — at start, after an
+ * account is added, and every six hours — and that answer is its list.
  *
- * ## Two lists, one lookup
+ * ## What is kept, and where
  *
- * The written specs are always there and always win: they carry facts someone checked (a price, an
- * output limit, the id the upstream is really sent) that a model list does not state. A model only
- * the upstream lists is added with what its list says and the provider's defaults for the rest,
- * unpriced. The upstream's set is replaced whole on each answer, so a model it stops listing stops
- * being offered, unless the written list has it.
+ * The last good answer is kept on disk, beside the provider's other state, and read back at start: a
+ * restart or an upstream outage never empties a picker. A failed fetch changes nothing, and neither
+ * does an answer that lists no model at all, once there is a list to lose. Before any answer and with
+ * no file, a provider lists nothing of its upstream's; an install with no account could not use a
+ * model anyway.
  *
- * Lookups read memory: nothing on the request path waits on the network. A fetch that fails changes
- * nothing, and the last list stays.
+ * Facts an upstream does not state stay in each provider, keyed by what they are about (a default
+ * output limit, a family that takes thinking variants), never as a list of which models exist. An
+ * operator's own specs, where a provider reads an override file, still win over the upstream's.
+ *
+ * Lookups read memory: nothing on the request path waits on the network.
  */
 
 import type { IModelRegistry, IModelSpec } from '@/core/interfaces';
+import { dataPath } from '@/core/paths';
+import { writeJsonAtomic } from '@/core/state-file';
 
 /**
  * How often each provider asks its upstream again — an estimate. Upstreams add models every few
@@ -33,8 +38,8 @@ const LIST_TIMEOUT_MS = 30_000;
 
 export interface LayeredModelRegistryOptions {
   /**
-   * The provider's written specs, by the key it looks them up by. Read on every lookup, so an
-   * override file loaded into the same object later counts.
+   * An operator's own specs, from a provider's override file, by the key it looks them up by; they
+   * win over the upstream's. Read on every lookup, so a file loaded into the same object later counts.
    */
   written: Record<string, IModelSpec>;
   /** The key an id is looked up by: the provider's own spelling rule. The id itself when absent. */
@@ -43,7 +48,7 @@ export interface LayeredModelRegistryOptions {
   unknown?: (modelId: string) => IModelSpec | null;
 }
 
-/** The written specs, and the upstream's own on top of them where the written ones say nothing. */
+/** The upstream's specs, and an operator's own over them where it wrote one. */
 export class LayeredModelRegistry implements IModelRegistry {
   private live = new Map<string, IModelSpec>();
 
@@ -87,19 +92,29 @@ export class LayeredModelRegistry implements IModelRegistry {
 }
 
 export interface LiveModelSource<T> {
-  /** The provider's id, for the log. */
+  /** The provider's id: names it in the log, and its folder for the file the last answer is kept in. */
   provider: string;
   /**
    * What the upstream offers now, or `null` when there is nobody to ask: no account, or the
    * provider switched it off. Throws when the fetch fails.
    */
   fetch: () => Promise<T[] | null>;
-  /** Lay them over the written list; returns how many were added. */
+  /** Make these the provider's models; returns how many it lists. */
   merge: (entries: T[]) => number;
 }
 
+/** The file one provider's last good answer is kept in. Resolved per call, as every state path is. */
+export function modelListFile(provider: string): string {
+  return dataPath('providers', provider, 'models.json');
+}
+
+interface SavedModelList<T> {
+  savedAt: string;
+  models: T[];
+}
+
 /**
- * One provider's live model list: asked for now, and again on a timer.
+ * One provider's model list: read back from disk at start, asked for then, and again on a timer.
  *
  * Never throws and never rejects. Nougate runs inside Nouride's own process, and an exception that
  * escapes a timer there ends the daemon, not one refresh.
@@ -107,6 +122,10 @@ export interface LiveModelSource<T> {
 export class LiveModelList<T> {
   private running: Promise<void> | null = null;
   private timer: ReturnType<typeof setInterval> | null = null;
+  /** How many models the list holds now, from disk or from the upstream. */
+  private held = 0;
+  /** Whether the upstream has answered since start: a file read after that would be older. */
+  private answered = false;
 
   constructor(private readonly source: LiveModelSource<T>) {}
 
@@ -125,28 +144,64 @@ export class LiveModelList<T> {
     try {
       const entries = await this.source.fetch();
       if (!entries) return;
-      const added = this.source.merge(entries);
-      console.log(`[${provider}] live model list: ${entries.length} offered, ${added} added`);
+      // An outage can look like an answer with nothing in it. Emptying a picker on that would be worse
+      // than keeping a list a few hours old, so an empty answer replaces only an empty list.
+      if (entries.length === 0 && this.held > 0) {
+        console.warn(`[${provider}] the upstream listed no models; the last list (${this.held}) stays`);
+        return;
+      }
+      this.held = this.source.merge(entries);
+      this.answered = true;
+      console.log(`[${provider}] model list from the upstream: ${this.held} model(s)`);
+      this.save(entries);
     } catch (error) {
-      console.warn(`[${provider}] could not read the live model list (${failureOf(error)}); the last one stays`);
+      console.warn(`[${provider}] could not read the model list (${failureOf(error)}); the last one stays`);
+    }
+  }
+
+  /** Keep this answer for the next start. A failed write costs the next start its list, not this one. */
+  private save(entries: T[]): void {
+    try {
+      const saved: SavedModelList<T> = { savedAt: new Date().toISOString(), models: entries };
+      writeJsonAtomic(modelListFile(this.source.provider), saved);
+    } catch (error) {
+      console.warn(`[${this.source.provider}] could not keep the model list on disk: ${failureOf(error)}`);
+    }
+  }
+
+  /** The last good answer, from disk, unless the upstream has answered since. */
+  async restore(): Promise<void> {
+    const { provider } = this.source;
+    try {
+      const file = Bun.file(modelListFile(provider));
+      if (!(await file.exists())) return;
+      const saved = (await file.json()) as Partial<SavedModelList<T>> | null;
+      if (!Array.isArray(saved?.models)) throw new Error('the file holds no `models` list');
+      if (this.answered) return;
+      this.held = this.source.merge(saved.models);
+      console.log(`[${provider}] model list from disk: ${this.held} model(s), kept ${saved.savedAt ?? 'at an unknown time'}`);
+    } catch (error) {
+      console.warn(`[${provider}] could not read the kept model list (${failureOf(error)}); the upstream's answer will be the list`);
     }
   }
 
   /**
-   * Ask now, then every `intervalMs`. The timer is unref'd: a model list is not worth holding a
-   * process open for. A second call while the timer runs does nothing.
+   * Read the kept list back, then ask now and every `intervalMs`. Resolves once the kept list is in,
+   * so a provider's start can wait for it; the asking goes on in the background. The timer is
+   * unref'd: a model list is not worth holding a process open for. A second call does nothing.
    */
-  start(intervalMs: number = LIVE_MODELS_REFRESH_MS): void {
+  async start(intervalMs: number = LIVE_MODELS_REFRESH_MS): Promise<void> {
     if (this.timer) return;
-    void this.refresh();
     this.timer = setInterval(() => {
       try {
         void this.refresh();
       } catch (error) {
-        console.warn(`[${this.source.provider}] the live model list timer failed: ${failureOf(error)}`);
+        console.warn(`[${this.source.provider}] the model list timer failed: ${failureOf(error)}`);
       }
     }, intervalMs);
     this.timer.unref?.();
+    await this.restore();
+    void this.refresh();
   }
 
   stop(): void {

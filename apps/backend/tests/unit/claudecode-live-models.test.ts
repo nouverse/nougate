@@ -20,6 +20,16 @@ import { claudeCodeModelList } from '@/providers/claudecode/api/models';
 import { claudeCodeModelRegistry, claudeLiveSpecs } from '@/providers/claudecode/config/model-specs';
 import { ClaudeCodeProvider } from '@/providers/claudecode';
 
+// The list keeps its answer on disk: in a scratch data directory, never the real one.
+const modelsHome = mkdtempSync(join(tmpdir(), 'nougate-models-home-'));
+const previousModelsHome = process.env.NOUGATE_HOME;
+process.env.NOUGATE_HOME = modelsHome;
+afterAll(() => {
+  if (previousModelsHome === undefined) delete process.env.NOUGATE_HOME;
+  else process.env.NOUGATE_HOME = previousModelsHome;
+  rmSync(modelsHome, { recursive: true, force: true });
+});
+
 const model = (id: string, display_name: string, created_at: string, max_input_tokens: number, max_tokens: number) => ({
   type: 'model',
   id,

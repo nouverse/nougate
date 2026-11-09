@@ -11,6 +11,9 @@
  */
 
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { kiroAccounts } from '@/providers/kiro/auth/manager';
 import type { KiroAccount } from '@/providers/kiro/auth/types';
 import { kiroModelRegistry } from '@/providers/kiro/config/model-specs';
@@ -18,6 +21,16 @@ import { getKiroConfig } from '@/providers/kiro/config/provider-config';
 import { kiroModelList } from '@/providers/kiro';
 import { convertOpenAIMessages } from '@/providers/kiro/mappers/openai';
 import { prepareKiroRequest } from '@/providers/kiro/mappers/payload';
+
+// The list keeps its answer on disk: in a scratch data directory, never the real one.
+const modelsHome = mkdtempSync(join(tmpdir(), 'nougate-models-home-'));
+const previousModelsHome = process.env.NOUGATE_HOME;
+process.env.NOUGATE_HOME = modelsHome;
+afterAll(() => {
+  if (previousModelsHome === undefined) delete process.env.NOUGATE_HOME;
+  else process.env.NOUGATE_HOME = previousModelsHome;
+  rmSync(modelsHome, { recursive: true, force: true });
+});
 
 const ARN = 'arn:aws:codewhisperer:us-east-1:000000000000:profile/TESTPROFILE';
 

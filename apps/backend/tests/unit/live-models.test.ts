@@ -1,20 +1,32 @@
 /**
- * The models an upstream lists itself, laid over a provider's written ones (`core/live-models.ts`).
+ * A provider's models are the ones its upstream lists (`core/live-models.ts`).
  *
  * Each provider's model list was written by hand and went stale the day its upstream added a model:
  * Codex did not offer `gpt-6-luna`. Each provider now asks its upstream at start, after an account is
- * added and every six hours. The written specs keep their checked facts; a failed fetch keeps the last
- * list; and the timer runs inside Nouride's process, where an exception that escapes it ends the
- * daemon — so the timer is proven in a process of its own.
+ * added and every six hours, and that answer is its list. The last good answer is kept on disk and read
+ * back at start, so a restart or an outage never empties a picker; a failed fetch, or an answer listing
+ * nothing once there is a list, keeps the last one. The timer runs inside Nouride's process, where an
+ * exception that escapes it ends the daemon, so it is proven in a process of its own.
  */
 
-import { afterEach, describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { afterAll, afterEach, describe, expect, test } from 'bun:test';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import type { IModelSpec } from '@/core/interfaces';
-import { fetchModelList, LayeredModelRegistry, LIVE_MODELS_REFRESH_MS, LiveModelList } from '@/core/live-models';
+import { fetchModelList, LayeredModelRegistry, LIVE_MODELS_REFRESH_MS, LiveModelList, modelListFile } from '@/core/live-models';
 
 const BACKEND = join(import.meta.dir, '..', '..');
+// Every list here keeps its answer on disk: in a scratch data directory, never the real one.
+const home = mkdtempSync(join(tmpdir(), 'nougate-live-models-'));
+const previousHome = process.env.NOUGATE_HOME;
+process.env.NOUGATE_HOME = home;
+
+afterAll(() => {
+  if (previousHome === undefined) delete process.env.NOUGATE_HOME;
+  else process.env.NOUGATE_HOME = previousHome;
+  rmSync(home, { recursive: true, force: true });
+});
 const realFetch = globalThis.fetch;
 const realLog = console.log;
 const realWarn = console.warn;
@@ -44,7 +56,7 @@ async function logged(run: () => Promise<void>): Promise<string[]> {
 }
 
 describe('the layered registry', () => {
-  test('a written model keeps its own facts, and one only the upstream lists is added', () => {
+  test("an operator's own spec keeps its facts, and one only the upstream lists is added", () => {
     const registry = new LayeredModelRegistry({
       written: { known: spec('known', 'Known (written)', { inputPricePer1M: 5, maxOutputTokens: 64_000 }) },
     });
@@ -58,7 +70,7 @@ describe('the layered registry', () => {
     expect(registry.liveModelIds()).toEqual(['fresh']);
   });
 
-  test("each answer replaces the upstream's set whole, and the written list stays", () => {
+  test("each answer replaces the upstream's set whole, and an operator's own specs stay", () => {
     const registry = new LayeredModelRegistry({ written: { known: spec('known') } });
     registry.mergeLive([spec('first')]);
     registry.mergeLive([spec('second')]);
@@ -111,12 +123,12 @@ describe('a live model list', () => {
     return new LiveModelList({ provider: 'test', fetch, merge: (specs) => registry.mergeLive(specs) });
   }
 
-  test('an answer is laid over the written list, and the log names the provider and the count added', async () => {
-    const registry = new LayeredModelRegistry({ written: { known: spec('known') } });
+  test('an answer is the list, and the log names the provider and the count', async () => {
+    const registry = new LayeredModelRegistry({ written: {} });
     const lines = await logged(() => listOver(registry, async () => [spec('known'), spec('fresh')]).refresh());
 
     expect(registry.listModelIds()).toEqual(['fresh', 'known']);
-    expect(lines).toEqual(['[test] live model list: 2 offered, 1 added']);
+    expect(lines).toEqual(['[test] model list from the upstream: 2 model(s)']);
   });
 
   test('a failed fetch keeps the last list, and the log says the status, not the body', async () => {
@@ -131,7 +143,7 @@ describe('a live model list', () => {
     const lines = await logged(() => list.refresh());
 
     expect(registry.listModelIds()).toEqual(['fresh', 'known']);
-    expect(lines).toEqual(['[test] could not read the live model list (HTTP 503); the last one stays']);
+    expect(lines).toEqual(['[test] could not read the model list (HTTP 503); the last one stays']);
   });
 
   test('nobody to ask changes nothing and says nothing', async () => {
@@ -183,6 +195,106 @@ describe('a live model list', () => {
     expect(atStop).toBeGreaterThanOrEqual(2);
     expect(atStop).toBeLessThanOrEqual(5);
     expect(calls).toBe(atStop);
+  });
+});
+
+describe('the list kept on disk', () => {
+  let n = 0;
+  /** A provider of its own per test, so each has a file of its own. */
+  const fresh = () => `disk-${(n += 1)}`;
+  function listFor(provider: string, registry: LayeredModelRegistry, fetch: () => Promise<IModelSpec[] | null>) {
+    return new LiveModelList({ provider, fetch, merge: (specs) => registry.mergeLive(specs) });
+  }
+
+  test("each answer is kept in the provider's folder, and the next start reads it back before asking", async () => {
+    const provider = fresh();
+    const first = new LayeredModelRegistry({ written: {} });
+    await logged(() => listFor(provider, first, async () => [spec('kept', 'Kept', { maxOutputTokens: 64_000 })]).refresh());
+
+    expect(modelListFile(provider)).toBe(join(home, 'data', 'providers', provider, 'models.json'));
+    expect(JSON.parse(readFileSync(modelListFile(provider), 'utf8')).models).toEqual([spec('kept', 'Kept', { maxOutputTokens: 64_000 })]);
+
+    // A restart with the upstream down: the list is the one kept.
+    const second = new LayeredModelRegistry({ written: {} });
+    const restarted = listFor(provider, second, async () => {
+      throw Object.assign(new Error('down'), { status: 503 });
+    });
+    const lines = await logged(async () => {
+      await restarted.start(60_000);
+      await restarted.refresh();
+      restarted.stop();
+    });
+
+    expect(second.listModelIds()).toEqual(['kept']);
+    expect(second.getSpec('kept')).toMatchObject({ displayName: 'Kept', maxOutputTokens: 64_000 });
+    expect(lines[0]).toStartWith(`[${provider}] model list from disk: 1 model(s), kept 20`);
+    expect(lines.at(-1)).toBe(`[${provider}] could not read the model list (HTTP 503); the last one stays`);
+  });
+
+  test('with no file and no answer yet, a provider lists nothing', async () => {
+    const registry = new LayeredModelRegistry({ written: {} });
+    const list = listFor(fresh(), registry, async () => null);
+    await logged(async () => {
+      await list.start(60_000);
+      list.stop();
+    });
+    expect(registry.listModelIds()).toEqual([]);
+  });
+
+  test('an answer listing nothing does not empty a list, and a failed one writes nothing', async () => {
+    const provider = fresh();
+    const registry = new LayeredModelRegistry({ written: {} });
+    let answer: () => Promise<IModelSpec[] | null> = async () => [spec('kept')];
+    const list = listFor(provider, registry, () => answer());
+    await logged(() => list.refresh());
+    const kept = readFileSync(modelListFile(provider), 'utf8');
+
+    answer = async () => [];
+    const lines = await logged(() => list.refresh());
+    answer = async () => {
+      throw new Error('down');
+    };
+    await logged(() => list.refresh());
+
+    expect(registry.listModelIds()).toEqual(['kept']);
+    expect(readFileSync(modelListFile(provider), 'utf8')).toBe(kept);
+    expect(lines).toEqual([`[${provider}] the upstream listed no models; the last list (1) stays`]);
+  });
+
+  test('an answer listing nothing is the list when there was none', async () => {
+    const provider = fresh();
+    const registry = new LayeredModelRegistry({ written: {} });
+    await logged(() => listFor(provider, registry, async () => []).refresh());
+    expect(existsSync(modelListFile(provider))).toBe(true);
+  });
+
+  test('a file that cannot be read is said so, and the upstream fills the list', async () => {
+    const provider = fresh();
+    mkdirSync(dirname(modelListFile(provider)), { recursive: true });
+    writeFileSync(modelListFile(provider), '{ not json');
+    const registry = new LayeredModelRegistry({ written: {} });
+    const list = listFor(provider, registry, async () => [spec('fresh')]);
+    const lines = await logged(async () => {
+      await list.start(60_000);
+      await list.refresh();
+      list.stop();
+    });
+
+    expect(registry.listModelIds()).toEqual(['fresh']);
+    expect(lines[0]).toStartWith(`[${provider}] could not read the kept model list (`);
+  });
+
+  test('a file read after the upstream answered does not put an older list back', async () => {
+    const provider = fresh();
+    const registry = new LayeredModelRegistry({ written: {} });
+    const list = listFor(provider, registry, async () => [spec('new')]);
+    await logged(async () => {
+      await list.refresh();
+      // What a read begun before that answer would still find.
+      writeFileSync(modelListFile(provider), JSON.stringify({ savedAt: '2026-01-01T00:00:00.000Z', models: [spec('old')] }));
+      await list.restore();
+    });
+    expect(registry.listModelIds()).toEqual(['new']);
   });
 });
 
@@ -249,9 +361,9 @@ describe('the timer, in a process of its own', () => {
 
     expect(result.stdout.trim()).toBe('alive');
     expect(result.exitCode).toBe(0);
-    expect(result.stderr).toContain('[rejects] could not read the live model list (upstream down)');
-    expect(result.stderr).toContain('[throws] could not read the live model list (thrown at once)');
-    expect(result.stderr).toContain('[merge] could not read the live model list (merge broke)');
+    expect(result.stderr).toContain('[rejects] could not read the model list (upstream down)');
+    expect(result.stderr).toContain('[throws] could not read the model list (thrown at once)');
+    expect(result.stderr).toContain('[merge] could not read the model list (merge broke)');
   });
 
   test('the timer does not hold the process open', async () => {

@@ -43,8 +43,8 @@ export class CopilotProvider implements IProvider {
     await loadCopilotConfig();
     await loadModelSpecOverrides();
     await initManager();
-    // In the background: boot does not wait on GitHub, and the written list serves meanwhile.
-    copilotModelList.start();
+    // The kept list is read before boot goes on; GitHub is asked in the background.
+    await copilotModelList.start();
   }
 
   getJitterConfig(): JitterConfig {
