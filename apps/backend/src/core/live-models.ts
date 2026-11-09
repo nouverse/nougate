@@ -6,15 +6,14 @@
  * Each provider's model list used to be written by hand, and it went stale the day its upstream added
  * a model: ChatGPT offered `gpt-6-luna` through Codex while the gateway did not list it, so no client
  * could pick it. Now each provider asks its upstream which models it offers — at start, after an
- * account is added, and every six hours — and that answer is its list.
+ * account is added, and every six hours — and that answer is its list. No id list is written down.
  *
  * ## What is kept, and where
  *
  * The last good answer is kept on disk, beside the provider's other state, and read back at start: a
  * restart or an upstream outage never empties a picker. A failed fetch changes nothing, and neither
  * does an answer that lists no model at all, once there is a list to lose. Before any answer and with
- * no file, a provider lists nothing of its upstream's; an install with no account could not use a
- * model anyway.
+ * no file, a provider lists nothing; an install with no account could not use a model anyway.
  *
  * Facts an upstream does not state stay in each provider, keyed by what they are about (a default
  * output limit, a family that takes thinking variants), never as a list of which models exist. An

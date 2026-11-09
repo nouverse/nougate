@@ -14,8 +14,9 @@ const CONFIG_FILE = process.env.KIRO_CONFIG_FILE || dataPath('providers', 'kiro'
 
 export interface KiroFeaturesConfig extends JitterConfig {
   /**
-   * Fetch `ListAvailableModels` on start, after an account is added and every six hours, and offer
-   * models the static catalogue does not list.
+   * Ask `ListAvailableModels` on start, after an account is added and every six hours: its answer is
+   * the model list. Off, the catalogue is not asked again and the list kept on disk stays (none on an
+   * install that has never asked).
    */
   liveModelCatalog: boolean;
   /**

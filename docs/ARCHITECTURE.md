@@ -225,20 +225,34 @@ it; `getModelRegistry().getSpec()` resolves it to an `IModelSpec` carrying
 `bypassModelValidation` on, an unknown model is passed through and the upstream is
 treated as the authority.
 
-**A provider's list is what it writes down and what its upstream offers.** Written lists go
-stale the day an upstream adds a model, so Codex, Claude Code, Copilot and Kiro also ask their
-upstream (`core/live-models.ts`): at start, after an account is added, and every six hours, on one
-unref'd timer each whose body cannot throw, since a host's process is the gateway's. A written spec
-always wins, because it carries checked facts — a price, an output limit, the id the upstream is
-really sent — that a model list does not. A model only the upstream offers is listed with what its
-list states and the provider's defaults, with no price of its own (cost then resolves as for any
-unpriced spec, §8). Each answer replaces the upstream's set whole;
-a failed fetch keeps the last one; lookups read memory and nothing on the request path waits on
-the network. What each provider offers is its own rule: Codex what its CLI's picker shows, Copilot
-the chat models its picker shows that it serves on `/chat/completions`, Claude Code every listed
-model but a dated snapshot of one already listed. Antigravity adds none: a Google request is shaped
-partly by the model's name, and its list adds nothing a person should pick (its model-specs file
-says what, and why).
+**A provider's models are the ones its upstream lists.** No model id is written into the code: a
+written list goes stale the day an upstream adds a model. Each provider asks its upstream
+(`core/live-models.ts`) at start, after an account is added, and every six hours, on one unref'd timer
+each whose body cannot throw, since a host's process is the gateway's. Each answer replaces the list
+whole; the last good one is kept in `data/providers/<id>/models.json`, written atomically, and read
+back at start before boot goes on, so a restart or an outage never empties a picker. A failed fetch
+keeps the last list, and so does an answer listing nothing once there is a list to lose. Lookups read
+memory; nothing on the request path waits on the network.
+
+What each offers is its own rule, read from its upstream's fields: Codex what its CLI's picker shows;
+Claude Code every listed model, a dated snapshot reachable by its undated id; Copilot the chat models
+its picker shows, policy not disabled, that it serves on `/chat/completions`; Kiro its catalogue,
+under the catalogue's spelling; Antigravity the union of its accounts' lists, without the models the
+reply marks internal or names nothing, one id per display name, a `-tiered` model at its level ids.
+
+What an upstream does not state stays, keyed by what it is about — never as a list of which models
+exist, and a fact table names a model only to say something about it: the Claude models that accept
+sampling parameters, the Kiro families that take thinking variants, a default output limit named as a
+default. Specs carry no price; cost resolves through the price book by family (§8). An operator's
+override file is laid over the upstream's spec of the model it names, or makes a model of its own.
+
+**A Google request is shaped by the facts on the spec.** Antigravity serves Claude, Gemini and GPT-OSS
+through one Gemini-shaped request, and they do not take it alike. `fetchAvailableModels` states each
+model's maker, whether it thinks by level, the file types it takes and its limits; the spec carries
+them, and `providers/antigravity/config/shape.ts` decides from them the call ids, thought signatures,
+validated tool calls, endpoint and headers a request gets. Nothing reads the model's name for that,
+so a `gemini-4-*` or a Claude named some new way is shaped right with no code change. Only a model
+Google did not list (an override, `bypassModelValidation`) is read off its id, the one thing known.
 
 ---
 

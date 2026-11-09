@@ -92,21 +92,26 @@ Registration order is display order and bare-model routing order. Both are set i
 
 | Provider | Prefix | Auth | Quota reporting | Models |
 |---|---|---|---|---|
-| **Google Antigravity** | `antigravity:` | Google OAuth (multi-account) | Per-model rolling windows, averaged across the pool | Gemini 3.8 Flash (Low/Medium/High), Gemini 3 Flash, Gemini 3.5/3.1 Flash Lite, Gemini 3.1 Flash Image, Gemini 2.5 Pro, Claude Sonnet/Opus 5.5 (Low/Medium/High), Claude Sonnet 4.6, Claude Opus 4.6 Thinking |
-| **OpenAI Codex** | `codex:` | ChatGPT OAuth (PKCE, multi-account) | Primary/secondary windows and review quota from the `wham` API | GPT-6 Astra, GPT-5.6 Sol/Terra/Luna, GPT-5.5, GPT-5.4 (+ Mini), GPT-5.3 Codex Spark — each with a `-review` variant |
-| **Claude Code** | `claudecode:` | Anthropic OAuth, or a pasted `setup-token` / API key | Five-hour and weekly plan windows from `/api/oauth/usage` | Claude Opus 5, Opus 4.8, Sonnet 5, Sonnet 4.6, Haiku 4.5, Fable 5.1 |
-| **GitHub Copilot** | `copilot:` | GitHub Device Flow (multi-account) | Monthly chat / completions / premium-request entitlements per seat | Claude Sonnet 4.5, Claude Opus 4.5/4.6, Gemini 2.5 Pro, GPT-4o/4.1/5-mini |
+| **Google Antigravity** | `antigravity:` | Google OAuth (multi-account) | Per-model rolling windows, averaged across the pool | What `fetchAvailableModels` lists for the accounts — on 2026-11-09 Gemini 3.8 Flash (Low/Medium/High), Gemini 3 Flash, 3.5 and 3.1 Flash Lite, 3.1 Flash Image, 2.5 Pro, Claude Opus/Sonnet 5.5 (Low/Medium/High), Claude Sonnet 4.6, Opus 4.6 Thinking, GPT-OSS 120B |
+| **OpenAI Codex** | `codex:` | ChatGPT OAuth (PKCE, multi-account) | Primary/secondary windows and review quota from the `wham` API | What ChatGPT's Codex model list shows in the Codex CLI's picker — GPT-6 Luna, GPT-5.6 Terra and Luna for a Plus account on 2026-11-09 |
+| **Claude Code** | `claudecode:` | Anthropic OAuth, or a pasted `setup-token` / API key | Five-hour and weekly plan windows from `/api/oauth/usage` | What Anthropic's `/v1/models` lists for the credential — Claude 4.5 to 5.5 on 2026-11-09 |
+| **GitHub Copilot** | `copilot:` | GitHub Device Flow (multi-account) | Monthly chat / completions / premium-request entitlements per seat | The chat models Copilot's `/models` shows in its picker and serves on `/chat/completions` — Claude, Gemini 3.8 Flash and 4 Argon on 2026-11-09 |
+| **Kiro** | `kiro:` | AWS Builder ID or IAM Identity Center device login, or a pasted token | Monthly credits per account, from Kiro's usage limits | What `ListAvailableModels` lists for the account, Claude and GPT with `-thinking` / `-agentic` variants |
 | **Custom** | your own | Your own API keys (multi-key rotation) | — | Anything the upstream exposes — auto-discovered from its `/models` endpoint |
 
 The Codex provider speaks OpenAI's **Responses** API upstream, not Chat Completions;
 Nougate translates in both directions so your client never has to know.
 
-**Model lists stay current.** The table names the models written into Nougate. Codex, Claude
-Code, Copilot and Kiro also ask their upstream which models it offers — at start, after an
-account is added, and every six hours — and list the ones not written down, with the limits the
-upstream states and no price of their own. A written model keeps its hand-checked spec, and a failed fetch
-keeps the last list. Antigravity reads Google's list per account to choose which account serves
-a model, but adds none from it: `providers/antigravity/config/model-specs.ts` says why.
+**A provider's models are the ones its upstream lists.** No model id is written into Nougate:
+each provider asks its upstream which models it offers — at start, after an account is added, and
+every six hours — and that answer is its list, with the limits the upstream states and no price of
+its own (the shared price book prices a model by its family). The last good answer is kept in
+`data/providers/<id>/models.json` and read back at start, so a restart or an upstream outage never
+empties a picker; before any answer and with no file, a provider lists nothing. What an upstream does
+not state — which Claude models accept `temperature`, which Kiro families take the thinking variants,
+how a Google request is shaped for Claude — stays in the provider as a rule about the model, never as
+a list of which models exist. An operator's `providers/<id>/model-specs.json` is laid over the
+upstream's spec, where a provider reads one.
 
 Providers are plugins: each owns its auth, accounts, config and model registry, and
 the core never branches on a provider's name. Features like quota reporting are
