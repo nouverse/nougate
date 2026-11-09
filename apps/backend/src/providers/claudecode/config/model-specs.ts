@@ -72,7 +72,7 @@ function snapshotOf(modelId: string): IModelSpec | null {
   return newest ? claudeCodeModelRegistry.getSpec(newest) : null;
 }
 
-export const claudeCodeModelRegistry = new LayeredModelRegistry({ written: {}, key: dashed, unknown: snapshotOf });
+export const claudeCodeModelRegistry = new LayeredModelRegistry({ key: dashed, unknown: snapshotOf });
 
 export function getModelSpec(modelId: string): IModelSpec | null {
   return claudeCodeModelRegistry.getSpec(modelId);

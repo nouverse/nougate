@@ -1,19 +1,17 @@
 /**
- * The models Copilot offers.
+ * The models Copilot offers: the ones Copilot's own `/models` lists for the account.
  *
- * ## The written list, and the one Copilot gives
- *
- * On top of the list below come the models Copilot's own `/models` lists for the account
- * (`upstream/models.ts`): the chat models its picker shows, whose policy is not `disabled`, served on
- * `/chat/completions`. Copilot states the endpoints that serve each model (`supported_endpoints`), and
- * this provider sends every request to `/chat/completions` (`upstream/executor.ts`), so a model it
- * serves only on `/responses` — its GPT-5 and later, Grok and MAI on 2026-11-09 — is not offered, and
- * the written list holds none either. A model whose entry names no endpoints is the older kind,
+ * No id is written down here. `upstream/models.ts` reads the list and keeps the chat models Copilot's
+ * picker shows, whose policy is not `disabled`, served on `/chat/completions`; the last good answer is
+ * kept on disk (`core/live-models.ts`). Copilot states the endpoints that serve each model
+ * (`supported_endpoints`), and this provider sends every request to `/chat/completions`
+ * (`upstream/executor.ts`), so a model it serves only on `/responses` — its GPT-5 and later, Grok and
+ * MAI on 2026-11-09 — is not offered. A model whose entry names no endpoints is the older kind,
  * served there. A `/responses` path for this provider is what would bring those models back.
  *
- * A written model keeps its spec; one only Copilot lists gets the output limit its entry states, the
- * prompt limit as its window, no price, and the defaults below. An override file
- * (`loadModelSpecOverrides`) writes into the written list, so it wins too.
+ * A model gets the output limit its entry states, the prompt limit as its window, no price, and the
+ * defaults below. An operator's override file (`loadModelSpecOverrides`) writes specs of its own,
+ * which win.
  */
 
 import type { IModelSpec } from '@/core/interfaces';
@@ -21,112 +19,8 @@ import { getProxyConfig } from '@/config/manager';
 import { LayeredModelRegistry, statedTokens } from '@/core/live-models';
 import { dataPath } from '@/core/paths';
 
-/**
- * Written models. Each is one Copilot serves on `/chat/completions` (`servedOnChatCompletions`):
- * its GPT-5.6 and GPT-6 models were here until 2026-11-09, when Copilot listed them for
- * `/responses` only and refused each on `/chat/completions` with `unsupported_api_for_model`.
- */
-const MODEL_REGISTRY: Record<string, IModelSpec> = {
-  'gpt-4o': {
-    modelId: 'gpt-4o',
-    displayName: 'GPT-4o',
-    pool: 'cli',
-    isThinking: false,
-    maxOutputTokens: 4096,
-    upstreamModelId: 'gpt-4o',
-    timeoutMs: 60000,
-  },
-  'gpt-4.1': {
-    modelId: 'gpt-4.1',
-    displayName: 'GPT-4.1',
-    pool: 'cli',
-    isThinking: false,
-    maxOutputTokens: 8192,
-    upstreamModelId: 'gpt-4.1',
-    timeoutMs: 60000,
-  },
-  'claude-haiku-5.5': {
-    modelId: 'claude-haiku-5.5',
-    displayName: 'Claude Haiku 5.5',
-    pool: 'cli',
-    isThinking: false,
-    maxOutputTokens: 8192,
-    upstreamModelId: 'claude-haiku-5.5',
-    timeoutMs: 60000,
-  },
-  'claude-haiku-4.5': {
-    modelId: 'claude-haiku-4.5',
-    displayName: 'Claude Haiku 4.5',
-    pool: 'cli',
-    isThinking: false,
-    maxOutputTokens: 8192,
-    upstreamModelId: 'claude-haiku-4.5',
-    timeoutMs: 60000,
-  },
-  'claude-sonnet-5.5': {
-    modelId: 'claude-sonnet-5.5',
-    displayName: 'Claude Sonnet 5.5',
-    pool: 'cli',
-    isThinking: false,
-    maxOutputTokens: 8192,
-    upstreamModelId: 'claude-sonnet-5.5',
-    timeoutMs: 60000,
-  },
-  'claude-sonnet-5': {
-    modelId: 'claude-sonnet-5',
-    displayName: 'Claude Sonnet 5',
-    pool: 'cli',
-    isThinking: false,
-    maxOutputTokens: 8192,
-    upstreamModelId: 'claude-sonnet-5',
-    timeoutMs: 60000,
-  },
-  'claude-opus-5': {
-    modelId: 'claude-opus-5',
-    displayName: 'Claude Opus 5',
-    pool: 'cli',
-    isThinking: false,
-    maxOutputTokens: 8192,
-    upstreamModelId: 'claude-opus-4.5',
-    timeoutMs: 60000,
-  },
-  'claude-opus-5.5': {
-    modelId: 'claude-opus-5.5',
-    displayName: 'Claude Opus 5.5',
-    pool: 'cli',
-    isThinking: false,
-    maxOutputTokens: 8192,
-    upstreamModelId: 'claude-opus-5.5',
-    timeoutMs: 60000,
-  },
-  'claude-fable-5': {
-    modelId: 'claude-fable-5',
-    displayName: 'Claude Fable 5',
-    pool: 'cli',
-    isThinking: false,
-    maxOutputTokens: 8192,
-    upstreamModelId: 'claude-fable-5',
-    timeoutMs: 60000,
-  },
-  'claude-fable-5.1': {
-    modelId: 'claude-fable-5.1',
-    displayName: 'Claude Fable 5.1',
-    pool: 'cli',
-    isThinking: false,
-    maxOutputTokens: 8192,
-    upstreamModelId: 'claude-fable-5.1',
-    timeoutMs: 60000,
-  },
-  'gemini-3.8-flash': {
-    modelId: 'gemini-3.8-flash',
-    displayName: 'Gemini 3.8 Flash',
-    pool: 'cli',
-    isThinking: false,
-    maxOutputTokens: 8192,
-    upstreamModelId: 'gemini-3.8-flash',
-    timeoutMs: 60000,
-  },
-};
+/** An operator's own changes, from `providers/copilot/model-specs.json`. Empty unless one wrote some. */
+const OVERRIDES: Record<string, Partial<IModelSpec>> = {};
 
 function createDefaultModelSpec(modelId: string, override: Partial<IModelSpec>): IModelSpec {
   return {
@@ -143,30 +37,24 @@ function normalizeModelId(modelId: string): string {
   return modelId.trim().toLowerCase();
 }
 
+/**
+ * Read the operator's override file into `OVERRIDES`, replacing what it held: a change the file no
+ * longer has is gone. Each entry is laid over the upstream's spec of that model, or, for a model the
+ * upstream does not list, made a whole spec of its own.
+ */
 export async function loadModelSpecOverrides(): Promise<void> {
-  const paths = [dataPath('providers', 'copilot', 'model-specs.json')];
-
-  for (const path of paths) {
-    try {
-      const file = Bun.file(path);
-      if (!(await file.exists())) {
-        continue;
-      }
-
-      const overrides = await file.json() as Record<string, Partial<IModelSpec>>;
-      for (const [rawModelId, override] of Object.entries(overrides)) {
-        const modelId = normalizeModelId(rawModelId);
-        const current = MODEL_REGISTRY[modelId];
-        MODEL_REGISTRY[modelId] = current
-          ? { ...current, ...override, modelId }
-          : createDefaultModelSpec(modelId, override);
-      }
-
-      console.log(`[CopilotModelRegistry] Loaded overrides from ${path}`);
-      return;
-    } catch (error) {
-      console.warn(`[CopilotModelRegistry] Failed to load overrides from ${path}:`, error);
+  const path = dataPath('providers', 'copilot', 'model-specs.json');
+  try {
+    const file = Bun.file(path);
+    const overrides = (await file.exists()) ? ((await file.json()) as Record<string, Partial<IModelSpec>>) : {};
+    for (const key of Object.keys(OVERRIDES)) delete OVERRIDES[key];
+    for (const [rawModelId, override] of Object.entries(overrides)) {
+      const modelId = normalizeModelId(rawModelId);
+      OVERRIDES[modelId] = { ...OVERRIDES[modelId], ...override };
     }
+    if (Object.keys(OVERRIDES).length > 0) console.log(`[CopilotModelRegistry] Loaded overrides from ${path}`);
+  } catch (error) {
+    console.warn(`[CopilotModelRegistry] Failed to load overrides from ${path}:`, error);
   }
 }
 
@@ -189,7 +77,8 @@ function unknownModelSpec(modelId: string): IModelSpec | null {
 }
 
 export const copilotModelRegistry = new LayeredModelRegistry({
-  written: MODEL_REGISTRY,
+  overrides: OVERRIDES,
+  complete: createDefaultModelSpec,
   key: normalizeModelId,
   unknown: unknownModelSpec,
 });

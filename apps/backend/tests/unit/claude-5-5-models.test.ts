@@ -8,10 +8,13 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { claudeCodeModelRegistry, deprecatesSamplingParams } from '@/providers/claudecode/config/model-specs';
 import { copilotModelRegistry } from '@/providers/copilot/config/model-specs';
-import { clearSeeds, seedClaudeCode } from './fixtures/upstream-models';
+import { clearSeeds, seedClaudeCode, seedCopilot } from './fixtures/upstream-models';
 
-// A provider's models are its upstream's: these are the ones Anthropic listed.
-beforeAll(() => seedClaudeCode());
+// A provider's models are its upstream's: these are the ones Anthropic and Copilot listed.
+beforeAll(() => {
+  seedClaudeCode();
+  seedCopilot();
+});
 afterAll(() => clearSeeds());
 
 describe('claudecode: 5.5 models', () => {
@@ -38,11 +41,12 @@ describe('claudecode: 5.5 models', () => {
 });
 
 describe('copilot: 5.5 models', () => {
-  test('both are listed and route to the same upstream id', () => {
-    for (const id of ['claude-sonnet-5.5', 'claude-haiku-5.5']) {
+  test('both are listed and route to the same upstream id, with the output limit Copilot states', () => {
+    for (const [id, maxOut] of [['claude-sonnet-5.5', 128000], ['claude-haiku-5.5', 100000]] as const) {
       const spec = copilotModelRegistry.getSpec(id);
+      expect(copilotModelRegistry.listModelIds()).toContain(id);
       expect(spec?.upstreamModelId).toBe(id);
-      expect(spec?.maxOutputTokens).toBe(8192);
+      expect(spec?.maxOutputTokens).toBe(maxOut);
       expect(spec?.timeoutMs).toBe(60000);
     }
   });

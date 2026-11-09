@@ -1,25 +1,26 @@
 /**
- * Copilot lists the models Copilot offers its account, not only the ones written down.
+ * Copilot lists the models Copilot offers its account, and only those.
  *
  * The provider reads `GET https://api.githubcopilot.com/models` with the session token a request
  * uses — at start, after an account is added, every six hours — and offers the chat models Copilot's
  * picker shows, whose policy is not `disabled`, that Copilot serves on `/chat/completions`, the one
- * endpoint this provider sends to. A written model keeps its spec.
+ * endpoint this provider sends to. No id is written down.
  *
- * The fixture is entries from the answer a live account gave on 2026-11-09, as Copilot shapes them
+ * The fixture is every entry of the answer a live account gave on 2026-11-09, as Copilot shapes them
  * (terms and vision limits trimmed), plus one admin-disabled entry that answer did not have. The
  * account is a fake held in the manager's memory, and `fetch` is stubbed: nothing reaches GitHub, and
  * nothing here saves the pool, whose file is fixed when its module loads.
  */
 
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getAccounts } from '@/providers/copilot/auth/manager';
 import type { CopilotAccount } from '@/providers/copilot/auth/types';
-import { copilotLiveSpecs, copilotModelRegistry, servedOnChatCompletions } from '@/providers/copilot/config/model-specs';
+import { copilotLiveSpecs, copilotModelRegistry, loadModelSpecOverrides } from '@/providers/copilot/config/model-specs';
 import { copilotModelList } from '@/providers/copilot/upstream/models';
+import { COPILOT_ANSWER } from './fixtures/upstream-models';
 
 // The list keeps its answer on disk: in a scratch data directory, never the real one.
 const modelsHome = mkdtempSync(join(tmpdir(), 'nougate-models-home-'));
@@ -55,57 +56,24 @@ const chat = (
 const LIVE = {
   object: 'list',
   data: [
-    chat('claude-opus-4.8', 'Claude Opus 4.8', ['/v1/messages', '/chat/completions'], { max_context_window_tokens: 264000, max_non_streaming_output_tokens: 16000, max_output_tokens: 64000, max_prompt_tokens: 200000 }),
-    chat('claude-opus-5', 'Claude Opus 5', ['/v1/messages', '/chat/completions'], { max_context_window_tokens: 264000, max_output_tokens: 64000, max_prompt_tokens: 200000 }),
-    chat('gemini-3.8-flash', 'Gemini 3.8 Flash', ['/chat/completions'], { max_context_window_tokens: 265536, max_output_tokens: 65536, max_prompt_tokens: 200000 }),
-    chat('gemini-4-argon', 'Gemini 4 Argon', ['/chat/completions'], { max_context_window_tokens: 265536, max_non_streaming_output_tokens: 32768, max_output_tokens: 65536, max_prompt_tokens: 200000 }),
-    chat('gpt-6-luna', 'GPT-6 Luna', ['/responses', 'ws:/responses'], { max_context_window_tokens: 400000, max_output_tokens: 128000, max_prompt_tokens: 272000 }),
-    chat('gpt-6.1-sol', 'GPT-6.1 Sol', ['/responses', 'ws:/responses'], { max_context_window_tokens: 400000, max_output_tokens: 128000, max_prompt_tokens: 272000 }),
-    chat('grok-4.7', 'Grok 4.7', ['/responses'], { max_context_window_tokens: 328000, max_output_tokens: 128000, max_prompt_tokens: 200000 }, { policy: undefined }),
-    chat('gpt-5.4-nano', 'GPT-5.4 nano', ['/responses', 'ws:/responses'], { max_output_tokens: 128000 }, { model_picker_enabled: false }),
-    chat('gpt-4o-2024-11-20', 'GPT-4o', undefined, { max_output_tokens: 16384, max_prompt_tokens: 64000 }, { model_picker_enabled: false }),
-    {
-      id: 'gpt-6-luna-decisions',
-      name: 'GPT 6 Luna Decisions',
-      object: 'model',
-      model_picker_enabled: false,
-      capabilities: { type: 'decisions', family: 'gpt-6-luna', limits: { max_context_window_tokens: 1000000, max_prompt_tokens: 872000 }, supports: {} },
-      supported_endpoints: ['/v1/decisions'],
-    },
-    {
-      id: 'text-embedding-3-small',
-      name: 'Embedding V3 small',
-      object: 'model',
-      model_picker_enabled: false,
-      capabilities: { type: 'embeddings', family: 'text-embedding-3-small', limits: { max_inputs: 512 }, supports: { dimensions: true } },
-    },
+    ...COPILOT_ANSWER.data,
     // Not in the 2026-11-09 answer: a model an organisation's admin turned off.
     chat('claude-fable-6', 'Claude Fable 6', ['/chat/completions'], { max_output_tokens: 64000 }, { policy: { state: 'disabled', terms: '' } }),
   ],
 };
 
-/**
- * Every model the live account's answer listed on 2026-11-09, with the endpoints Copilot said serve it
- * (`supported_endpoints`; `undefined` where the entry named none). A request to `copilot:gpt-6-luna`
- * and one to `copilot:gpt-5.6-luna` on `/chat/completions` that day were each refused with 400
- * `unsupported_api_for_model`.
- */
-const CHAT = ['/v1/messages', '/chat/completions'];
-const RESPONSES = ['/responses', 'ws:/responses'];
-const ENDPOINTS_2026_11_09: Record<string, string[] | undefined> = {
-  'claude-haiku-5.5': CHAT, 'claude-opus-4.8': CHAT, 'claude-opus-5.5': CHAT, 'claude-opus-5': CHAT,
-  'claude-sonnet-5.5': CHAT, 'claude-sonnet-5': CHAT, 'claude-haiku-4.5': ['/chat/completions', '/v1/messages'],
-  'gemini-3.8-flash': ['/chat/completions'], 'gemini-4-argon': ['/chat/completions'],
-  'gpt-5.3-codex': RESPONSES, 'gpt-5.4-nano': RESPONSES, 'gpt-5.6-luna': RESPONSES, 'gpt-5.6-sol': RESPONSES,
-  'gpt-5.6-terra': RESPONSES, 'gpt-6.1-sol': RESPONSES, 'gpt-6.1-terra': RESPONSES, 'gpt-6-astra': RESPONSES,
-  'gpt-6-luna': RESPONSES, 'gpt-6-sol': RESPONSES, 'mai-code-1.1-flash': RESPONSES,
-  'grok-4.6': ['/responses'], 'grok-4.7': ['/responses'], 'gpt-6-luna-decisions': ['/v1/decisions'],
-  'gpt-4o-mini-2024-07-18': undefined, 'gpt-4o-2024-11-20': undefined, 'gpt-4o-2024-08-06': undefined,
-  'text-embedding-3-small': undefined, 'text-embedding-3-small-inference': undefined,
-  'gpt-4.1-2025-04-14': undefined, 'gpt-3.5-turbo-0613': undefined, 'gpt-4': undefined, 'gpt-4-0613': undefined,
-  'gpt-4-0125-preview': undefined, 'gpt-4o-2024-05-13': undefined, 'gpt-4-o-preview': undefined, 'gpt-4.1': undefined,
-  'gpt-3.5-turbo': undefined, 'gpt-4o-mini': undefined, 'gpt-4o': undefined, 'text-embedding-ada-002': undefined,
-};
+/** The nine the picker showed, served on /chat/completions. */
+const OFFERED = [
+  'claude-haiku-4.5',
+  'claude-haiku-5.5',
+  'claude-opus-4.8',
+  'claude-opus-5',
+  'claude-opus-5.5',
+  'claude-sonnet-5',
+  'claude-sonnet-5.5',
+  'gemini-3.8-flash',
+  'gemini-4-argon',
+];
 
 const HOUR = 3_600_000;
 const realFetch = globalThis.fetch;
@@ -201,19 +169,21 @@ describe('the list Copilot is asked for', () => {
 });
 
 describe('what Copilot then lists', () => {
-  test('the chat models its picker shows that the written list lacks, with the limits their entries state', async () => {
+  test('the chat models its picker shows, with the limits their entries state', async () => {
     hold(account());
     upstream(() => Response.json(LIVE));
     await copilotModelList.refresh();
 
-    expect(copilotModelRegistry.liveModelIds()).toEqual(['claude-opus-4.8', 'gemini-4-argon']);
+    expect(copilotModelRegistry.listModelIds()).toEqual(OFFERED);
     const argon = copilotModelRegistry.getSpec('gemini-4-argon')!;
     expect(argon).toMatchObject({ displayName: 'Gemini 4 Argon', upstreamModelId: 'gemini-4-argon', maxOutputTokens: 65536, contextWindow: 200000, pool: 'cli' });
     expect(argon.inputPricePer1M).toBeUndefined();
     expect(copilotModelRegistry.getSpec('claude-opus-4.8')).toMatchObject({ maxOutputTokens: 64000, contextWindow: 200000 });
-    // Looked up as a written one is: whatever the case a client writes it in.
+    // Copilot lists Opus 5 under its own id: it is sent as that, not as another model.
+    expect(copilotModelRegistry.getSpec('claude-opus-5')?.upstreamModelId).toBe('claude-opus-5');
+    // Whatever the case a client writes an id in.
     expect(copilotModelRegistry.getSpec('Gemini-4-Argon')?.modelId).toBe('gemini-4-argon');
-    expect(copilotModelRegistry.getSpec(' CLAUDE-OPUS-5 ')?.upstreamModelId).toBe('claude-opus-4.5');
+    expect(copilotModelRegistry.getSpec(' CLAUDE-OPUS-5 ')?.modelId).toBe('claude-opus-5');
   });
 
   test('none served only on /responses, none its picker hides, none that is not chat, none an admin disabled', async () => {
@@ -221,20 +191,16 @@ describe('what Copilot then lists', () => {
     upstream(() => Response.json(LIVE));
     await copilotModelList.refresh();
 
-    for (const left of ['gpt-6-luna', 'gpt-6.1-sol', 'grok-4.7', 'gpt-5.4-nano', 'gpt-4o-2024-11-20', 'gpt-6-luna-decisions', 'text-embedding-3-small', 'claude-fable-6']) {
+    for (const left of ['gpt-6-luna', 'gpt-5.6-luna', 'gpt-6.1-sol', 'grok-4.7', 'mai-code-1.1-flash', 'gpt-5.4-nano', 'gpt-4o', 'gpt-4o-2024-11-20', 'gpt-6-luna-decisions', 'text-embedding-3-small', 'claude-fable-6']) {
       expect(copilotModelRegistry.listModelIds()).not.toContain(left);
     }
   });
 
-  test('a written model keeps its spec', async () => {
-    const written = copilotModelRegistry.getSpec('claude-opus-5');
-    hold(account());
-    upstream(() => Response.json(LIVE));
-    await copilotModelList.refresh();
-
-    expect(copilotModelRegistry.getSpec('claude-opus-5')).toEqual(written);
-    expect(written).toMatchObject({ upstreamModelId: 'claude-opus-4.5', maxOutputTokens: 8192 });
-    expect(written?.contextWindow).toBeUndefined();
+  test('nothing before Copilot has answered: no id is written down', () => {
+    expect(copilotModelRegistry.listModelIds()).toEqual([]);
+    for (const id of ['claude-opus-5', 'gpt-4o', 'gpt-6-luna', 'claude-fable-5']) {
+      expect(copilotModelRegistry.getSpec(id)).toBeNull();
+    }
   });
 
   test('a failed answer, a failed exchange, or an answer with no list keeps the last list', async () => {
@@ -256,26 +222,7 @@ describe('what Copilot then lists', () => {
 
     expect(before).toBe(3);
     expect(asked.map((call) => call.url)).toEqual(['https://api.github.com/copilot_internal/v2/token']);
-    expect(copilotModelRegistry.liveModelIds()).toEqual(['claude-opus-4.8', 'gemini-4-argon']);
-  });
-});
-
-describe('the written list', () => {
-  test('holds only models Copilot serves on /chat/completions, by the rule the live list follows', () => {
-    const live = new Set(copilotModelRegistry.liveModelIds());
-    const written = copilotModelRegistry.listModelIds().filter((id) => !live.has(id));
-    const judged = written.filter((id) => Object.hasOwn(ENDPOINTS_2026_11_09, id));
-
-    // Most written models were in that answer; the rest (Fable) were not listed for the account.
-    expect(judged.length).toBeGreaterThanOrEqual(9);
-    const refused = judged.filter((id) => !servedOnChatCompletions({ supported_endpoints: ENDPOINTS_2026_11_09[id] }));
-    expect(refused).toEqual([]);
-  });
-
-  test('no longer offers the GPT-5.6 and GPT-6 models Copilot serves only on /responses', () => {
-    for (const id of ['gpt-5.6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-6-astra', 'gpt-6-luna', 'gpt-6-sol', 'gpt-6-terra']) {
-      expect(copilotModelRegistry.getSpec(id)).toBeNull();
-    }
+    expect(copilotModelRegistry.liveModelIds()).toEqual(OFFERED);
   });
 });
 
@@ -306,5 +253,36 @@ describe('an account added', () => {
     for (const after of stored) {
       expect(after.trimStart()).toStartWith('void copilotModelList.refresh();');
     }
+  });
+});
+
+describe("an operator's override file", () => {
+  const file = () => join(modelsHome, 'data', 'providers', 'copilot', 'model-specs.json');
+
+  afterEach(async () => {
+    rmSync(file(), { force: true });
+    await loadModelSpecOverrides();
+  });
+
+  test("is laid over the upstream's spec of a model, and makes a model the upstream does not list", async () => {
+    mkdirSync(join(modelsHome, 'data', 'providers', 'copilot'), { recursive: true });
+    writeFileSync(file(), JSON.stringify({ 'Claude-Sonnet-5': { timeoutMs: 123_456 }, 'my-own-model': { displayName: 'My Own' } }));
+    await loadModelSpecOverrides();
+    copilotModelRegistry.mergeLive(copilotLiveSpecs(COPILOT_ANSWER.data));
+
+    // Copilot's own facts stay, the operator's change is on top.
+    expect(copilotModelRegistry.getSpec('claude-sonnet-5')).toMatchObject({ maxOutputTokens: 64000, contextWindow: 200000, timeoutMs: 123_456 });
+    expect(copilotModelRegistry.getSpec('my-own-model')).toMatchObject({ modelId: 'my-own-model', displayName: 'My Own', pool: 'cli' });
+    expect(copilotModelRegistry.listModelIds()).toContain('my-own-model');
+  });
+
+  test('read again, it holds only what the file now has', async () => {
+    mkdirSync(join(modelsHome, 'data', 'providers', 'copilot'), { recursive: true });
+    writeFileSync(file(), JSON.stringify({ 'my-own-model': { displayName: 'My Own' } }));
+    await loadModelSpecOverrides();
+    writeFileSync(file(), JSON.stringify({}));
+    await loadModelSpecOverrides();
+
+    expect(copilotModelRegistry.getSpec('my-own-model')).toBeNull();
   });
 });

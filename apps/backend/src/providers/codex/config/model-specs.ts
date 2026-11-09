@@ -23,7 +23,7 @@ const CODEX_MAX_OUTPUT_TOKENS = 128_000;
 /** Generous, because these models reason: a hard request at high effort runs for minutes. */
 const CODEX_TIMEOUT_MS = 600_000;
 
-export const codexModelRegistry = new LayeredModelRegistry({ written: {} });
+export const codexModelRegistry = new LayeredModelRegistry();
 
 export function getModelSpec(modelId: string): IModelSpec | null {
   return codexModelRegistry.getSpec(modelId);

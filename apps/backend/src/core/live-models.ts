@@ -38,52 +38,64 @@ const LIST_TIMEOUT_MS = 30_000;
 
 export interface LayeredModelRegistryOptions {
   /**
-   * An operator's own specs, from a provider's override file, by the key it looks them up by; they
-   * win over the upstream's. Read on every lookup, so a file loaded into the same object later counts.
+   * An operator's own changes, from a provider's override file, by the key it looks them up by. Laid
+   * over the upstream's spec of that model; read on every lookup, so a file loaded into the same
+   * object later counts.
    */
-  written: Record<string, IModelSpec>;
+  overrides?: Record<string, Partial<IModelSpec>>;
+  /**
+   * A whole spec made of an override that names a model the upstream does not list: the operator
+   * asked for it to exist. Without this, such an override changes nothing.
+   */
+  complete?: (modelId: string, override: Partial<IModelSpec>) => IModelSpec;
   /** The key an id is looked up by: the provider's own spelling rule. The id itself when absent. */
   key?: (modelId: string) => string;
-  /** The answer for an id neither list has: a provider's `bypassModelValidation` path. */
+  /** The answer for an id no list has: a provider's `bypassModelValidation` path. */
   unknown?: (modelId: string) => IModelSpec | null;
 }
 
-/** The upstream's specs, and an operator's own over them where it wrote one. */
+/** The upstream's specs, with an operator's own changes laid over them where it wrote some. */
 export class LayeredModelRegistry implements IModelRegistry {
   private live = new Map<string, IModelSpec>();
 
-  constructor(private readonly options: LayeredModelRegistryOptions) {}
+  constructor(private readonly options: LayeredModelRegistryOptions = {}) {}
 
   private keyOf(modelId: string): string {
     return this.options.key ? this.options.key(modelId) : modelId;
   }
 
+  /** The overrides that make a model exist: ones naming a model the upstream does not list. */
+  private standalone(): string[] {
+    const { overrides, complete } = this.options;
+    if (!overrides || !complete) return [];
+    return Object.keys(overrides).filter((key) => !this.live.has(key));
+  }
+
   /** A copy: a caller that edits what it was handed must not edit the registry. */
   getSpec(modelId: string): IModelSpec | null {
     const key = this.keyOf(modelId);
-    const spec = this.options.written[key] ?? this.live.get(key);
-    if (spec) return { ...spec };
+    const override = this.options.overrides?.[key];
+    const live = this.live.get(key);
+    if (live) return override ? { ...live, ...override, modelId: key } : { ...live };
+    if (override && this.options.complete) return this.options.complete(key, override);
     return this.options.unknown ? this.options.unknown(modelId) : null;
   }
 
   listModelIds(): string[] {
-    return [...new Set([...Object.keys(this.options.written), ...this.live.keys()])].sort();
+    return [...new Set([...this.live.keys(), ...this.standalone()])].sort();
   }
 
-  /** The ids only the upstream lists. */
+  /** The ids the upstream lists. */
   liveModelIds(): string[] {
     return [...this.live.keys()].sort();
   }
 
-  /**
-   * Replace the upstream's set with `specs`, leaving out each one the written list has under the
-   * same key. Returns how many it added.
-   */
+  /** Replace the upstream's set with `specs`, one per key. Returns how many it holds. */
   mergeLive(specs: IModelSpec[]): number {
     const next = new Map<string, IModelSpec>();
     for (const spec of specs) {
       const key = this.keyOf(spec.modelId);
-      if (Object.hasOwn(this.options.written, key) || next.has(key)) continue;
+      if (next.has(key)) continue;
       next.set(key, { ...spec, modelId: key });
     }
     this.live = next;

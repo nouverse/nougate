@@ -56,48 +56,55 @@ async function logged(run: () => Promise<void>): Promise<string[]> {
 }
 
 describe('the layered registry', () => {
-  test("an operator's own spec keeps its facts, and one only the upstream lists is added", () => {
+  const complete = (modelId: string, override: Partial<IModelSpec>): IModelSpec => ({ ...spec(modelId), ...override, modelId });
+
+  test("an operator's change is laid over the upstream's spec, and one for a model it does not list makes that model", () => {
     const registry = new LayeredModelRegistry({
-      written: { known: spec('known', 'Known (written)', { inputPricePer1M: 5, maxOutputTokens: 64_000 }) },
+      overrides: { known: { timeoutMs: 123_000 }, mine: { displayName: 'Mine' } },
+      complete,
     });
 
-    const added = registry.mergeLive([spec('known', 'Known (live)', { maxOutputTokens: 1 }), spec('fresh', 'Fresh')]);
-
-    expect(added).toBe(1);
-    expect(registry.listModelIds()).toEqual(['fresh', 'known']);
-    expect(registry.getSpec('known')).toMatchObject({ displayName: 'Known (written)', inputPricePer1M: 5, maxOutputTokens: 64_000 });
-    expect(registry.getSpec('fresh')).toMatchObject({ modelId: 'fresh', displayName: 'Fresh' });
-    expect(registry.liveModelIds()).toEqual(['fresh']);
+    expect(registry.mergeLive([spec('known', 'Known', { maxOutputTokens: 64_000 }), spec('fresh', 'Fresh')])).toBe(2);
+    expect(registry.listModelIds()).toEqual(['fresh', 'known', 'mine']);
+    // The upstream's facts stay; the operator's change is on top.
+    expect(registry.getSpec('known')).toMatchObject({ displayName: 'Known', maxOutputTokens: 64_000, timeoutMs: 123_000 });
+    expect(registry.getSpec('mine')).toMatchObject({ modelId: 'mine', displayName: 'Mine' });
+    expect(registry.liveModelIds()).toEqual(['fresh', 'known']);
   });
 
-  test("each answer replaces the upstream's set whole, and an operator's own specs stay", () => {
-    const registry = new LayeredModelRegistry({ written: { known: spec('known') } });
+  test('without a way to complete one, an override of a model the upstream does not list makes nothing', () => {
+    const registry = new LayeredModelRegistry({ overrides: { mine: { displayName: 'Mine' } } });
+    expect(registry.listModelIds()).toEqual([]);
+    expect(registry.getSpec('mine')).toBeNull();
+  });
+
+  test("each answer replaces the upstream's set whole", () => {
+    const registry = new LayeredModelRegistry();
     registry.mergeLive([spec('first')]);
     registry.mergeLive([spec('second')]);
 
-    expect(registry.listModelIds()).toEqual(['known', 'second']);
+    expect(registry.listModelIds()).toEqual(['second']);
     expect(registry.getSpec('first')).toBeNull();
 
     registry.mergeLive([]);
-    expect(registry.listModelIds()).toEqual(['known']);
+    expect(registry.listModelIds()).toEqual([]);
   });
 
   test("a model is one entry under the provider's spelling rule, whichever spelling the upstream used", () => {
     const registry = new LayeredModelRegistry({
-      written: { 'model-1-5': spec('model-1-5', 'Written') },
+      overrides: { 'model-1-5': { displayName: 'Changed' } },
       key: (id) => id.trim().toLowerCase().replace(/\./g, '-'),
     });
 
-    expect(registry.mergeLive([spec('Model-1.5'), spec('NEW.2'), spec('new-2')])).toBe(1);
+    expect(registry.mergeLive([spec('Model-1.5'), spec('NEW.2'), spec('new-2')])).toBe(2);
     expect(registry.listModelIds()).toEqual(['model-1-5', 'new-2']);
-    expect(registry.getSpec('model-1.5')?.displayName).toBe('Written');
+    expect(registry.getSpec('model-1.5')?.displayName).toBe('Changed');
     expect(registry.getSpec('NEW-2')?.modelId).toBe('new-2');
   });
 
-  test('an id neither list has goes to the provider’s own answer, and only then', () => {
+  test('an id no list has goes to the provider’s own answer, and only then', () => {
     const asked: string[] = [];
     const registry = new LayeredModelRegistry({
-      written: { known: spec('known') },
       unknown: (id) => {
         asked.push(id);
         return null;
@@ -105,14 +112,14 @@ describe('the layered registry', () => {
     });
     registry.mergeLive([spec('fresh')]);
 
-    expect(registry.getSpec('known')).not.toBeNull();
     expect(registry.getSpec('fresh')).not.toBeNull();
     expect(registry.getSpec('nowhere')).toBeNull();
     expect(asked).toEqual(['nowhere']);
   });
 
   test('what a lookup hands out is a copy', () => {
-    const registry = new LayeredModelRegistry({ written: { known: spec('known', 'Known') } });
+    const registry = new LayeredModelRegistry({ overrides: { known: { timeoutMs: 1 } } });
+    registry.mergeLive([spec('known', 'Known')]);
     registry.getSpec('known')!.displayName = 'edited';
     expect(registry.getSpec('known')?.displayName).toBe('Known');
   });
@@ -124,7 +131,7 @@ describe('a live model list', () => {
   }
 
   test('an answer is the list, and the log names the provider and the count', async () => {
-    const registry = new LayeredModelRegistry({ written: {} });
+    const registry = new LayeredModelRegistry();
     const lines = await logged(() => listOver(registry, async () => [spec('known'), spec('fresh')]).refresh());
 
     expect(registry.listModelIds()).toEqual(['fresh', 'known']);
@@ -132,7 +139,7 @@ describe('a live model list', () => {
   });
 
   test('a failed fetch keeps the last list, and the log says the status, not the body', async () => {
-    const registry = new LayeredModelRegistry({ written: { known: spec('known') } });
+    const registry = new LayeredModelRegistry();
     let answer: () => Promise<IModelSpec[] | null> = async () => [spec('fresh')];
     const list = listOver(registry, () => answer());
     await logged(() => list.refresh());
@@ -142,12 +149,12 @@ describe('a live model list', () => {
     };
     const lines = await logged(() => list.refresh());
 
-    expect(registry.listModelIds()).toEqual(['fresh', 'known']);
+    expect(registry.listModelIds()).toEqual(['fresh']);
     expect(lines).toEqual(['[test] could not read the model list (HTTP 503); the last one stays']);
   });
 
   test('nobody to ask changes nothing and says nothing', async () => {
-    const registry = new LayeredModelRegistry({ written: {} });
+    const registry = new LayeredModelRegistry();
     registry.mergeLive([spec('fresh')]);
     const lines = await logged(() => listOver(registry, async () => null).refresh());
 
@@ -159,7 +166,7 @@ describe('a live model list', () => {
     let calls = 0;
     let release!: () => void;
     const gate = new Promise<void>((resolve) => (release = resolve));
-    const list = listOver(new LayeredModelRegistry({ written: {} }), async () => {
+    const list = listOver(new LayeredModelRegistry(), async () => {
       calls += 1;
       await gate;
       return [];
@@ -177,7 +184,7 @@ describe('a live model list', () => {
 
   test('started, it asks at once and again on its interval, until stopped', async () => {
     let calls = 0;
-    const list = listOver(new LayeredModelRegistry({ written: {} }), async () => {
+    const list = listOver(new LayeredModelRegistry(), async () => {
       calls += 1;
       return [];
     });
@@ -208,14 +215,14 @@ describe('the list kept on disk', () => {
 
   test("each answer is kept in the provider's folder, and the next start reads it back before asking", async () => {
     const provider = fresh();
-    const first = new LayeredModelRegistry({ written: {} });
+    const first = new LayeredModelRegistry();
     await logged(() => listFor(provider, first, async () => [spec('kept', 'Kept', { maxOutputTokens: 64_000 })]).refresh());
 
     expect(modelListFile(provider)).toBe(join(home, 'data', 'providers', provider, 'models.json'));
     expect(JSON.parse(readFileSync(modelListFile(provider), 'utf8')).models).toEqual([spec('kept', 'Kept', { maxOutputTokens: 64_000 })]);
 
     // A restart with the upstream down: the list is the one kept.
-    const second = new LayeredModelRegistry({ written: {} });
+    const second = new LayeredModelRegistry();
     const restarted = listFor(provider, second, async () => {
       throw Object.assign(new Error('down'), { status: 503 });
     });
@@ -232,7 +239,7 @@ describe('the list kept on disk', () => {
   });
 
   test('with no file and no answer yet, a provider lists nothing', async () => {
-    const registry = new LayeredModelRegistry({ written: {} });
+    const registry = new LayeredModelRegistry();
     const list = listFor(fresh(), registry, async () => null);
     await logged(async () => {
       await list.start(60_000);
@@ -243,7 +250,7 @@ describe('the list kept on disk', () => {
 
   test('an answer listing nothing does not empty a list, and a failed one writes nothing', async () => {
     const provider = fresh();
-    const registry = new LayeredModelRegistry({ written: {} });
+    const registry = new LayeredModelRegistry();
     let answer: () => Promise<IModelSpec[] | null> = async () => [spec('kept')];
     const list = listFor(provider, registry, () => answer());
     await logged(() => list.refresh());
@@ -263,7 +270,7 @@ describe('the list kept on disk', () => {
 
   test('an answer listing nothing is the list when there was none', async () => {
     const provider = fresh();
-    const registry = new LayeredModelRegistry({ written: {} });
+    const registry = new LayeredModelRegistry();
     await logged(() => listFor(provider, registry, async () => []).refresh());
     expect(existsSync(modelListFile(provider))).toBe(true);
   });
@@ -272,7 +279,7 @@ describe('the list kept on disk', () => {
     const provider = fresh();
     mkdirSync(dirname(modelListFile(provider)), { recursive: true });
     writeFileSync(modelListFile(provider), '{ not json');
-    const registry = new LayeredModelRegistry({ written: {} });
+    const registry = new LayeredModelRegistry();
     const list = listFor(provider, registry, async () => [spec('fresh')]);
     const lines = await logged(async () => {
       await list.start(60_000);
@@ -286,7 +293,7 @@ describe('the list kept on disk', () => {
 
   test('a file read after the upstream answered does not put an older list back', async () => {
     const provider = fresh();
-    const registry = new LayeredModelRegistry({ written: {} });
+    const registry = new LayeredModelRegistry();
     const list = listFor(provider, registry, async () => [spec('new')]);
     await logged(async () => {
       await list.refresh();
