@@ -1,5 +1,23 @@
-import type { IModelRegistry, IModelSpec } from '@/core/interfaces';
+/**
+ * The models Copilot offers.
+ *
+ * ## The written list, and the one Copilot gives
+ *
+ * On top of the list below come the models Copilot's own `/models` lists for the account
+ * (`upstream/models.ts`): the chat models its picker shows, whose policy is not `disabled`, served on
+ * `/chat/completions`. Copilot states the endpoints that serve each model (`supported_endpoints`), and
+ * this provider sends every request to `/chat/completions` (`upstream/executor.ts`), so a model it
+ * serves only on `/responses` — its GPT-5 and later, Grok and MAI on 2026-11-09 — is not offered. A model
+ * whose entry names no endpoints is the older kind, served there.
+ *
+ * A written model keeps its spec; one only Copilot lists gets the output limit its entry states, the
+ * prompt limit as its window, no price, and the defaults below. An override file
+ * (`loadModelSpecOverrides`) writes into the written list, so it wins too.
+ */
+
+import type { IModelSpec } from '@/core/interfaces';
 import { getProxyConfig } from '@/config/manager';
+import { LayeredModelRegistry, statedTokens } from '@/core/live-models';
 import { dataPath } from '@/core/paths';
 
 const MODEL_REGISTRY: Record<string, IModelSpec> = {
@@ -167,12 +185,6 @@ const MODEL_REGISTRY: Record<string, IModelSpec> = {
   },
 };
 
-function cloneModelSpec(modelSpec: IModelSpec): IModelSpec {
-  return {
-    ...modelSpec,
-  };
-}
-
 function createDefaultModelSpec(modelId: string, override: Partial<IModelSpec>): IModelSpec {
   return {
     modelId,
@@ -215,13 +227,8 @@ export async function loadModelSpecOverrides(): Promise<void> {
   }
 }
 
-export function getModelSpec(modelId: string): IModelSpec | null {
-  const normalized = normalizeModelId(modelId);
-  const modelSpec = MODEL_REGISTRY[normalized];
-  if (modelSpec) {
-    return cloneModelSpec(modelSpec);
-  }
-
+/** What a lookup of an id neither list has gets: a made-up spec when the operator allows unknown models. */
+function unknownModelSpec(modelId: string): IModelSpec | null {
   try {
     const proxyConfig = getProxyConfig();
     if (proxyConfig && proxyConfig.bypassModelValidation) {
@@ -238,11 +245,65 @@ export function getModelSpec(modelId: string): IModelSpec | null {
   return null;
 }
 
-export const copilotModelRegistry: IModelRegistry = {
-  getSpec(modelId: string): IModelSpec | null {
-    return getModelSpec(modelId);
-  },
-  listModelIds(): string[] {
-    return Object.keys(MODEL_REGISTRY).sort();
-  },
-};
+export const copilotModelRegistry = new LayeredModelRegistry({
+  written: MODEL_REGISTRY,
+  key: normalizeModelId,
+  unknown: unknownModelSpec,
+});
+
+export function getModelSpec(modelId: string): IModelSpec | null {
+  return copilotModelRegistry.getSpec(modelId);
+}
+
+/** One model as Copilot's `/models` lists it: the fields read here. */
+export interface CopilotListedModel {
+  id?: string;
+  name?: string;
+  /** Whether Copilot's own picker shows it. */
+  model_picker_enabled?: boolean;
+  capabilities?: {
+    /** `chat`, `embeddings`, `decisions`, … */
+    type?: string;
+    limits?: { max_output_tokens?: number; max_prompt_tokens?: number; max_context_window_tokens?: number };
+  };
+  /** Absent when the model needs no opt-in; `disabled` when the account's admin turned it off. */
+  policy?: { state?: string };
+  supported_endpoints?: string[];
+}
+
+/** The endpoint this provider sends every request to. */
+const CHAT_ENDPOINT = '/chat/completions';
+
+/**
+ * The output limit of a listed model whose entry states none: a conservative default, the one most
+ * written models here carry.
+ */
+const DEFAULT_LIVE_MAX_OUTPUT_TOKENS = 8192;
+
+const COPILOT_TIMEOUT_MS = 60_000;
+
+/** The models a Copilot `/models` list offers a person to pick, as specs. */
+export function copilotLiveSpecs(models: CopilotListedModel[]): IModelSpec[] {
+  const specs: IModelSpec[] = [];
+  for (const model of models) {
+    const id = typeof model?.id === 'string' ? model.id.trim() : '';
+    if (!id || model.capabilities?.type !== 'chat' || model.model_picker_enabled !== true) continue;
+    if (model.policy?.state === 'disabled') continue;
+    if (Array.isArray(model.supported_endpoints) && !model.supported_endpoints.includes(CHAT_ENDPOINT)) continue;
+    const limits = model.capabilities.limits;
+    // The prompt limit, not the larger window it shares with the answer: Copilot refuses a prompt past
+    // it, and a client that budgets by the window would send one.
+    const contextWindow = statedTokens(limits?.max_prompt_tokens);
+    specs.push({
+      modelId: id,
+      displayName: model.name?.trim() || id,
+      pool: 'cli',
+      isThinking: false,
+      maxOutputTokens: statedTokens(limits?.max_output_tokens) ?? DEFAULT_LIVE_MAX_OUTPUT_TOKENS,
+      upstreamModelId: id,
+      timeoutMs: COPILOT_TIMEOUT_MS,
+      ...(contextWindow ? { contextWindow } : {}),
+    });
+  }
+  return specs;
+}

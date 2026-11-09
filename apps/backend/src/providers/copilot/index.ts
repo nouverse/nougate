@@ -21,6 +21,7 @@ import { copilotModelRegistry, loadModelSpecOverrides } from './config/model-spe
 import { getGitHubProfile } from './auth/token-exchange';
 import { startDeviceFlow, pollDeviceFlow } from './auth/device-flow';
 import { CopilotExecutor } from './upstream/executor';
+import { copilotModelList } from './upstream/models';
 import { loadCopilotConfig, getCopilotConfig, updateCopilotConfig } from './config/provider-config';
 import { mapAnthropicToOpenAI, createOpenAIToAnthropicStreamTransformer, finalizeOpenAIToAnthropicResponse } from './mappers/anthropic';
 import { createOpenAIStreamTransformer, finalizeOpenAIResponse, mapOpenAIToCopilot } from './mappers/openai';
@@ -42,6 +43,8 @@ export class CopilotProvider implements IProvider {
     await loadCopilotConfig();
     await loadModelSpecOverrides();
     await initManager();
+    // In the background: boot does not wait on GitHub, and the written list serves meanwhile.
+    copilotModelList.start();
   }
 
   getJitterConfig(): JitterConfig {
@@ -253,6 +256,7 @@ export class CopilotProvider implements IProvider {
       };
 
       await addCopilotAccount(account);
+      void copilotModelList.refresh();
       return this.mapAccount(account);
     }
 
@@ -283,6 +287,7 @@ export class CopilotProvider implements IProvider {
     };
 
     await addCopilotAccount(account);
+    void copilotModelList.refresh();
     return {
       status: 'success',
       account: this.mapAccount(account),
