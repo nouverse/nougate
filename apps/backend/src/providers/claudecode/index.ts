@@ -33,6 +33,7 @@ import {
 } from './auth/manager';
 import { beginAuthorization, exchangeCode } from './auth/oauth';
 import { getUsage } from './api/usage';
+import { claudeCodeModelList } from './api/models';
 import type { ClaudeCodeAccount } from './auth/types';
 import { claudeCodeModelRegistry } from './config/model-specs';
 import {
@@ -117,6 +118,8 @@ export class ClaudeCodeProvider implements IProvider {
   async init(): Promise<void> {
     await loadClaudeCodeConfig();
     await initManager();
+    // In the background: boot does not wait on Anthropic, and the written list serves meanwhile.
+    claudeCodeModelList.start();
   }
 
   getJitterConfig(): JitterConfig {
@@ -336,6 +339,7 @@ export class ClaudeCodeProvider implements IProvider {
   }): Promise<unknown> {
     if (body?.apiKey) {
       const account = await addAccount(body.apiKey, body.label);
+      void claudeCodeModelList.refresh();
       return { success: true, email: account.label };
     }
 
@@ -359,6 +363,7 @@ export class ClaudeCodeProvider implements IProvider {
           ...(body.label ? { label: body.label } : {}),
         });
         console.log(`[claudecode] account added: ${account.label}`);
+        void claudeCodeModelList.refresh();
         return { success: true, email: account.label };
       } catch (err: any) {
         console.error(`[claudecode] token exchange failed:`, err?.message || err);

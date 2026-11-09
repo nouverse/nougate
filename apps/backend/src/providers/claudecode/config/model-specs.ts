@@ -19,9 +19,24 @@
  *
  * Checked against Anthropic's published rates on 2026-06-24. They drift; when you change one, put
  * the date you checked in the commit message rather than in a comment that will rot.
+ *
+ * ## The written list, and the one Anthropic gives
+ *
+ * On top of the list below come the models `GET /v1/models` lists for the credential
+ * (`api/models.ts`). A written model keeps its spec, price included; one only Anthropic lists gets
+ * the output limit and window its list states, no price, and the provider's other defaults.
+ * Anthropic lists an older model by its dated snapshot (`claude-haiku-4-5-20251001`), which is the
+ * model its undated id names; a snapshot whose undated id is listed already is not listed again.
  */
 
-import type { IModelRegistry, IModelSpec } from '@/core/interfaces';
+import type { IModelSpec } from '@/core/interfaces';
+import { LayeredModelRegistry, statedTokens } from '@/core/live-models';
+
+/**
+ * Generous, because these models think: a single hard request on Opus at high effort can run for
+ * minutes, and the 60s every other provider uses would cut off the answers worth having.
+ */
+const TIMEOUT_MS = 600_000;
 
 /** Every current model takes the same shape here, so the differences stay visible. */
 const spec = (
@@ -37,9 +52,7 @@ const spec = (
   isThinking: false,
   maxOutputTokens,
   upstreamModelId: modelId,
-  // Generous, because these models think: a single hard request on Opus at high effort can run for
-  // minutes, and the 60s every other provider uses would cut off the answers worth having.
-  timeoutMs: 600_000,
+  timeoutMs: TIMEOUT_MS,
   inputPricePer1M,
   outputPricePer1M,
 });
@@ -93,15 +106,55 @@ export function deprecatesSamplingParams(modelId: string): boolean {
   return SAMPLING_DEPRECATED.has(modelId) || SAMPLING_DEPRECATED.has(modelId.replace(/\./g, '-'));
 }
 
+/** Anthropic's ids are dashed; a client that writes the version with a dot (`claude-opus-5.5`) means the same model. */
+const dashed = (modelId: string) => modelId.replace(/\./g, '-');
+
+export const claudeCodeModelRegistry = new LayeredModelRegistry({ written: MODEL_REGISTRY, key: dashed });
+
 export function getModelSpec(modelId: string): IModelSpec | null {
-  return MODEL_REGISTRY[modelId] ?? MODEL_REGISTRY[modelId.replace(/\./g, '-')] ?? null;
+  return claudeCodeModelRegistry.getSpec(modelId);
 }
 
-export const claudeCodeModelRegistry: IModelRegistry = {
-  getSpec(modelId: string): IModelSpec | null {
-    return getModelSpec(modelId);
-  },
-  listModelIds(): string[] {
-    return Object.keys(MODEL_REGISTRY).sort();
-  },
-};
+/** One model as `GET /v1/models` lists it: the fields read here. */
+export interface ClaudeListedModel {
+  id?: string;
+  type?: string;
+  display_name?: string;
+  /** The context window Anthropic states for it. */
+  max_input_tokens?: number;
+  /** The most one answer may hold. */
+  max_tokens?: number;
+}
+
+/**
+ * The output limit of a listed model whose list states none: a conservative default. Every model
+ * Anthropic listed on 2026-11-09 stated its own, 64K or 128K.
+ */
+const DEFAULT_LIVE_MAX_OUTPUT_TOKENS = 32_000;
+
+/** A dated snapshot id, `claude-haiku-4-5-20251001`: the date is its last segment. */
+const SNAPSHOT_DATE = /-\d{8}$/;
+
+/** The models a `/v1/models` list offers, as specs. */
+export function claudeLiveSpecs(models: ClaudeListedModel[]): IModelSpec[] {
+  const ids = new Set(models.map((model) => (typeof model?.id === 'string' ? dashed(model.id.trim()) : '')));
+  const specs: IModelSpec[] = [];
+  for (const model of models) {
+    const id = typeof model?.id === 'string' ? dashed(model.id.trim()) : '';
+    if (!id || (model.type !== undefined && model.type !== 'model')) continue;
+    const undated = id.replace(SNAPSHOT_DATE, '');
+    if (undated !== id && (Object.hasOwn(MODEL_REGISTRY, undated) || ids.has(undated))) continue;
+    const contextWindow = statedTokens(model.max_input_tokens);
+    specs.push({
+      modelId: id,
+      displayName: model.display_name?.trim() || id,
+      pool: 'cli',
+      isThinking: false,
+      maxOutputTokens: statedTokens(model.max_tokens) ?? DEFAULT_LIVE_MAX_OUTPUT_TOKENS,
+      upstreamModelId: id,
+      timeoutMs: TIMEOUT_MS,
+      ...(contextWindow ? { contextWindow } : {}),
+    });
+  }
+  return specs;
+}

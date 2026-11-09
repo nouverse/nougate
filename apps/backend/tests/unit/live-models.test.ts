@@ -211,6 +211,7 @@ describe('every six hours, for every provider', () => {
   test.each([
     ['kiro', 'kiroModelList'],
     ['codex', 'codexModelList'],
+    ['claudecode', 'claudeCodeModelList'],
   ])('%s starts its list when it starts', (provider, list) => {
     const source = readFileSync(join(BACKEND, 'src', 'providers', provider, 'index.ts'), 'utf8');
     const start = source.indexOf('async init(): Promise<void> {');

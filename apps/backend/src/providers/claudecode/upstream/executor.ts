@@ -52,7 +52,7 @@ import { refreshAccessToken } from './refresh';
  * token may still have hours left (the lead is four of them), and refusing to try would turn a
  * transient network blip into a failed turn.
  */
-async function refreshIfExpiring(account: ClaudeCodeAccount): Promise<void> {
+export async function refreshIfExpiring(account: ClaudeCodeAccount): Promise<void> {
   if (!needsRefresh(account, CLAUDE_OAUTH.refreshLeadMs)) return;
   try {
     const tokens = await refreshTokens(account.refreshToken!);
