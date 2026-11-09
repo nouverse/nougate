@@ -7,6 +7,7 @@ import {
 import { getCavemanPrompt } from "@/core/caveman";
 import { cleanJSONSchemaForAntigravity } from "@/providers/antigravity/utils/schema";
 import { getFamilyName } from "@/providers/antigravity/auth/manager";
+import { shapeOf, type RequestShape } from "@/providers/antigravity/config/shape";
 
 // ─── Anthropic Request Types ──────────────────────────────────────────────────
 
@@ -214,6 +215,7 @@ function findCurrentTurnStartIndex(messages: AnthropicMessage[]): number {
 function transformContentBlock(
   block: AnthropicContent,
   googleModel: string,
+  shape: RequestShape,
   isInCurrentTurn: boolean,
   sessionId: string | undefined,
   toolUseState: { leadId?: string; leadSignature?: string },
@@ -244,7 +246,7 @@ function transformContentBlock(
         args: block.input ?? {},
       };
 
-      if (googleModel.includes("claude") || googleModel.includes("gemini-3")) {
+      if (shape.callIds) {
         functionCall.id = block.id;
       }
 
@@ -289,7 +291,7 @@ function transformContentBlock(
         response: responseObject,
       };
 
-      if (googleModel.includes("claude") || googleModel.includes("gemini-3")) {
+      if (shape.callIds) {
         functionResponse.id = block.tool_use_id;
       }
 
@@ -338,6 +340,7 @@ function transformContentBlock(
 function transformMessage(
   message: AnthropicMessage,
   googleModel: string,
+  shape: RequestShape,
   isInCurrentTurn: boolean,
   sessionId: string | undefined,
   signaturesRequired: boolean,
@@ -370,6 +373,7 @@ function transformMessage(
     const blockParts = transformContentBlock(
       block,
       googleModel,
+      shape,
       isInCurrentTurn,
       sessionId,
       toolUseState,
@@ -392,21 +396,21 @@ function transformMessage(
 function buildGoogleContents(
   messages: AnthropicMessage[],
   googleModel: string,
+  shape: RequestShape,
   sessionId: string | undefined,
   keepThinking: boolean,
-  isThinking?: boolean,
+  isThinking: boolean,
 ): any[] {
   const nameMap = buildToolUseNameMap(messages);
   const currentTurnStartIndex = findCurrentTurnStartIndex(messages);
-  // Use modelSpec.isThinking when available; fall back to name-based check for backward compat
-  const thinkingEnabled = isThinking ?? googleModel.includes("thinking");
-  const signaturesRequired = thoughtSignatureRequired(googleModel, thinkingEnabled);
+  const signaturesRequired = thoughtSignatureRequired(shape, isThinking);
 
   const rawContents = messages.map((message, messageIndex) => {
     const isInCurrentTurn = messageIndex >= currentTurnStartIndex;
     return transformMessage(
       message,
       googleModel,
+      shape,
       isInCurrentTurn,
       sessionId,
       signaturesRequired,
@@ -545,11 +549,11 @@ export function mapAnthropicToGoogle(
   const cavemanPrefix = getCavemanPrompt();
   const rawSystemText = extractSystemText(body.system);
   const systemText = cavemanPrefix ? `${cavemanPrefix}\n\n${rawSystemText}` : rawSystemText;
-  const contents = buildGoogleContents(body.messages, googleModel, sessionId, keepThinking, modelSpec.isThinking);
+  const shape = shapeOf(modelSpec);
+  const contents = buildGoogleContents(body.messages, googleModel, shape, sessionId, keepThinking, modelSpec.isThinking);
 
   const explicitThinking =
     body.thinking?.type === "enabled" && body.thinking.budget_tokens !== undefined;
-  const isFlashModel = googleModel.includes("flash") && !modelSpec.isThinking;
   const thinkingBudget = resolveThinkingBudget(body, modelSpec);
 
   const googleRequest: any = {
@@ -591,7 +595,7 @@ export function mapAnthropicToGoogle(
   };
 
   // Apply thinking config based on IModelSpec
-  if (modelSpec.isThinking && !isFlashModel) {
+  if (modelSpec.isThinking) {
     googleRequest.generationConfig.thinkingConfig = {
       includeThoughts: true,
     };
@@ -608,7 +612,7 @@ export function mapAnthropicToGoogle(
   const tools = buildToolDeclarations(body, aggressive, sanitizeToolNames);
   if (tools) {
     googleRequest.tools = tools;
-    if (googleModel.includes("claude")) {
+    if (shape.validatedTools) {
       googleRequest.toolConfig = {
         functionCallingConfig: { mode: "VALIDATED" },
       };
@@ -616,7 +620,7 @@ export function mapAnthropicToGoogle(
   }
 
   // Google Search grounding (Gemini models only)
-  if (googleModel.includes("gemini") && googleSearchGrounding) {
+  if (shape.grounding && googleSearchGrounding) {
     const groundingTool: any = { googleSearchRetrieval: {} };
     if (groundingMode === "always") {
       groundingTool.googleSearchRetrieval.dynamicRetrievalConfig = {

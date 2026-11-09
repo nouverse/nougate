@@ -20,6 +20,7 @@ import {
 import type { AntigravityAccount } from '@/providers/antigravity/auth/types';
 import { antigravityModelRegistry, loadModelSpecOverrides } from '@/providers/antigravity/config/model-specs';
 import { supportedModelsCache, refreshAllQuotas, fetchQuota } from '@/providers/antigravity/api/quota';
+import { antigravityModelList } from '@/providers/antigravity/api/models';
 import {
   getSystemInstruction,
   getAntigravityConfig,
@@ -366,6 +367,8 @@ export class AntigravityProvider implements IProvider {
     await loadAntigravityConfig();
     await loadModelSpecOverrides();
     await initManager();
+    // The kept list is read before boot goes on; Google is asked in the background.
+    await antigravityModelList.start();
 
     // Start background quota refreshing
     const antigravityConfig = getAntigravityConfig();
@@ -674,6 +677,7 @@ export class AntigravityProvider implements IProvider {
       }
 
       await addAccount(newAccount);
+      void antigravityModelList.refresh();
       return { success: true, email };
     } else {
       return { redirectUrl: "/oauth/start" };

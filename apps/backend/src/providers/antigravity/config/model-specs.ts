@@ -1,217 +1,188 @@
 /**
- * The models Antigravity offers, written by hand.
+ * The models Antigravity offers: the ones Google's `fetchAvailableModels` lists for the accounts.
  *
- * ## Why Google's own list does not add models here
+ * No id is written down here. `api/models.ts` asks every account and keeps the union; the last good
+ * answer is kept on disk (`core/live-models.ts`). Each account is still offered only the models its
+ * own list has (`isModelUnlistedFor` in `auth/manager.ts`), since Google moves accounts to a new
+ * generation one by one.
  *
- * The other providers lay their upstream's model list over their written one (`core/live-models.ts`).
- * Antigravity reads Google's list too — `fetchAvailableModels`, per account, kept as
- * `availableModels` (`api/quota.ts`) — but only to choose which account may serve a model
- * (`isModelUnlistedFor` in `auth/manager.ts`), never to add one, for two reasons.
+ * ## What is offered, from the reply's own fields
  *
- * A Google request is assembled per model, and partly by its name: the mappers give function calls
- * an id only for `claude` and `gemini-3` ids, ask Claude for validated tool calls, send thought
- * signatures only to a thinking `gemini-3`, turn thinking on from the spec except for a `flash` id,
- * and the executor picks its headers by whether the id names Claude. A model Nougate has no written
- * spec for would be sent shaped for whichever family its name happens to match; a short answer could
- * come back while tool calls or thinking break.
+ * A model the reply marks internal (`isInternal`, `API_PROVIDER_INTERNAL`: Antigravity's own chat
+ * helpers) is not offered, nor one it gives no display name (its tab-completion models), unless the
+ * reply names it in `tieredModelIds`: that is a model served at levels, below. Ids the reply gives the
+ * same display name are one model offered once: on 2026-11-09 `gemini-2.5-flash`, `-lite` and
+ * `-thinking` were each named "Gemini 3.5 Flash Lite" beside `gemini-3.5-flash-lite` itself.
  *
- * And what Google's list adds today is nothing a person should pick. On 2026-11-09 the ids two live
- * accounts listed beyond this file were: `gemini-2.5-flash`, `gemini-2.5-flash-lite` and
- * `gemini-2.5-flash-thinking`, each of which Google itself names "Gemini 3.5 Flash Lite", a model
- * listed here already; `gpt-oss-120b-medium`, whose own entry says "GPT-OSS will be removed from
- * Antigravity on November 18, 2026"; `gemini-3.8-flash-tiered`, the family the three Gemini 3.8 Flash
- * levels below are sent as; `chat_20706` and `chat_23310`, internal (`isInternal`); and two
- * `tab_*` completion models. A new model is added here, with the facts checked, when Google ships one.
+ * A notice the reply attaches (`tagDescription`) is text for a person and is not read: on 2026-11-09
+ * one said GPT-OSS would be removed on the 18th, and another, on the account moved to Claude 5.5,
+ * that third-party models leave its plan on that day too. A model Google removes leaves its list,
+ * and this one follows within six hours.
+ *
+ * ## How a request for it is shaped
+ *
+ * Each spec carries the reply's facts — the maker, whether it thinks by level, the file types it
+ * takes, its output limit and window — and `config/shape.ts` shapes the Google request by them.
+ * What the reply does not say is a rule, by maker or by Google's naming, never by exact model:
+ *
+ * - **Levels of a tiered model.** A model the reply lists as `<family>-tiered` is sent at
+ *   `<family>-low`, `-medium` and `-high`, Google's own ids for its levels; `<family>` alone is sent
+ *   as `-medium`. Claude 5.5's levels the reply lists one by one.
+ * - **Budget for Claude thinking by budget.** An Anthropic model that thinks and states no level
+ *   (Claude 4.6) is given a 32,768-token thinking budget unless the client asks for another. The
+ *   reply's own `thinkingBudget` for it is 1,024, the least Anthropic allows; sent as the default it
+ *   would cut the thinking short. A Google model is sent no budget, and thinks as Google decides.
+ * - **An output limit the reply does not state**: 8,192, a conservative default.
+ *
+ * Prices: none; the shared price book prices each model by its family.
  */
 
-import type { IModelRegistry, IModelSpec } from '@/core/interfaces';
+import type { IModelSpec, InputModality } from '@/core/interfaces';
 import { getProxyConfig } from '@/config/manager';
+import { LayeredModelRegistry, statedTokens } from '@/core/live-models';
 import { dataPath } from '@/core/paths';
 import { withRouteModalities } from '@/providers/antigravity/config/audio';
+import type { AntigravityModelSpec } from '@/providers/antigravity/config/shape';
 
+const TIMEOUT_MS = 60_000;
 
-const MODEL_REGISTRY: Record<string, IModelSpec> = {
-  'gemini-3.1-flash-lite': {
-    modelId: 'gemini-3.1-flash-lite',
-    displayName: 'Gemini 3.1 Flash Lite',
-    pool: 'sandbox',
-    isThinking: false,
-    maxOutputTokens: 8192,
-    timeoutMs: 60000,
-  },
-  'gemini-3.1-flash-image': {
-    modelId: 'gemini-3.1-flash-image',
-    displayName: 'Gemini 3.1 Flash Image',
-    pool: 'sandbox',
-    isThinking: false,
-    maxOutputTokens: 8192, // max: 65536
-    timeoutMs: 60000,
-  },
-  // ── Gemini 3.8 Flash ──────────────────────────────────────────────────────
-  // Google serves the thinking level as three ids of their own, so no budget is sent: one would
-  // override the level the id names. The bare `gemini-3.8-flash` is not an upstream id; it stays
-  // callable as Medium so a config that names it keeps working.
-  'gemini-3.8-flash': {
-    modelId: 'gemini-3.8-flash',
-    displayName: 'Gemini 3.8 Flash',
-    pool: 'sandbox',
-    upstreamModelId: 'gemini-3.8-flash-medium',
-    isThinking: true,
-    thinkingMode: 'budget',
-    maxOutputTokens: 65536,
-    timeoutMs: 60000,
-  },
-  'gemini-3.8-flash-low': {
-    modelId: 'gemini-3.8-flash-low',
-    displayName: 'Gemini 3.8 Flash (Low)',
-    pool: 'sandbox',
-    isThinking: true,
-    thinkingMode: 'budget',
-    maxOutputTokens: 65536,
-    timeoutMs: 60000,
-  },
-  'gemini-3.8-flash-medium': {
-    modelId: 'gemini-3.8-flash-medium',
-    displayName: 'Gemini 3.8 Flash (Medium)',
-    pool: 'sandbox',
-    isThinking: true,
-    thinkingMode: 'budget',
-    maxOutputTokens: 65536,
-    timeoutMs: 60000,
-  },
-  'gemini-3.8-flash-high': {
-    modelId: 'gemini-3.8-flash-high',
-    displayName: 'Gemini 3.8 Flash (High)',
-    pool: 'sandbox',
-    isThinking: true,
-    thinkingMode: 'budget',
-    maxOutputTokens: 65536,
-    timeoutMs: 60000,
-  },
-  'gemini-3-flash': {
-    modelId: 'gemini-3-flash',
-    displayName: 'Gemini 3 Flash',
-    pool: 'sandbox',
-    isThinking: true,
-    thinkingMode: 'budget',
-    maxOutputTokens: 65536,
-    timeoutMs: 60000,
-  },
-  'gemini-3.5-flash-lite': {
-    modelId: 'gemini-3.5-flash-lite',
-    displayName: 'Gemini 3.5 Flash Lite',
-    pool: 'sandbox',
-    isThinking: false,
-    maxOutputTokens: 65535,
-    timeoutMs: 60000,
-  },
-  'gemini-2.5-pro': {
-    modelId: 'gemini-2.5-pro',
-    displayName: 'Gemini 2.5 Pro',
-    pool: 'sandbox',
-    isThinking: true,
-    thinkingMode: 'budget',
-    maxOutputTokens: 65535,
-    timeoutMs: 60000,
-  },
-  // ── Claude 5.5 ────────────────────────────────────────────────────────────
-  // Like Gemini 3.8 Flash, the thinking level is in Google's id, so no budget is sent. An account
-  // Google has moved to 5.5 answers 4.6 with "no longer available" as the reply, and one not yet
-  // moved answers 5.5 so: selection offers an account only the models its own list from Google
-  // has (`isModelUnlistedFor` in auth/manager.ts).
-  'claude-sonnet-5-5-low': {
-    modelId: 'claude-sonnet-5-5-low',
-    displayName: 'Claude Sonnet 5.5 (Low)',
-    pool: 'sandbox',
-    isThinking: true,
-    thinkingMode: 'budget',
-    maxOutputTokens: 128000,
-    timeoutMs: 60000,
-  },
-  'claude-sonnet-5-5-medium': {
-    modelId: 'claude-sonnet-5-5-medium',
-    displayName: 'Claude Sonnet 5.5 (Medium)',
-    pool: 'sandbox',
-    isThinking: true,
-    thinkingMode: 'budget',
-    maxOutputTokens: 128000,
-    timeoutMs: 60000,
-  },
-  'claude-sonnet-5-5-high': {
-    modelId: 'claude-sonnet-5-5-high',
-    displayName: 'Claude Sonnet 5.5 (High)',
-    pool: 'sandbox',
-    isThinking: true,
-    thinkingMode: 'budget',
-    maxOutputTokens: 128000,
-    timeoutMs: 60000,
-  },
-  'claude-opus-5-5-low': {
-    modelId: 'claude-opus-5-5-low',
-    displayName: 'Claude Opus 5.5 (Low)',
-    pool: 'sandbox',
-    isThinking: true,
-    thinkingMode: 'budget',
-    maxOutputTokens: 128000,
-    timeoutMs: 60000,
-  },
-  'claude-opus-5-5-medium': {
-    modelId: 'claude-opus-5-5-medium',
-    displayName: 'Claude Opus 5.5 (Medium)',
-    pool: 'sandbox',
-    isThinking: true,
-    thinkingMode: 'budget',
-    maxOutputTokens: 128000,
-    timeoutMs: 60000,
-  },
-  'claude-opus-5-5-high': {
-    modelId: 'claude-opus-5-5-high',
-    displayName: 'Claude Opus 5.5 (High)',
-    pool: 'sandbox',
-    isThinking: true,
-    thinkingMode: 'budget',
-    maxOutputTokens: 128000,
-    timeoutMs: 60000,
-  },
-  'claude-sonnet-4-6': {
-    modelId: 'claude-sonnet-4-6',
-    displayName: 'Claude Sonnet 4.6 Thinking',
-    pool: 'sandbox',
-    isThinking: true,
-    thinkingMode: 'budget',
-    thinkingBudget: 32768,
-    maxOutputTokens: 64000,
-    timeoutMs: 60000,
-  },
-  'claude-opus-4-6-thinking': {
-    modelId: 'claude-opus-4-6-thinking',
-    displayName: 'Claude Opus 4.6 Thinking',
-    pool: 'sandbox',
-    isThinking: true,
-    thinkingMode: 'budget',
-    thinkingBudget: 32768,
-    maxOutputTokens: 64000,
-    timeoutMs: 60000,
-  },
-};
+/** The output limit of a listed model whose entry states none: a conservative default. */
+const DEFAULT_MAX_OUTPUT_TOKENS = 8192;
 
+/** The thinking budget an Anthropic model that thinks by budget is sent when the client names none. */
+const ANTHROPIC_THINKING_BUDGET = 32_768;
 
+/** Google's ids for the levels of a tiered model; the family alone is the middle one. */
+const TIER_LEVELS = ['low', 'medium', 'high'] as const;
+const TIER_ALIAS_LEVEL = 'medium';
 
-/**
- * Clone a model spec so callers do not mutate the in-memory registry accidentally.
- *
- * Modalities are stamped on the way out rather than written into each entry: they follow from the
- * route (see `config/audio.ts`), so an entry added later — or an override-defined one — cannot
- * forget them.
- */
-function cloneModelSpec(modelSpec: IModelSpec): IModelSpec {
-  return withRouteModalities({
-    ...modelSpec,
-  });
+/** One model as the reply's own fields describe it: what is kept on disk between answers. */
+export interface AntigravityListedModel {
+  /** Google's id. */
+  id: string;
+  name: string;
+  /** Who made it, from `modelProvider`; absent when the reply does not say. */
+  maker?: string;
+  images: boolean;
+  audio: boolean;
+  thinking: boolean;
+  /** Set when it thinks by level (`thinkingLevel`), not by a budget. */
+  thinkingLevel?: number;
+  maxOutputTokens?: number;
+  /** The window (`maxTokens`). */
+  window?: number;
+  /** Served at levels: `<family>-low|medium|high`. */
+  tiered: boolean;
 }
 
+/** `MODEL_PROVIDER_ANTHROPIC` → `anthropic`; failing that, the maker named in `apiProvider`. */
+function makerOf(entry: any): string | undefined {
+  const provider = typeof entry?.modelProvider === 'string' ? entry.modelProvider : '';
+  const named = /^MODEL_PROVIDER_([A-Z]+)$/.exec(provider)?.[1];
+  if (named) return named.toLowerCase();
+  const api = typeof entry?.apiProvider === 'string' ? entry.apiProvider : '';
+  return /ANTHROPIC|GOOGLE|OPENAI/.exec(api)?.[0]?.toLowerCase();
+}
+
+/** A name for a tiered family the reply names nothing: `gemini-3.8-flash` → `Gemini 3.8 Flash`. */
+function familyName(family: string): string {
+  return family
+    .split('-')
+    .map((word) => (word ? word[0]!.toUpperCase() + word.slice(1) : word))
+    .join(' ');
+}
+
+/** A display name in id form, to tell which of several ids sharing it is the model's own. */
+const asId = (name: string) => name.trim().toLowerCase().replace(/\s+/g, '-');
+
+/** The models a `fetchAvailableModels` reply offers, as its own fields describe them. */
+export function parseListedModels(reply: any): AntigravityListedModel[] {
+  const raw = reply?.models ?? reply?.availableModels;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return [];
+  const tieredIds = new Set<string>(
+    Object.values(reply?.tieredModelIds ?? {}).flatMap((ids) => (Array.isArray(ids) ? ids.map(String) : [])),
+  );
+
+  const listed: AntigravityListedModel[] = [];
+  for (const [key, entry] of Object.entries<any>(raw)) {
+    if (!entry || typeof entry !== 'object') continue;
+    const id = key.replace('models/', '');
+    if (entry.isInternal === true || entry.apiProvider === 'API_PROVIDER_INTERNAL') continue;
+    const name = typeof entry.displayName === 'string' ? entry.displayName.trim() : '';
+    const tiered = !name && tieredIds.has(id);
+    if (!name && !tiered) continue;
+    const mimeTypes = Object.keys(entry.supportedMimeTypes ?? {});
+    const level = typeof entry.thinkingLevel === 'number' ? entry.thinkingLevel : undefined;
+    const maxOutputTokens = statedTokens(entry.maxOutputTokens);
+    const window = statedTokens(entry.maxTokens);
+    const maker = makerOf(entry);
+    listed.push({
+      id,
+      name: name || familyName(id.replace(/-tiered$/, '')),
+      ...(maker ? { maker } : {}),
+      images: entry.supportsImages === true || mimeTypes.some((type) => type.startsWith('image/')),
+      audio: mimeTypes.some((type) => type.startsWith('audio/')),
+      thinking: entry.supportsThinking === true,
+      ...(level !== undefined ? { thinkingLevel: level } : {}),
+      ...(maxOutputTokens ? { maxOutputTokens } : {}),
+      ...(window ? { window } : {}),
+      tiered,
+    });
+  }
+
+  // Ids the reply gives one display name are one model: the one whose id is that name, else the first.
+  const byName = new Map<string, AntigravityListedModel[]>();
+  for (const model of listed) byName.set(model.name, [...(byName.get(model.name) ?? []), model]);
+  const kept = new Set<AntigravityListedModel>();
+  for (const [name, models] of byName) {
+    const sorted = [...models].sort((a, b) => a.id.localeCompare(b.id));
+    kept.add(sorted.find((model) => model.id === asId(name)) ?? sorted[0]!);
+  }
+  return listed.filter((model) => kept.has(model));
+}
+
+/** One listed model's specs: itself, or a tiered one's alias and levels. */
+function specsOf(model: AntigravityListedModel): AntigravityModelSpec[] {
+  const inputModalities: InputModality[] = ['text', ...(model.images ? ['image' as const] : []), ...(model.audio ? ['audio' as const] : [])];
+  const byBudget = model.maker === 'anthropic' && model.thinking && model.thinkingLevel === undefined;
+  const base: Omit<AntigravityModelSpec, 'modelId'> = {
+    displayName: model.name,
+    pool: 'sandbox',
+    isThinking: model.thinking,
+    ...(model.thinking ? { thinkingMode: 'budget' as const } : {}),
+    ...(byBudget ? { thinkingBudget: ANTHROPIC_THINKING_BUDGET } : {}),
+    maxOutputTokens: model.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
+    ...(model.window ? { contextWindow: model.window } : {}),
+    timeoutMs: TIMEOUT_MS,
+    inputModalities,
+    ...(model.maker ? { maker: model.maker } : {}),
+    thinksByLevel: model.thinkingLevel !== undefined,
+  };
+  if (!model.tiered) return [{ ...base, modelId: model.id }];
+
+  // The level is in the id Google is sent, so a level is thinking by level, whatever the family says.
+  const family = model.id.replace(/-tiered$/, '');
+  return [
+    { ...base, modelId: family, upstreamModelId: `${family}-${TIER_ALIAS_LEVEL}`, thinksByLevel: true },
+    ...TIER_LEVELS.map((level) => ({
+      ...base,
+      modelId: `${family}-${level}`,
+      displayName: `${model.name} (${level[0]!.toUpperCase()}${level.slice(1)})`,
+      thinksByLevel: true,
+    })),
+  ];
+}
+
+/** The specs a set of listed models makes. */
+export function antigravitySpecs(models: AntigravityListedModel[]): AntigravityModelSpec[] {
+  return models.flatMap(specsOf);
+}
+
+/** An operator's own changes, from `providers/antigravity/model-specs.json`. Empty unless one wrote some. */
+const OVERRIDES: Record<string, Partial<IModelSpec>> = {};
+
 /**
- * Build a concrete model spec for new override-defined models.
+ * Build a concrete model spec for an override naming a model Google does not list.
  */
 function createDefaultModelSpec(modelId: string, override: Partial<IModelSpec>): IModelSpec {
   return {
@@ -219,7 +190,7 @@ function createDefaultModelSpec(modelId: string, override: Partial<IModelSpec>):
     pool: override.pool ?? 'sandbox',
     isThinking: override.isThinking ?? false,
     maxOutputTokens: override.maxOutputTokens ?? 4096,
-    timeoutMs: override.timeoutMs ?? 60000,
+    timeoutMs: override.timeoutMs ?? TIMEOUT_MS,
     ...override,
   };
 }
@@ -232,84 +203,83 @@ function normalizeModelId(modelId: string): string {
 }
 
 /**
- * Load optional runtime overrides from providers/antigravity/model-specs.json.
+ * Read the operator's override file into `OVERRIDES`, replacing what it held: a change the file no
+ * longer has is gone. Each entry is laid over Google's spec of that model, or, for a model Google
+ * does not list, made a whole spec of its own.
  */
 export async function loadModelSpecOverrides(): Promise<void> {
-  const paths = [dataPath('providers', 'antigravity', 'model-specs.json')];
-
-  for (const path of paths) {
-    try {
-      const file = Bun.file(path);
-      if (!(await file.exists())) {
-        continue;
-      }
-
-      const overrides = await file.json() as Record<string, Partial<IModelSpec>>;
-      for (const [rawModelId, override] of Object.entries(overrides)) {
-        const modelId = normalizeModelId(rawModelId);
-        const current = MODEL_REGISTRY[modelId];
-        MODEL_REGISTRY[modelId] = current
-          ? { ...current, ...override, modelId }
-          : createDefaultModelSpec(modelId, override);
-      }
-
-      console.log(`[AntigravityModelRegistry] Loaded overrides from ${path}`);
-      return;
-    } catch (error) {
-      console.warn(`[AntigravityModelRegistry] Failed to load overrides from ${path}:`, error);
+  const path = dataPath('providers', 'antigravity', 'model-specs.json');
+  try {
+    const file = Bun.file(path);
+    const overrides = (await file.exists()) ? ((await file.json()) as Record<string, Partial<IModelSpec>>) : {};
+    for (const key of Object.keys(OVERRIDES)) delete OVERRIDES[key];
+    for (const [rawModelId, override] of Object.entries(overrides)) {
+      const modelId = normalizeModelId(rawModelId);
+      OVERRIDES[modelId] = { ...OVERRIDES[modelId], ...override };
     }
+    if (Object.keys(OVERRIDES).length > 0) console.log(`[AntigravityModelRegistry] Loaded overrides from ${path}`);
+  } catch (error) {
+    console.warn(`[AntigravityModelRegistry] Failed to load overrides from ${path}:`, error);
   }
 }
+
+const layered = new LayeredModelRegistry({ overrides: OVERRIDES, complete: createDefaultModelSpec, key: normalizeModelId });
+
+/**
+ * A spec for an id Google does not list, when the operator lets unknown models through: the upstream
+ * is the authority, and the id is all there is to go on.
+ */
+function bypassSpec(modelId: string): IModelSpec | null {
+  try {
+    const proxyConfig = getProxyConfig();
+    if (proxyConfig && proxyConfig.bypassModelValidation) {
+      console.log(`[AntigravityModelRegistry] Unknown model "${modelId}" requested, generating dynamic spec fallback.`);
+      return createDefaultModelSpec(modelId, {
+        isThinking: modelId.toLowerCase().includes("thinking"),
+        thinkingMode: modelId.toLowerCase().includes("thinking") ? "budget" : undefined,
+        thinkingBudget: modelId.toLowerCase().includes("thinking") ? 32768 : undefined,
+        maxOutputTokens: 64000,
+      });
+    }
+  } catch (error) {
+    // If config is not loaded (e.g. during specific standalone script runs), default to non-bypass
+  }
+  return null;
+}
+
+/**
+ * Provider-local model registry for the antigravity provider. A spec handed out carries the route's
+ * modalities (`config/audio.ts`).
+ */
+export const antigravityModelRegistry = {
+  getSpec(modelId: string): IModelSpec | null {
+    const spec = layered.getSpec(modelId) ?? bypassSpec(modelId);
+    return spec ? withRouteModalities(spec) : null;
+  },
+  listModelIds(): string[] {
+    return layered.listModelIds();
+  },
+  liveModelIds(): string[] {
+    return layered.liveModelIds();
+  },
+  mergeLive(specs: IModelSpec[]): number {
+    return layered.mergeLive(specs);
+  },
+};
 
 /**
  * Read a model spec with exact provider-local lookup semantics.
  */
 export function getModelSpec(modelId: string): IModelSpec | null {
-  const normalized = normalizeModelId(modelId);
-  const modelSpec = MODEL_REGISTRY[normalized];
-  if (modelSpec) {
-    return cloneModelSpec(modelSpec);
-  }
-
-  // Check if we should bypass validation
-  try {
-    const proxyConfig = getProxyConfig();
-    if (proxyConfig && proxyConfig.bypassModelValidation) {
-      // Dynamic fallback for unknown models to search/test raw upstream model names
-      console.log(`[AntigravityModelRegistry] Unknown model "${modelId}" requested, generating dynamic spec fallback.`);
-      return cloneModelSpec(createDefaultModelSpec(modelId, {
-        isThinking: modelId.toLowerCase().includes("thinking"),
-        thinkingMode: modelId.toLowerCase().includes("thinking") ? "budget" : undefined,
-        thinkingBudget: modelId.toLowerCase().includes("thinking") ? 32768 : undefined,
-        maxOutputTokens: 64000,
-      }));
-    }
-  } catch (error) {
-    // If config is not loaded (e.g. during specific standalone script runs), default to non-bypass
-  }
-
-  return null;
+  return antigravityModelRegistry.getSpec(modelId);
 }
 
-
 /**
- * The id Google knows a model by, the one the mappers send: the registry's `upstreamModelId` when it
- * names one, so `gemini-3.8-flash` is `gemini-3.8-flash-medium`. An id the registry does not hold is
- * sent as it is (see the bypass in `getModelSpec`), so it is its own upstream id.
+ * The id Google knows a model by, the one the mappers send: the spec's `upstreamModelId` when it
+ * names one, so `gemini-3.8-flash` is `gemini-3.8-flash-medium`. An id no list has is sent as it is
+ * (see the bypass in `getSpec`), so it is its own upstream id.
  */
 export function upstreamModelIdFor(modelId: string): string {
-  const modelSpec = MODEL_REGISTRY[normalizeModelId(modelId)];
+  const modelSpec = layered.getSpec(modelId);
   return modelSpec ? (modelSpec.upstreamModelId ?? modelSpec.modelId) : modelId;
 }
-
-/**
- * Provider-local model registry for the antigravity provider.
- */
-export const antigravityModelRegistry: IModelRegistry = {
-  getSpec(modelId: string): IModelSpec | null {
-    return getModelSpec(modelId);
-  },
-  listModelIds(): string[] {
-    return Object.keys(MODEL_REGISTRY).sort();
-  },
-};

@@ -1,4 +1,5 @@
 import type { IModelSpec, InputAudioFormat } from '@/core/interfaces';
+import { shapeOf } from './shape';
 
 /**
  * What Antigravity can deliver to a model, decided in one place so `/models` and the OpenAI mapper
@@ -29,32 +30,29 @@ export const AUDIO_MIME_TYPES: Record<InputAudioFormat, string> = {
 const AUDIO_FORMATS = Object.keys(AUDIO_MIME_TYPES) as InputAudioFormat[];
 
 /**
- * Whether the request goes to a Claude model behind Antigravity.
- *
- * Read from the upstream id, the same way the mapper and the executor already tell the two apart.
+ * Whether this route can deliver `input_audio` to the model: what its spec says it takes, from the
+ * file types Google's own model list gives it (`config/model-specs.ts`), and never for a Claude model,
+ * whatever a spec says (the translation above has nowhere to put it).
  */
-export function targetsClaude(modelSpec: IModelSpec): boolean {
-  return (modelSpec.upstreamModelId ?? modelSpec.modelId).toLowerCase().includes('claude');
-}
-
-/** Whether this route can deliver `input_audio` to the model. */
 export function carriesAudio(modelSpec: IModelSpec): boolean {
-  return !targetsClaude(modelSpec);
+  if (shapeOf(modelSpec).anthropic) return false;
+  return modelSpec.inputModalities ? modelSpec.inputModalities.includes('audio') : true;
 }
 
 /**
  * Stamp the route's modalities onto a spec.
  *
- * A Gemini spec keeps any modalities an override set explicitly — an operator may know a particular
- * model cannot hear. A Claude spec never declares audio, override or not, because the mapper will
- * refuse it and a declaration the mapper contradicts is worse than none.
+ * A spec keeps the modalities it states: the ones Google's list gave it, or an operator's. One that
+ * states none — a model Google did not list — is given the route's: text and images, and audio
+ * unless it is a Claude model. A Claude spec never declares audio, because the mapper will refuse it
+ * and a declaration the mapper contradicts is worse than none.
  */
 export function withRouteModalities(modelSpec: IModelSpec): IModelSpec {
   const { inputAudioFormats, ...rest } = modelSpec;
+  const anthropic = shapeOf(modelSpec).anthropic;
 
-  const inputModalities = carriesAudio(modelSpec)
-    ? (modelSpec.inputModalities ?? ['text', 'image', 'audio'])
-    : (modelSpec.inputModalities?.filter((modality) => modality !== 'audio') ?? ['text', 'image']);
+  const stated = modelSpec.inputModalities ?? (anthropic ? ['text', 'image'] : ['text', 'image', 'audio']);
+  const inputModalities = anthropic ? stated.filter((modality) => modality !== 'audio') : stated;
 
   // Formats only ride along with audio, so a spec can never list formats for a route that is deaf.
   return inputModalities.includes('audio')

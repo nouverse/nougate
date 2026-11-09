@@ -9,6 +9,7 @@
  * Each answer is the one a live account gave, trimmed to the fields read and a few beside them.
  */
 
+import { antigravityModelRegistry, antigravitySpecs, parseListedModels, type AntigravityListedModel } from '@/providers/antigravity/config/model-specs';
 import { claudeCodeModelRegistry, claudeLiveSpecs, type ClaudeListedModel } from '@/providers/claudecode/config/model-specs';
 import { codexLiveSpecs, codexModelRegistry, type CodexListedModel } from '@/providers/codex/config/model-specs';
 import { copilotLiveSpecs, copilotModelRegistry, type CopilotListedModel } from '@/providers/copilot/config/model-specs';
@@ -193,8 +194,78 @@ export function seedKiro(): void {
   kiroModelRegistry.mergeLive(catalogToModelDefs(KIRO_ANSWER.models));
 }
 
+const GEMINI_FILES = { 'image/png': true, 'audio/mp3': true, 'video/mp4': true, 'application/pdf': true };
+const CLAUDE_FILES = { 'image/png': true, 'video/jpeg2000': true };
+const IMAGE_FILES = { 'image/png': true, 'video/jpeg2000': true };
+const quota = { quotaInfo: { remainingFraction: 1 } };
+const gemini = { apiProvider: 'API_PROVIDER_GOOGLE_GEMINI', modelProvider: 'MODEL_PROVIDER_GOOGLE', ...quota };
+const anthropic = { apiProvider: 'API_PROVIDER_ANTHROPIC_VERTEX', modelProvider: 'MODEL_PROVIDER_ANTHROPIC', ...quota };
+const flashLiteAlike = { ...gemini, displayName: 'Gemini 3.5 Flash Lite', supportsImages: true, supportsVideo: true, supportsThinking: true, minThinkingBudget: 128, thinkingLevel: 1, recommended: true, maxTokens: 1048576, maxOutputTokens: 65535, supportedMimeTypes: GEMINI_FILES };
+const claude55 = (name: string, level: number) => ({ ...anthropic, displayName: name, supportsImages: true, supportsThinking: true, thinkingLevel: level, recommended: true, maxTokens: 1000000, maxOutputTokens: 128000, tagTitle: 'New', supportedMimeTypes: CLAUDE_FILES });
+const shared = {
+  'chat_20706': { model: 'MODEL_CHAT_20706', apiProvider: 'API_PROVIDER_INTERNAL', modelProvider: 'MODEL_PROVIDER_GOOGLE', isInternal: true, maxTokens: 16384, ...quota },
+  'chat_23310': { model: 'MODEL_CHAT_23310', apiProvider: 'API_PROVIDER_INTERNAL', modelProvider: 'MODEL_PROVIDER_GOOGLE', isInternal: true, maxTokens: 32768, ...quota },
+  'tab_flash_lite_preview': { ...gemini, maxTokens: 16384, maxOutputTokens: 4096 },
+  'tab_jump_flash_lite_preview': { ...gemini, maxTokens: 16384, maxOutputTokens: 4096 },
+  'gemini-2.5-flash': flashLiteAlike,
+  'gemini-2.5-flash-lite': flashLiteAlike,
+  'gemini-2.5-flash-thinking': flashLiteAlike,
+  'gemini-2.5-pro': { ...gemini, displayName: 'Gemini 2.5 Pro', supportsImages: true, supportsThinking: true, thinkingBudget: 1024, minThinkingBudget: 128, recommended: true, maxTokens: 1048576, maxOutputTokens: 65535, supportedMimeTypes: GEMINI_FILES },
+  'gemini-3-flash': { ...gemini, displayName: 'Gemini 3 Flash', supportsImages: true, supportsThinking: true, minThinkingBudget: 128, thinkingLevel: 3, recommended: true, maxTokens: 1048576, maxOutputTokens: 65536, supportedMimeTypes: GEMINI_FILES },
+  'gemini-3.1-flash-image': { ...gemini, displayName: 'Gemini 3.1 Flash Image', supportsImages: true, maxTokens: 65536, maxOutputTokens: 65536, supportedMimeTypes: IMAGE_FILES },
+  'gemini-3.1-flash-lite': { ...gemini, displayName: 'Gemini 3.1 Flash Lite', supportsImages: true, supportsThinking: true, minThinkingBudget: 128, thinkingLevel: 1, recommended: true, maxTokens: 1048576, maxOutputTokens: 65535, supportedMimeTypes: GEMINI_FILES },
+  'gemini-3.5-flash-lite': { ...flashLiteAlike },
+  'gemini-3.8-flash-tiered': { ...gemini, supportsImages: true, supportsThinking: true, minThinkingBudget: 32, thinkingLevel: 3, recommended: true, maxTokens: 1048576, maxOutputTokens: 65536, supportedMimeTypes: GEMINI_FILES },
+  'gpt-oss-120b-medium': { apiProvider: 'API_PROVIDER_OPENAI_VERTEX', modelProvider: 'MODEL_PROVIDER_OPENAI', displayName: 'GPT-OSS 120B (Medium)', supportsThinking: true, thinkingBudget: 8192, recommended: true, maxTokens: 131072, maxOutputTokens: 32768, tagTitle: 'Notice', tagDescription: 'GPT-OSS will be removed from Antigravity on November 18, 2026.', ...quota },
+};
+const lists = {
+  tieredModelIds: { flashLite: ['gemini-3.5-flash-lite'], flash: ['gemini-3.8-flash-tiered'], pro: ['gemini-3.8-flash-tiered'] },
+  tabModelIds: ['chat_20706', 'chat_23310'],
+  imageGenerationModelIds: ['gemini-3.1-flash-image'],
+};
+
+/** `fetchAvailableModels` for an account Google had moved to Claude 5.5. */
+export const ANTIGRAVITY_MOVED_REPLY = {
+  models: {
+    ...shared,
+    'claude-opus-5-5-low': claude55('Claude Opus 5.5 (Low)', 1),
+    'claude-opus-5-5-medium': claude55('Claude Opus 5.5 (Medium)', 2),
+    'claude-opus-5-5-high': claude55('Claude Opus 5.5 (High)', 3),
+    'claude-sonnet-5-5-low': claude55('Claude Sonnet 5.5 (Low)', 1),
+    'claude-sonnet-5-5-medium': claude55('Claude Sonnet 5.5 (Medium)', 2),
+    'claude-sonnet-5-5-high': claude55('Claude Sonnet 5.5 (High)', 3),
+  },
+  defaultAgentModelId: 'claude-opus-5-5-low',
+  ...lists,
+};
+
+/** `fetchAvailableModels` for an account Google had not moved yet. */
+export const ANTIGRAVITY_NOT_MOVED_REPLY = {
+  models: {
+    ...shared,
+    'claude-sonnet-4-6': { ...anthropic, displayName: 'Claude Sonnet 4.6 (Thinking)', supportsImages: true, supportsThinking: true, thinkingBudget: 1024, recommended: true, maxTokens: 250000, maxOutputTokens: 64000, tagTitle: 'Notice', supportedMimeTypes: CLAUDE_FILES },
+    'claude-opus-4-6-thinking': { ...anthropic, displayName: 'Claude Opus 4.6 (Thinking)', supportsImages: true, supportsThinking: true, thinkingBudget: 1024, recommended: true, maxTokens: 250000, maxOutputTokens: 64000, tagTitle: 'Notice', supportedMimeTypes: CLAUDE_FILES },
+  },
+  defaultAgentModelId: 'claude-sonnet-4-6',
+  ...lists,
+};
+
+/** Both accounts' models, as the provider unites them. */
+export function antigravityListed(): AntigravityListedModel[] {
+  const byId = new Map<string, AntigravityListedModel>();
+  for (const reply of [ANTIGRAVITY_MOVED_REPLY, ANTIGRAVITY_NOT_MOVED_REPLY]) {
+    for (const model of parseListedModels(reply)) if (!byId.has(model.id)) byId.set(model.id, model);
+  }
+  return [...byId.values()];
+}
+
+export function seedAntigravity(): void {
+  antigravityModelRegistry.mergeLive(antigravitySpecs(antigravityListed()));
+}
+
 /** Every registry back to what no answer has filled. */
 export function clearSeeds(): void {
+  antigravityModelRegistry.mergeLive([]);
   codexModelRegistry.mergeLive([]);
   claudeCodeModelRegistry.mergeLive([]);
   copilotModelRegistry.mergeLive([]);

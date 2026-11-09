@@ -7,6 +7,7 @@ import { addAccount } from "@/providers/antigravity/auth/manager";
 import { exchangeCode, generateAuthUrl, getProjectId, getUserEmail } from "@/providers/antigravity/auth/oauth";
 import type { AntigravityAccount } from "@/providers/antigravity/auth/types";
 import { fetchQuota } from "@/providers/antigravity/api/quota";
+import { antigravityModelList } from "@/providers/antigravity/api/models";
 import { getCapturedLogs } from "@/router/middleware";
 import { getAllProviders, getProvider, getDefaultProvider } from "@/core/registry";
 import { handleMetricsRoute } from "@/router/metrics";
@@ -278,6 +279,7 @@ async function handleOAuthCallback(url: URL): Promise<Response> {
     }
 
     await addAccount(newAccount);
+    void antigravityModelList.refresh();
     return Response.redirect(`${getBaseUrl()}/frontend/`);
   } catch (error) {
     // This callback lands in a browser tab, so the account cap has to explain

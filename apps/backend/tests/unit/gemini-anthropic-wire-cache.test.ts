@@ -8,18 +8,23 @@
  * the place an Anthropic client reads it.
  */
 
-import { beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { loadProxyConfig } from '@/config/manager';
 import { promptTokens } from '@/core/usage-cache';
 import { buildSessionId } from '@/protocols/openai/handler';
 import { antigravityModelRegistry } from '@/providers/antigravity/config/model-specs';
 import { mapAnthropicToGoogle } from '@/providers/antigravity/mappers/anthropic-in';
 import { createAnthropicStreamTransformer } from '@/providers/antigravity/mappers/anthropic-out';
+import { clearSeeds, seedAntigravity } from './fixtures/upstream-models';
 
 beforeAll(async () => {
   // The mapper reads the Caveman switch from the global config.
   await loadProxyConfig();
+  // The model as Google's list gave it: a provider's models are its upstream's.
+  seedAntigravity();
 });
+
+afterAll(() => clearSeeds());
 
 const EPHEMERAL = { type: 'ephemeral' } as const;
 

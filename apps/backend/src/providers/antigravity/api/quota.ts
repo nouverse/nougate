@@ -3,52 +3,63 @@ import { getAccounts, saveAccounts } from "@/providers/antigravity/auth/manager"
 import { refreshAccessToken } from "@/providers/antigravity/auth/oauth";
 import { type AntigravityAccount } from "@/providers/antigravity/auth/types";
 
-export async function fetchQuota(account: AntigravityAccount, retry = true): Promise<AntigravityAccount["quota"] | null> {
-  if (!account.projectId || !account.accessToken) return null;
+/**
+ * One account's `fetchAvailableModels` reply. A 401 renews the token once and asks again. Throws on a
+ * reply that is not 2xx, with its status, and on a renewal that fails.
+ */
+export async function requestAvailableModels(account: AntigravityAccount, retry = true): Promise<any> {
+  if (!account.projectId || !account.accessToken) {
+    throw new Error("the account has no project yet");
+  }
 
   if (!account.fingerprint || !account.fingerprint.clientMetadata?.sqmId) {
     account.fingerprint = generateFingerprint(account.email);
   }
 
+  const res = await fetch("https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels", {
+    method: "POST",
+    headers: {
+      ...getClientHeaders(account.accessToken, account.fingerprint),
+      "User-Agent": "antigravity",
+    },
+    body: JSON.stringify({
+      project: account.projectId,
+    }),
+  });
+
+  if (res.status === 401 && retry) {
+    console.log(`Quota fetch 401 for ${account.email}, refreshing token...`);
+    const tokens = await refreshAccessToken(account.refreshToken);
+    account.accessToken = tokens.access_token;
+    account.expiresAt = Date.now() + (tokens.expires_in * 1000);
+    await saveAccounts(getAccounts());
+    return requestAvailableModels(account, false);
+  }
+
+  if (!res.ok) {
+    throw Object.assign(new Error(`fetchAvailableModels answered ${res.status}`), { status: res.status });
+  }
+
+  return res.json();
+}
+
+export async function fetchQuota(account: AntigravityAccount, retry = true): Promise<AntigravityAccount["quota"] | null> {
+  if (!account.projectId || !account.accessToken) return null;
+
   try {
-    const res = await fetch("https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels", {
-      method: "POST",
-      headers: {
-        ...getClientHeaders(account.accessToken, account.fingerprint),
-        "User-Agent": "antigravity",
-      },
-      body: JSON.stringify({
-        project: account.projectId,
-      }),
-    });
-
-    if (res.status === 401 && retry) {
-      console.log(`Quota fetch 401 for ${account.email}, refreshing token...`);
-      try {
-        const tokens = await refreshAccessToken(account.refreshToken);
-        account.accessToken = tokens.access_token;
-        account.expiresAt = Date.now() + (tokens.expires_in * 1000);
-        await saveAccounts(getAccounts());
-        return fetchQuota(account, false);
-      } catch (e) {
-        console.error(`Failed to refresh token for ${account.email} during quota fetch`, e);
-        return null;
-      }
-    }
-
-    if (!res.ok) {
-      console.error(`Quota fetch failed for ${account.email}: ${res.status}`);
-      return null;
-    }
-
-    const data = await res.json();
+    const data = await requestAvailableModels(account, retry);
     const availableModels = parseAvailableModelIds(data);
     if (availableModels) {
       account.availableModels = availableModels;
     }
     return parseQuotaResponse(data);
   } catch (e) {
-    console.error(`Error fetching quota for ${account.email}`, e);
+    const status = (e as { status?: unknown })?.status;
+    if (typeof status === "number") {
+      console.error(`Quota fetch failed for ${account.email}: ${status}`);
+    } else {
+      console.error(`Error fetching quota for ${account.email}`, e);
+    }
   }
 
   return null;

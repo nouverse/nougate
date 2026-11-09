@@ -127,7 +127,7 @@ export function generateFingerprint(email?: string): DeviceFingerprint {
 /**
  * Menyusun header client untuk endpoint web IDE.
  */
-export function getClientHeaders(accessToken: string, fingerprint?: DeviceFingerprint, model?: string): Record<string, string> {
+export function getClientHeaders(accessToken: string, fingerprint?: DeviceFingerprint, forAnthropic = false): Record<string, string> {
   const activeFingerprint = fingerprint || generateFingerprint();
   const headers: Record<string, string> = {
     Authorization: `Bearer ${accessToken}`,
@@ -147,7 +147,8 @@ export function getClientHeaders(accessToken: string, fingerprint?: DeviceFinger
       : "{\"ideType\":\"VSCODE\",\"platform\":\"MACOS\",\"pluginType\":\"GEMINI\",\"osVersion\":\"15.1\",\"arch\":\"arm64\"}",
   };
 
-  if (model?.toLowerCase().includes("claude") || model?.toLowerCase().includes("anthropic")) {
+  // An Anthropic model through Antigravity (`config/shape.ts` says which, from Google's own list).
+  if (forAnthropic) {
     headers["anthropic-beta"] = "interleaved-thinking-2025-05-14";
   }
 

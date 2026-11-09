@@ -1,6 +1,7 @@
-import { describe, expect, test, beforeAll, afterEach } from "bun:test";
+import { describe, expect, test, beforeAll, afterAll, afterEach } from "bun:test";
 import { antigravityModelRegistry } from "@/providers/antigravity/config/model-specs";
 import { getProxyConfig, loadProxyConfig } from "@/config/manager";
+import { clearSeeds, seedAntigravity } from "./fixtures/upstream-models";
 
 /**
  * The registry's *contents* churn — models get added and retired as accounts gain
@@ -13,7 +14,11 @@ describe("Antigravity Model Registry", () => {
     // Self-sufficient setup: getSpec reads bypassModelValidation from the config
     // singleton, and this file must not depend on another test file loading it.
     await loadProxyConfig();
+    // The models as Google's list gave them: a provider's models are its upstream's.
+    seedAntigravity();
   });
+
+  afterAll(() => clearSeeds());
 
   afterEach(() => {
     // The flag is a process-wide singleton — leaving it flipped leaks into every

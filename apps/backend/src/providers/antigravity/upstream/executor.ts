@@ -21,6 +21,7 @@ import {
 } from "@/providers/antigravity/upstream/endpoints";
 import { parseGoogleError } from "@/providers/antigravity/upstream/errors";
 import { getGeminiCliHeaders, getClientHeaders } from "@/providers/antigravity/upstream/headers";
+import { shapeOf } from "@/providers/antigravity/config/shape";
 import { parseRetryDelay } from "@/providers/antigravity/utils/retry";
 
 /**
@@ -275,9 +276,9 @@ export class AntigravityExecutor {
     const proxyConfig = getProxyConfig();
     const maxAttempts = Math.max(proxyConfig.retry.maxAttempts, getAccounts().length);
     const modelId = options.modelSpec.modelId;
-    const isClaudeModel =
-      modelId.toLowerCase().includes("claude") ||
-      (options.modelSpec.upstreamModelId || "").toLowerCase().includes("claude");
+    // Claude goes its own way through Antigravity: the last CLI endpoint, the client headers and the
+    // interleaved-thinking gate. Which models are Claude is Google's to say (`config/shape.ts`).
+    const isClaudeModel = shapeOf(options.modelSpec).anthropic;
     const endpoints = ANTIGRAVITY_ENDPOINTS;
 
     let attempts = 0;
@@ -363,11 +364,10 @@ export class AntigravityExecutor {
         );
       }
 
-      const isClaudeTarget = String(googleBody.model || "").toLowerCase().includes("claude");
       const headers =
-        useCliPool && !isClaudeTarget
+        useCliPool && !isClaudeModel
           ? getGeminiCliHeaders(account.accessToken, account.fingerprint!)
-          : getClientHeaders(account.accessToken, account.fingerprint!, googleBody.model);
+          : getClientHeaders(account.accessToken, account.fingerprint!, isClaudeModel);
 
       console.log(
         `[Request] Model: ${options.model} | Account: ${account.email} | Project: ${account.projectId} | Attempt: ${attempts}/${maxAttempts} | Pool: ${pool === "cli" ? "CLI" : "Sandbox"} | Endpoint: ${googleUrl.split("/")[2]} | Target Model: ${googleBody.model}`,

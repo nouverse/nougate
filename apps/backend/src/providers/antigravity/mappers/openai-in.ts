@@ -9,6 +9,7 @@ import { getFamilyName } from "@/providers/antigravity/auth/manager";
 import { getCavemanPrompt } from "@/core/caveman";
 import { UnsupportedContentPartError } from "@/core/upstream-errors";
 import { AUDIO_MIME_TYPES, carriesAudio } from "@/providers/antigravity/config/audio";
+import { shapeOf, type RequestShape } from "@/providers/antigravity/config/shape";
 
 /**
  * Provider-injected configuration for the OpenAI mapper.
@@ -167,7 +168,7 @@ function cleanToolCallId(rawId: unknown): string {
  */
 function buildToolResponseParts(
   message: any,
-  googleModel: string,
+  shape: RequestShape,
   toolCallNameMap: Map<string, string>,
 ): any[] {
   let responseObject: any;
@@ -193,7 +194,7 @@ function buildToolResponseParts(
     response: responseObject,
   };
 
-  if (googleModel.includes("claude") || googleModel.includes("gemini-3")) {
+  if (shape.callIds) {
     functionResponse.id = message.tool_call_id;
   }
 
@@ -326,10 +327,10 @@ function appendThoughtParts(parts: any[], message: any, sessionId: string | unde
 function appendToolCallParts(params: {
   parts: any[];
   message: any;
-  googleModel: string;
+  shape: RequestShape;
   signaturesRequired: boolean;
 }): void {
-  const { parts, message, googleModel, signaturesRequired } = params;
+  const { parts, message, shape, signaturesRequired } = params;
   const toolCalls = (message?.tool_calls || []).filter((toolCall: any) => toolCall.function);
   if (toolCalls.length === 0) {
     return;
@@ -351,7 +352,7 @@ function appendToolCallParts(params: {
           : toolCall.function.arguments,
     };
 
-    if (googleModel.includes("claude") || googleModel.includes("gemini-3")) {
+    if (shape.callIds) {
       functionCall.id = cleanId;
     }
 
@@ -372,12 +373,13 @@ function appendToolCallParts(params: {
 function buildStandardParts(params: {
   message: any;
   googleModel: string;
+  shape: RequestShape;
   isInCurrentTurn: boolean;
   sessionId?: string;
   signaturesRequired: boolean;
   keepThinking: boolean;
 }): any[] {
-  const { message, googleModel, isInCurrentTurn, sessionId, signaturesRequired, keepThinking } =
+  const { message, googleModel, shape, isInCurrentTurn, sessionId, signaturesRequired, keepThinking } =
     params;
   const parts: any[] = [];
 
@@ -389,7 +391,7 @@ function buildStandardParts(params: {
   appendToolCallParts({
     parts,
     message,
-    googleModel,
+    shape,
     signaturesRequired,
   });
 
@@ -406,24 +408,24 @@ function buildStandardParts(params: {
 function buildGoogleContents(
   messages: any[],
   googleModel: string,
+  shape: RequestShape,
   sessionId: string | undefined,
   keepThinking: boolean,
-  isThinking?: boolean,
+  isThinking: boolean,
 ): any[] {
   const toolCallNameMap = buildToolCallNameMap(messages);
   const currentTurnStartIndex = findCurrentTurnStartIndex(messages);
-  // Use modelSpec.isThinking when available; fall back to name-based check for backward compat
-  const thinkingEnabled = isThinking ?? googleModel.includes("thinking");
-  const signaturesRequired = thoughtSignatureRequired(googleModel, thinkingEnabled);
+  const signaturesRequired = thoughtSignatureRequired(shape, isThinking);
 
   const rawContents = messages.map((message, messageIndex) => {
     const isInCurrentTurn = messageIndex >= currentTurnStartIndex;
     const parts =
       message.role === "tool"
-        ? buildToolResponseParts(message, googleModel, toolCallNameMap)
+        ? buildToolResponseParts(message, shape, toolCallNameMap)
         : buildStandardParts({
             message,
             googleModel,
+            shape,
             isInCurrentTurn,
             sessionId,
             signaturesRequired,
@@ -589,12 +591,12 @@ export function mapOpenAIToGoogle(
   const isCliPool = modelSpec.useCliPool ?? modelSpec.pool === "cli";
   const systemMessage = (openaiBody.messages || []).find((message: any) => message.role === "system");
   const otherMessages = (openaiBody.messages || []).filter((message: any) => message.role !== "system");
-  const contents = buildGoogleContents(otherMessages, googleModel, sessionId, keepThinking, modelSpec.isThinking);
+  const shape = shapeOf(modelSpec);
+  const contents = buildGoogleContents(otherMessages, googleModel, shape, sessionId, keepThinking, modelSpec.isThinking);
   const explicitThinkingBudget =
     openaiBody.thinking_budget !== undefined ||
     openaiBody.thinking?.budget_tokens !== undefined ||
     openaiBody.providerOptions?.thinkingBudget !== undefined;
-  const isFlashModel = googleModel.includes("flash") && !modelSpec.isThinking;
   const thinkingBudget = resolveThinkingBudget(openaiBody, modelSpec);
   const googleRequest: any = {
     contents,
@@ -638,7 +640,7 @@ export function mapOpenAIToGoogle(
     sessionId: sessionId || crypto.randomUUID(),
   };
 
-  if (modelSpec.isThinking && !isFlashModel) {
+  if (modelSpec.isThinking) {
     googleRequest.generationConfig.thinkingConfig = {
       includeThoughts: true,
     };
@@ -654,14 +656,14 @@ export function mapOpenAIToGoogle(
   const tools = buildToolDeclarations(openaiBody, aggressive, sanitizeToolNames);
   if (tools) {
     googleRequest.tools = tools;
-    if (googleModel.includes("claude")) {
+    if (shape.validatedTools) {
       googleRequest.toolConfig = {
         functionCallingConfig: { mode: "VALIDATED" },
       };
     }
   }
 
-  if (googleModel.includes("gemini") && googleSearchGrounding) {
+  if (shape.grounding && googleSearchGrounding) {
     const groundingTool: any = { googleSearchRetrieval: {} };
     if (groundingMode === "always") {
       groundingTool.googleSearchRetrieval.dynamicRetrievalConfig = {

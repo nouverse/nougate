@@ -1,4 +1,5 @@
 import { getSignatureByCallId } from "@/providers/antigravity/utils/signature-cache";
+import type { RequestShape } from "@/providers/antigravity/config/shape";
 
 /**
  * Placeholder that tells upstream to skip thought-signature validation.
@@ -25,11 +26,12 @@ export const PLACEHOLDER_THOUGHT_SIGNATURE = "context_engineering_is_the_way_to_
 /**
  * Report whether upstream enforces thought signatures for this model.
  *
- * Only Gemini 3 thinking models validate them. Sending the placeholder to any
- * other upstream would put an invented signature where none is expected.
+ * Only Gemini's level-thinking generation validates them, while thinking (`config/shape.ts` says
+ * which models those are, from Google's own model list). Sending the placeholder to any other
+ * upstream would put an invented signature where none is expected.
  */
-export function thoughtSignatureRequired(googleModel: string, thinkingEnabled: boolean): boolean {
-  return thinkingEnabled && googleModel.includes("gemini-3");
+export function thoughtSignatureRequired(shape: RequestShape, thinkingEnabled: boolean): boolean {
+  return thinkingEnabled && shape.signatures;
 }
 
 /**

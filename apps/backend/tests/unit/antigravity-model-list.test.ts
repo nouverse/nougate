@@ -30,6 +30,7 @@ const { fetchQuota, parseAvailableModelIds, parseQuotaResponse } = await import(
 const { antigravityModelRegistry } = await import('@/providers/antigravity/config/model-specs');
 const { AntigravityExecutor, summarizeExhaustion } = await import('@/providers/antigravity/upstream/executor');
 const { generateFingerprint } = await import('@/providers/antigravity/upstream/headers');
+const { clearSeeds, seedAntigravity } = await import('./fixtures/upstream-models');
 
 const HOUR = 60 * 60 * 1000;
 const realFetch = globalThis.fetch;
@@ -111,6 +112,8 @@ beforeAll(async () => {
   accountsBefore = [...manager.getAccounts()];
   // The executor's retry budget reads it.
   await loadProxyConfig();
+  // The models as the two accounts' replies listed them: a provider's models are its upstream's.
+  seedAntigravity();
 });
 
 afterEach(() => {
@@ -119,6 +122,7 @@ afterEach(() => {
 });
 
 afterAll(() => {
+  clearSeeds();
   hold(...accountsBefore);
   if (previousAccountsFile === undefined) {
     delete process.env.ACCOUNTS_FILE;
