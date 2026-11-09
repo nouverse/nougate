@@ -57,7 +57,8 @@ export interface PreparedKiroRequest {
 
 export function prepareKiroRequest(input: KiroRequestInput): PreparedKiroRequest {
   const intent = resolveKiroModelIntent(input.requestedModel);
-  const upstreamModel = intent.upstream;
+  // As the registry lists it: Kiro refuses a spelling of its own model it no longer uses.
+  const upstreamModel = kiroModelRegistry.upstreamSpelling(intent.upstream);
   const body = applyThinkingOverride(input.body ?? {}, intent.thinkingOverride);
 
   const thinkingBudget = resolveThinkingBudget(body, input.headers, intent.model);

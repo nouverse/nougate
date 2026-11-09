@@ -221,6 +221,8 @@ class KiroModelRegistry implements IModelRegistry {
   /** Every spec by its id in lower case. One per model: a merge never adds an id that differs only in case. */
   private specsIgnoringCase = new Map<string, IModelSpec>();
   private liveIds = new Set<string>();
+  /** A static id → how the last catalogue spelled that model, where it differs only in case. */
+  private respelled = new Map<string, string>();
 
   constructor(staticDefs: KiroModelDef[]) {
     for (const def of staticDefs) this.defs.set(def.id, { ...def });
@@ -231,7 +233,7 @@ class KiroModelRegistry implements IModelRegistry {
     this.specs.clear();
     this.specsIgnoringCase.clear();
     for (const def of this.defs.values()) {
-      for (const spec of toSpecs(def)) {
+      for (const spec of toSpecs({ ...def, id: this.respelled.get(def.id) ?? def.id })) {
         this.specs.set(spec.modelId, spec);
         this.specsIgnoringCase.set(spec.modelId.toLowerCase(), spec);
       }
@@ -258,16 +260,21 @@ class KiroModelRegistry implements IModelRegistry {
    *
    * Static definitions win on conflict — they carry hand-checked facts (stripped modalities, which
    * models take variants) the catalogue does not — except for the input window, where the upstream's
-   * own figure beats a hand-copied one.
+   * own figure beats a hand-copied one, and the spelling. Kiro names its own models: on 2026-11-09 it
+   * listed the static `MiniMax-M2.5` as `minimax-m2.5` and refused the static spelling with
+   * `INVALID_MODEL_ID`, so a static model the catalogue spells otherwise is listed, and sent, as the
+   * catalogue spells it, with its static facts.
    */
   mergeLive(defs: KiroModelDef[]): number {
     for (const id of this.liveIds) this.defs.delete(id);
     this.liveIds.clear();
+    this.respelled.clear();
     let added = 0;
     for (const def of defs) {
       const known = this.definition(def.id);
       if (known) {
         if (def.contextLength) known.contextLength = def.contextLength;
+        if (known.id !== def.id && !this.liveIds.has(known.id)) this.respelled.set(known.id, def.id);
         continue;
       }
       this.defs.set(def.id, def);
@@ -280,8 +287,8 @@ class KiroModelRegistry implements IModelRegistry {
 
   /**
    * Accepts a `model(level)` override suffix; the override itself is read by the request mapper. An id
-   * that differs from a listed one only in case is that model, so one picked under the catalogue's
-   * spelling still resolves.
+   * that differs from a listed one only in case is that model, so one picked under another spelling
+   * still resolves.
    */
   getSpec(modelId: string): IModelSpec | null {
     const clean = parseThinkingSuffix(modelId).cleanModel;
@@ -296,6 +303,16 @@ class KiroModelRegistry implements IModelRegistry {
   describeModel(modelId: string): KiroModelDef | null {
     const { upstream } = resolveKiroModel(parseThinkingSuffix(modelId).cleanModel);
     return this.definition(upstream) ?? null;
+  }
+
+  /**
+   * The id Kiro is sent for an upstream id a client wrote: the spelling this registry lists the model
+   * under, so one picked under an older spelling still reaches it. An id it does not know is sent as
+   * written.
+   */
+  upstreamSpelling(upstream: string): string {
+    const def = this.definition(upstream);
+    return def ? (this.respelled.get(def.id) ?? def.id) : upstream;
   }
 }
 

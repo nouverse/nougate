@@ -16,6 +16,8 @@ import type { KiroAccount } from '@/providers/kiro/auth/types';
 import { kiroModelRegistry } from '@/providers/kiro/config/model-specs';
 import { getKiroConfig } from '@/providers/kiro/config/provider-config';
 import { kiroModelList } from '@/providers/kiro';
+import { convertOpenAIMessages } from '@/providers/kiro/mappers/openai';
+import { prepareKiroRequest } from '@/providers/kiro/mappers/payload';
 
 const ARN = 'arn:aws:codewhisperer:us-east-1:000000000000:profile/TESTPROFILE';
 
@@ -102,9 +104,10 @@ describe("Kiro's live catalogue", () => {
     expect(kiroModelRegistry.listModelIds()).toContain('test-new-model');
   });
 
-  test('a model the catalogue spells in other case is the static one: its facts, one entry', async () => {
+  test('a model the catalogue spells in other case is the static one, listed and sent as the catalogue spells it', async () => {
     // The live catalogue of 2026-11-09 listed the static `MiniMax-M2.5` as `minimax-m2.5`, and both were
-    // offered, the live one with thinking and agentic variants the static one does not take.
+    // offered, the live one with thinking and agentic variants the static one does not take. Kiro
+    // refused `MiniMax-M2.5` that day with INVALID_MODEL_ID.
     kiroAccounts.load({ accounts: [{ ...account }] });
     upstream(() =>
       Response.json({
@@ -118,21 +121,55 @@ describe("Kiro's live catalogue", () => {
     await kiroModelList.refresh();
 
     const ids = kiroModelRegistry.listModelIds();
-    expect(ids.filter((id) => id.toLowerCase().startsWith('minimax-m2.5'))).toEqual(['MiniMax-M2.5']);
+    expect(ids.filter((id) => id.toLowerCase().startsWith('minimax-m2.5'))).toEqual(['minimax-m2.5']);
     expect(ids.filter((id) => id.toLowerCase().startsWith('test-case-model'))).toEqual([
       'test-case-model',
       'test-case-model-agentic',
       'test-case-model-thinking',
       'test-case-model-thinking-agentic',
     ]);
-    // The static facts stay — no variants — and the catalogue's own window is taken, as for any static model.
-    expect(kiroModelRegistry.getSpec('MiniMax-M2.5')).toMatchObject({ modelId: 'MiniMax-M2.5', upstreamModelId: 'MiniMax-M2.5', contextWindow: 196_000 });
-    expect(kiroModelRegistry.getSpec('MiniMax-M2.5-thinking')).toBeNull();
-    expect(kiroModelRegistry.describeModel('MiniMax-M2.5')?.rateMultiplier).toBeUndefined();
-    // Picked under the catalogue's spelling, while it was listed, it is still that model.
-    expect(kiroModelRegistry.getSpec('minimax-m2.5')?.modelId).toBe('MiniMax-M2.5');
-    // And the request mapper, which reads the window under the spelling the client sent, finds it.
-    expect(kiroModelRegistry.describeModel('minimax-m2.5')?.contextLength).toBe(196_000);
+    // The static facts stay — its name, no variants, no credit figure — and the catalogue's own window
+    // is taken, as for any static model.
+    expect(kiroModelRegistry.getSpec('minimax-m2.5')).toMatchObject({
+      modelId: 'minimax-m2.5',
+      upstreamModelId: 'minimax-m2.5',
+      displayName: 'MiniMax M2.5',
+      contextWindow: 196_000,
+    });
+    expect(kiroModelRegistry.getSpec('minimax-m2.5-thinking')).toBeNull();
+    expect(kiroModelRegistry.describeModel('minimax-m2.5')).toMatchObject({ contextLength: 196_000 });
+    expect(kiroModelRegistry.describeModel('minimax-m2.5')?.rateMultiplier).toBeUndefined();
+    // Picked under the static spelling, it is still that model, and the request mapper finds its window.
+    expect(kiroModelRegistry.getSpec('MiniMax-M2.5')?.modelId).toBe('minimax-m2.5');
+    expect(kiroModelRegistry.describeModel('MiniMax-M2.5')?.contextLength).toBe(196_000);
+  });
+
+  test('a request for a respelled model is sent as the catalogue spells it, and as written once it stops', async () => {
+    const sentAs = (requestedModel: string): string => {
+      const payload: any = prepareKiroRequest({
+        requestedModel,
+        body: { messages: [{ role: 'user', content: 'hi' }] },
+        headers: null,
+        tools: [],
+        systemText: '',
+        convert: (model) => convertOpenAIMessages([{ role: 'user', content: 'hi' }], model, { images: false }),
+      }).forAccount({ id: 'kiro-test', authMethod: 'social', profileArn: ARN });
+      return payload.conversationState.currentMessage.userInputMessage.modelId;
+    };
+
+    kiroAccounts.load({ accounts: [{ ...account }] });
+    upstream(
+      () => Response.json({ models: [{ modelId: 'minimax-m2.5', modelName: 'MiniMax M2.5', tokenLimits: { maxInputTokens: 196_000 } }] }),
+      () => Response.json({ models: [] }),
+    );
+    await kiroModelList.refresh();
+    expect(sentAs('MiniMax-M2.5')).toBe('minimax-m2.5');
+    expect(sentAs('minimax-m2.5')).toBe('minimax-m2.5');
+    expect(sentAs('claude-sonnet-4.5')).toBe('claude-sonnet-4.5');
+
+    await kiroModelList.refresh();
+    expect(kiroModelRegistry.listModelIds()).toContain('MiniMax-M2.5');
+    expect(sentAs('MiniMax-M2.5')).toBe('MiniMax-M2.5');
   });
 
   test('switched off, or with no account, nothing is asked', async () => {
