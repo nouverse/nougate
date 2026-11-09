@@ -102,6 +102,39 @@ describe("Kiro's live catalogue", () => {
     expect(kiroModelRegistry.listModelIds()).toContain('test-new-model');
   });
 
+  test('a model the catalogue spells in other case is the static one: its facts, one entry', async () => {
+    // The live catalogue of 2026-11-09 listed the static `MiniMax-M2.5` as `minimax-m2.5`, and both were
+    // offered, the live one with thinking and agentic variants the static one does not take.
+    kiroAccounts.load({ accounts: [{ ...account }] });
+    upstream(() =>
+      Response.json({
+        models: [
+          { modelId: 'minimax-m2.5', modelName: 'MiniMax M2.5', rateMultiplier: 0.3, rateUnit: 'credit', tokenLimits: { maxInputTokens: 196_000 } },
+          { modelId: 'test-case-model', modelName: 'Test Case Model', tokenLimits: { maxInputTokens: 100_000 } },
+          { modelId: 'Test-Case-Model', modelName: 'Test Case Model again' },
+        ],
+      }),
+    );
+    await kiroModelList.refresh();
+
+    const ids = kiroModelRegistry.listModelIds();
+    expect(ids.filter((id) => id.toLowerCase().startsWith('minimax-m2.5'))).toEqual(['MiniMax-M2.5']);
+    expect(ids.filter((id) => id.toLowerCase().startsWith('test-case-model'))).toEqual([
+      'test-case-model',
+      'test-case-model-agentic',
+      'test-case-model-thinking',
+      'test-case-model-thinking-agentic',
+    ]);
+    // The static facts stay — no variants — and the catalogue's own window is taken, as for any static model.
+    expect(kiroModelRegistry.getSpec('MiniMax-M2.5')).toMatchObject({ modelId: 'MiniMax-M2.5', upstreamModelId: 'MiniMax-M2.5', contextWindow: 196_000 });
+    expect(kiroModelRegistry.getSpec('MiniMax-M2.5-thinking')).toBeNull();
+    expect(kiroModelRegistry.describeModel('MiniMax-M2.5')?.rateMultiplier).toBeUndefined();
+    // Picked under the catalogue's spelling, while it was listed, it is still that model.
+    expect(kiroModelRegistry.getSpec('minimax-m2.5')?.modelId).toBe('MiniMax-M2.5');
+    // And the request mapper, which reads the window under the spelling the client sent, finds it.
+    expect(kiroModelRegistry.describeModel('minimax-m2.5')?.contextLength).toBe(196_000);
+  });
+
   test('switched off, or with no account, nothing is asked', async () => {
     upstream(() => Response.json(CATALOGUE));
     await kiroModelList.refresh();

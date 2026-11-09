@@ -218,6 +218,8 @@ export function catalogToModelDefs(entries: KiroCatalogEntry[]): KiroModelDef[] 
 class KiroModelRegistry implements IModelRegistry {
   private defs = new Map<string, KiroModelDef>();
   private specs = new Map<string, IModelSpec>();
+  /** Every spec by its id in lower case. One per model: a merge never adds an id that differs only in case. */
+  private specsIgnoringCase = new Map<string, IModelSpec>();
   private liveIds = new Set<string>();
 
   constructor(staticDefs: KiroModelDef[]) {
@@ -227,9 +229,28 @@ class KiroModelRegistry implements IModelRegistry {
 
   private rebuild(): void {
     this.specs.clear();
+    this.specsIgnoringCase.clear();
     for (const def of this.defs.values()) {
-      for (const spec of toSpecs(def)) this.specs.set(spec.modelId, spec);
+      for (const spec of toSpecs(def)) {
+        this.specs.set(spec.modelId, spec);
+        this.specsIgnoringCase.set(spec.modelId.toLowerCase(), spec);
+      }
     }
+  }
+
+  /**
+   * The definition an id names: exactly, or else one whose id differs only in case. The catalogue
+   * spells a model as it likes (`minimax-m2.5` for the static `MiniMax-M2.5`, 2026-11-09), and read
+   * exactly, the same model was listed twice, the second time without the static facts.
+   */
+  private definition(id: string): KiroModelDef | undefined {
+    const exact = this.defs.get(id);
+    if (exact) return exact;
+    const lower = id.toLowerCase();
+    for (const def of this.defs.values()) {
+      if (def.id.toLowerCase() === lower) return def;
+    }
+    return undefined;
   }
 
   /**
@@ -244,7 +265,7 @@ class KiroModelRegistry implements IModelRegistry {
     this.liveIds.clear();
     let added = 0;
     for (const def of defs) {
-      const known = this.defs.get(def.id);
+      const known = this.definition(def.id);
       if (known) {
         if (def.contextLength) known.contextLength = def.contextLength;
         continue;
@@ -257,9 +278,14 @@ class KiroModelRegistry implements IModelRegistry {
     return added;
   }
 
-  /** Accepts a `model(level)` override suffix; the override itself is read by the request mapper. */
+  /**
+   * Accepts a `model(level)` override suffix; the override itself is read by the request mapper. An id
+   * that differs from a listed one only in case is that model, so one picked under the catalogue's
+   * spelling still resolves.
+   */
   getSpec(modelId: string): IModelSpec | null {
-    return this.specs.get(parseThinkingSuffix(modelId).cleanModel) ?? null;
+    const clean = parseThinkingSuffix(modelId).cleanModel;
+    return this.specs.get(clean) ?? this.specsIgnoringCase.get(clean.toLowerCase()) ?? null;
   }
 
   listModelIds(): string[] {
@@ -269,7 +295,7 @@ class KiroModelRegistry implements IModelRegistry {
   /** The definition a spec came from, for context window and credit facts. */
   describeModel(modelId: string): KiroModelDef | null {
     const { upstream } = resolveKiroModel(parseThinkingSuffix(modelId).cleanModel);
-    return this.defs.get(upstream) ?? null;
+    return this.definition(upstream) ?? null;
   }
 }
 
