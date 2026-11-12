@@ -7,7 +7,7 @@ import { getAllProviders } from "@/core/registry";
 import { prepareRequestPayload } from "@/core/metrics/compression";
 import { instrumentResponse } from "@/core/metrics/tracker";
 import { executeWithFailover, failoverHeaders, failureOf } from "@/core/provider-execute";
-import { explainNoCandidate, routeCandidates } from "@/core/smart-routing";
+import { noCandidate, routeCandidates } from "@/core/smart-routing";
 
 /**
  * Build a JSON response with the shared CORS and proxy headers, and any of its own.
@@ -75,6 +75,23 @@ function handleListModels(): Response {
 /**
  * Anthropic-compatible protocol handler.
  */
+/**
+ * A failure that knows how the client should be answered, in Anthropic's own error shape. Labelled by status, as the
+ * OpenAI handler labels it: a server's failure is not a request built wrong, and a credential the gateway lacks is
+ * neither.
+ */
+function describedFailure(error: ProviderResponseError, extra: Record<string, string> = {}): Response {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+    ...extra,
+  };
+  if (error.retryAfterSeconds) headers["Retry-After"] = String(error.retryAfterSeconds);
+  const type =
+    error.status === 401 ? "authentication_error" : error.status === 429 ? "rate_limit_error" : error.status >= 500 ? "api_error" : "invalid_request_error";
+  return new Response(JSON.stringify({ type: "error", error: { type, message: error.message } }), { status: error.status, headers });
+}
+
 export class AnthropicProtocolHandler implements IProtocolHandler {
   readonly protocol = "anthropic" as const;
   readonly paths = ["/anthropic/v1/messages", "/anthropic/v1/models"];
@@ -99,9 +116,7 @@ export class AnthropicProtocolHandler implements IProtocolHandler {
     // to exactly that provider. Either way what comes back is an ordered list, so the two cases
     // share one execution path — see `core/smart-routing`.
     const candidates = routeCandidates(ctx.resolvedModel);
-    if (candidates.length === 0) {
-      return createErrorResponse(explainNoCandidate(ctx.resolvedModel), "invalid_request_error", 400);
-    }
+    if (candidates.length === 0) return describedFailure(noCandidate(ctx.resolvedModel));
 
     const startedAt = Date.now();
 
@@ -133,28 +148,7 @@ export class AnthropicProtocolHandler implements IProtocolHandler {
 
       // Self-describing failures answer in Anthropic's own error shape rather
       // than a flat 502, which reads to a client as "the gateway is broken".
-      if (error instanceof ProviderResponseError) {
-        const headers: Record<string, string> = {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-          ...tried,
-        };
-        if (error.retryAfterSeconds) {
-          headers["Retry-After"] = String(error.retryAfterSeconds);
-        }
-
-        return new Response(
-          JSON.stringify({
-            type: "error",
-            error: {
-              // By status, as the OpenAI handler labels it: a server's failure is not a request built wrong.
-              type: error.status === 429 ? "rate_limit_error" : error.status >= 500 ? "api_error" : "invalid_request_error",
-              message: error.message,
-            },
-          }),
-          { status: error.status, headers },
-        );
-      }
+      if (error instanceof ProviderResponseError) return describedFailure(error, tried);
 
       return createErrorResponse(
         error?.message || "Upstream request failed",

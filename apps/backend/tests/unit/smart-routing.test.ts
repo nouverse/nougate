@@ -16,9 +16,12 @@ import type { IAccount, IModelSpec, IProvider, ProviderExecuteParams } from '@/c
 import type { JitterConfig } from '@/core/jitter';
 import { registerProvider, unregisterProvider } from '@/core/registry';
 import { resolveModel } from '@/core/model-resolver';
-import { explainNoCandidate, routeCandidates, smartRoutableModels } from '@/core/smart-routing';
+import { noCandidate, routeCandidates, smartRoutableModels } from '@/core/smart-routing';
 import { executeWithFailover, FailoverError, failoverHeaders, failureOf } from '@/core/provider-execute';
-import { ProviderResponseError } from '@/core/upstream-errors';
+import { NoAccountError, ProviderResponseError } from '@/core/upstream-errors';
+import { loadProxyConfig } from '@/config/manager';
+import { OpenAIProtocolHandler } from '@/protocols/openai/handler';
+import { AnthropicProtocolHandler } from '@/protocols/anthropic/handler';
 import { withCorsHeaders } from '@/router/middleware';
 
 // The real field names: a mistyped config falls through to DEFAULT_JITTER_CONFIG, which is
@@ -161,23 +164,68 @@ describe('the routing table the picker is built from', () => {
 });
 
 describe('explaining a model that routed nowhere', () => {
-  test('names the providers that serve it when the problem is missing accounts', () => {
+  test('names the providers that serve it when the problem is missing accounts, as a credential to add', () => {
     fakeProvider('alpha', { models: ['shared-model'], accounts: 0 });
+    fakeProvider('beta', { models: ['shared-model'], accounts: 0 });
 
-    const message = explainNoCandidate(resolveModel('shared-model'));
-    expect(message).toContain('alpha');
-    expect(message).toContain('account');
-    // Actionable: it hands back a model string that would work once an account exists.
-    expect(message).toContain('alpha:shared-model');
+    const answer = noCandidate(resolveModel('shared-model'));
+    expect(answer).toBeInstanceOf(NoAccountError);
+    expect({ status: answer.status, code: answer.clientCode }).toEqual({ status: 401, code: 'no_account' });
+    expect(answer.message).toBe('"shared-model" is served by alpha, beta, but none of them has an account configured on this gateway. Add one on the provider page.');
   });
 
-  test('suggests near misses without ever routing to one', () => {
+  test('suggests near misses without ever routing to one, as the request\'s to fix', () => {
     fakeProvider('alpha', { models: ['claude-sonnet-4-6-thinking'] });
 
-    const message = explainNoCandidate(resolveModel('claude-sonnet-4-6'));
-    expect(message).toContain('alpha:claude-sonnet-4-6-thinking');
+    const answer = noCandidate(resolveModel('claude-sonnet-4-6'));
+    expect({ status: answer.status, code: answer.clientCode }).toEqual({ status: 400, code: 'model_not_found' });
+    expect(answer.message).toContain('alpha:claude-sonnet-4-6-thinking');
     // A suggestion, not a redirect — the lookup itself still found nothing.
     expect(routeCandidates(resolveModel('claude-sonnet-4-6'))).toEqual([]);
+  });
+
+  test('a prefix that names no model of its provider, and a model nobody serves, stay a 400', () => {
+    fakeProvider('alpha', { models: ['only-here'] });
+    for (const model of ['alpha:not-here', 'nobody-has-this']) {
+      const answer = noCandidate(resolveModel(model));
+      expect({ model, status: answer.status, code: answer.clientCode }).toEqual({ model, status: 400, code: 'model_not_found' });
+    }
+  });
+});
+
+describe('what a client is answered when a model routed nowhere', () => {
+  const ask = async (handler: OpenAIProtocolHandler | AnthropicProtocolHandler, path: string, model: string) => {
+    await loadProxyConfig();
+    const req = new Request(`http://localhost:3000${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, max_tokens: 64, messages: [{ role: 'user', content: 'hi' }] }),
+    });
+    const response = await handler.handle({ req, url: new URL(req.url), protocol: path.startsWith('/openai') ? 'openai' : 'anthropic', resolvedModel: resolveModel(model), provider: null as any, sessionId: 's', clientId: 'c' });
+    return { status: response.status, body: (await response.json()) as any };
+  };
+
+  test('no account for it: a 401 in each protocol\'s own words for a credential, never a request built wrong', async () => {
+    fakeProvider('alpha', { models: ['shared-model'], accounts: 0 });
+
+    const anthropic = await ask(new AnthropicProtocolHandler(), '/anthropic/v1/messages', 'shared-model');
+    expect(anthropic).toEqual({
+      status: 401,
+      body: { type: 'error', error: { type: 'authentication_error', message: '"shared-model" is served by alpha, but none of them has an account configured on this gateway. Add one on the provider page.' } },
+    });
+
+    const openai = await ask(new OpenAIProtocolHandler(), '/openai/v1/chat/completions', 'shared-model');
+    expect(openai.status).toBe(401);
+    expect(openai.body.error).toMatchObject({ type: 'authentication_error', code: 'no_account' });
+  });
+
+  test('a model nobody serves is still the request\'s to fix: 400, as it was', async () => {
+    fakeProvider('alpha', { models: ['only-here'] });
+
+    const anthropic = await ask(new AnthropicProtocolHandler(), '/anthropic/v1/messages', 'nobody-has-this');
+    expect(anthropic).toMatchObject({ status: 400, body: { type: 'error', error: { type: 'invalid_request_error' } } });
+    const openai = await ask(new OpenAIProtocolHandler(), '/openai/v1/chat/completions', 'nobody-has-this');
+    expect(openai).toMatchObject({ status: 400, body: { error: { type: 'invalid_request_error', code: 'model_not_found' } } });
   });
 });
 

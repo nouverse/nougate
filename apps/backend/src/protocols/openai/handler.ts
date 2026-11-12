@@ -7,7 +7,7 @@ import { getAllProviders } from "@/core/registry";
 import { prepareRequestPayload } from "@/core/metrics/compression";
 import { instrumentResponse } from "@/core/metrics/tracker";
 import { executeWithFailover, failoverHeaders, failureOf } from "@/core/provider-execute";
-import { explainNoCandidate, routeCandidates } from "@/core/smart-routing";
+import { noCandidate, routeCandidates } from "@/core/smart-routing";
 
 /**
  * Build a JSON response with the shared OpenAI proxy headers, and any of its own.
@@ -86,6 +86,24 @@ function handleListModels(): Response {
 /**
  * OpenAI-compatible protocol handler for chat completions and model listing.
  */
+/**
+ * A failure that knows how the client should be answered, in OpenAI's error shape. Labelled by status: a client reads
+ * the label before the status, and a server's failure labelled `invalid_request_error` read as a request built wrong
+ * — Nouride told the person so, and did not retry (nouride-releases#14). A credential the gateway lacks is neither
+ * the request's fault nor the server's.
+ */
+function describedFailure(error: ProviderResponseError, extra: Record<string, string> = {}): Response {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+    ...extra,
+  };
+  if (error.retryAfterSeconds) headers["Retry-After"] = String(error.retryAfterSeconds);
+  const type =
+    error.status === 401 ? "authentication_error" : error.status === 429 ? "rate_limit_error" : error.status >= 500 ? "server_error" : "invalid_request_error";
+  return new Response(JSON.stringify({ error: { message: error.message, type, code: error.clientCode } }), { status: error.status, headers });
+}
+
 export class OpenAIProtocolHandler implements IProtocolHandler {
   readonly protocol = "openai" as const;
   readonly paths = ["/openai/v1/chat/completions", "/openai/v1/models"];
@@ -119,18 +137,7 @@ export class OpenAIProtocolHandler implements IProtocolHandler {
     // to exactly that provider. Either way what comes back is an ordered list, so the two cases
     // share one execution path — see `core/smart-routing`.
     const candidates = routeCandidates(ctx.resolvedModel);
-    if (candidates.length === 0) {
-      return createJsonResponse(
-        {
-          error: {
-            message: explainNoCandidate(ctx.resolvedModel),
-            type: "invalid_request_error",
-            code: "model_not_found",
-          },
-        },
-        400,
-      );
-    }
+    if (candidates.length === 0) return describedFailure(noCandidate(ctx.resolvedModel));
 
     const startedAt = Date.now();
 
@@ -162,30 +169,7 @@ export class OpenAIProtocolHandler implements IProtocolHandler {
 
       // A provider that already knows how the client should be answered says
       // so. Everything else becomes a 502, which reads as "the gateway broke".
-      if (error instanceof ProviderResponseError) {
-        const headers: Record<string, string> = {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-          ...tried,
-        };
-        if (error.retryAfterSeconds) {
-          headers["Retry-After"] = String(error.retryAfterSeconds);
-        }
-
-        return new Response(
-          JSON.stringify({
-            error: {
-              message: error.message,
-              // By status: a client reads the label before the status, and a server's failure labelled
-              // `invalid_request_error` read as a request built wrong — Nouride told the person so, and
-              // did not retry (nouride-releases#14).
-              type: error.status === 429 ? "rate_limit_error" : error.status >= 500 ? "server_error" : "invalid_request_error",
-              code: error.clientCode,
-            },
-          }),
-          { status: error.status, headers },
-        );
-      }
+      if (error instanceof ProviderResponseError) return describedFailure(error, tried);
 
       return createJsonResponse(
         {

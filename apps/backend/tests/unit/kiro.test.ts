@@ -827,8 +827,12 @@ describe('kiro executor', () => {
     expect([accounts.find(a.id)!.healthScore, accounts.find(b.id)!.healthScore]).toEqual([100, 100]);
   });
 
-  test('no accounts is a 503 the failover can move past', async () => {
+  test('no accounts at all is a credential to add: a 401 the failover can move past, not an upstream worth waiting for', async () => {
     const { pool: accounts } = pool();
-    await expect(new KiroExecutor(accounts).execute({ prepared: prepared(), modelSpec: spec })).rejects.toMatchObject({ status: 503 });
+    await expect(new KiroExecutor(accounts).execute({ prepared: prepared(), modelSpec: spec })).rejects.toMatchObject({
+      status: 401,
+      clientCode: 'no_account',
+      message: 'No Kiro accounts are configured. Add one on the provider page.',
+    });
   });
 });

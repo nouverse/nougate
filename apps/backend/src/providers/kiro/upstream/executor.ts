@@ -14,7 +14,7 @@
  */
 
 import type { IModelSpec } from '@/core/interfaces';
-import { ProviderResponseError, ProviderUnavailableError, upstreamMessage } from '@/core/upstream-errors';
+import { NoAccountError, ProviderResponseError, ProviderUnavailableError, upstreamMessage } from '@/core/upstream-errors';
 import { kiroAccounts, cooldownScope, ACCOUNT_WIDE, type KiroAccountPool } from '../auth/manager';
 import { fetchProfileArn } from '../auth/profile';
 import { KiroRefreshError, canRefresh, needsRefresh, refreshKiroTokens } from '../auth/refresh';
@@ -180,12 +180,9 @@ export class KiroExecutor {
     if (modelRefusal) throw modelRefusal;
 
     if (tried.length === 0) {
-      throw new ProviderUnavailableError(
-        this.pool.list().length === 0
-          ? 'No Kiro accounts are configured. Add one on the provider page.'
-          : 'Every Kiro account is cooling down or needs to sign in again.',
-        503,
-      );
+      // None at all is a credential to add, and waiting changes nothing; none usable right now is worth a wait.
+      if (this.pool.list().length === 0) throw new NoAccountError('No Kiro accounts are configured. Add one on the provider page.');
+      throw new ProviderUnavailableError('Every Kiro account is cooling down or needs to sign in again.', 503);
     }
     throw new ProviderUnavailableError(`Every Kiro account tried failed (${tried.length} tried).`, 503);
   }

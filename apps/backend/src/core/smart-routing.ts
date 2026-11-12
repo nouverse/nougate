@@ -24,6 +24,7 @@
 
 import type { IModelSpec, IProvider, ResolvedModel } from '@/core/interfaces';
 import { getAllProviders, getProvider } from '@/core/registry';
+import { NoAccountError, ProviderResponseError } from '@/core/upstream-errors';
 
 /** One provider that can serve the request, with its own spec for the model. */
 export interface RoutingCandidate {
@@ -77,15 +78,17 @@ export function routeCandidates(resolved: ResolvedModel): RoutingCandidate[] {
 }
 
 /**
- * What to tell a client whose unprefixed model matched nothing.
+ * What to answer a client whose model matched nothing, as an error that knows its own status.
  *
  * Names the providers that *do* declare it when the only problem was that none of them hold an
  * account — "no provider serves this model" and "the two that serve it have no credentials" are
- * different problems with different fixes, and one message for both sends operators to the wrong one.
+ * different problems with different fixes, and one answer for both sends operators to the wrong one.
+ * The first is the request's (400, `model_not_found`); the second is a credential to add (`NoAccountError`).
  */
-export function explainNoCandidate(resolved: ResolvedModel): string {
+export function noCandidate(resolved: ResolvedModel): ProviderResponseError {
+  const unknown = (message: string) => new ProviderResponseError(message, { status: 400, clientCode: 'model_not_found' });
   if (resolved.providerId !== null) {
-    return `Unknown model "${resolved.raw}"`;
+    return unknown(`Unknown model "${resolved.raw}"`);
   }
 
   const declaring = getAllProviders()
@@ -93,10 +96,9 @@ export function explainNoCandidate(resolved: ResolvedModel): string {
     .map((provider) => provider.id);
 
   if (declaring.length > 0) {
-    return (
+    return new NoAccountError(
       `"${resolved.modelId}" is served by ${declaring.join(', ')}, but none of them has an account ` +
-      `configured. Add one on the provider page, or address a provider directly as ` +
-      `"${declaring[0]}:${resolved.modelId}".`
+        `configured on this gateway. Add one on the provider page.`,
     );
   }
 
@@ -116,9 +118,11 @@ export function explainNoCandidate(resolved: ResolvedModel): string {
 
   // Deliberately no fuzzy matching beyond a substring: a near-miss that silently becomes a different
   // model is worse than an error, so this only ever *suggests* and never routes.
-  return suggestions.length > 0
-    ? `No provider serves "${resolved.raw}". Did you mean ${suggestions.join(', ')}?`
-    : `No provider serves "${resolved.raw}". Call /v1/models for the list.`;
+  return unknown(
+    suggestions.length > 0
+      ? `No provider serves "${resolved.raw}". Did you mean ${suggestions.join(', ')}?`
+      : `No provider serves "${resolved.raw}". Call /v1/models for the list.`,
+  );
 }
 
 /**

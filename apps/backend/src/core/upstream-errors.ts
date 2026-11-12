@@ -241,6 +241,21 @@ export class ProviderUnavailableError extends ProviderResponseError {
 }
 
 /**
+ * The gateway holds no account for what was asked: there is no credential to ask the upstream with.
+ *
+ * A 401, which every client reads as a credential somebody has to add. It was a 400 from the router and a 503 from a
+ * provider: the first read as a request built wrong (Nouride told the person its own requests were malformed, and
+ * skipped the model's fallbacks), the second as an upstream worth waiting for. Nothing about the request is wrong,
+ * and no retry helps until an account is added.
+ */
+export class NoAccountError extends ProviderResponseError {
+  constructor(message: string) {
+    super(message, { status: 401, clientCode: 'no_account' });
+    this.name = 'NoAccountError';
+  }
+}
+
+/**
  * The upstream does not know this model.
  *
  * Distinct from unavailability because no amount of rotating or waiting helps:
