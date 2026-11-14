@@ -8,6 +8,7 @@ import {
   useInvalidateCustomProviders,
 } from '@/hooks/useQueries';
 import { api } from '@/lib/api';
+import { KNOWN_SERVICES, knownServiceAt, startFrom } from '@/lib/known-services';
 import { CustomApiStyle, CustomProviderModel, JitterConfig } from '@/lib/types';
 import { ConfirmModal } from '@/components/shared/ConfirmModal';
 import { CollapsibleCard } from '@/components/shared/CollapsibleCard';
@@ -56,6 +57,8 @@ function CustomProvidersPage() {
   const [modelsOpen, setModelsOpen] = useState(false);
   const { data: models, isLoading: modelsLoading } = useCustomProviderModels(selectedId, modelsOpen);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  /** The service the form's address is one of, typed or picked: its key hint is shown under the key. */
+  const knownService = knownServiceAt(form.baseUrl);
 
   // Land on the first provider so the page is never an empty right-hand pane.
   useEffect(() => {
@@ -222,6 +225,22 @@ function CustomProvidersPage() {
                 createMutation.mutate();
               }}
             >
+              {/* A service whose address and style are known: a press fills them in, and every field stays editable. */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[11px] font-semibold text-base-content/60">Start from a service:</span>
+                {KNOWN_SERVICES.map((service) => (
+                  <button
+                    key={service.id}
+                    type="button"
+                    className={`btn btn-xs rounded-lg font-semibold ${knownServiceAt(form.baseUrl)?.id === service.id ? 'btn-primary' : 'btn-outline'}`}
+                    aria-pressed={knownServiceAt(form.baseUrl)?.id === service.id}
+                    onClick={() => setForm(startFrom(form, service))}
+                  >
+                    {service.displayName}
+                  </button>
+                ))}
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Field label="Provider ID" hint="Lowercase, becomes the model prefix — e.g. deepseek">
                   <input
@@ -269,7 +288,22 @@ function CustomProvidersPage() {
                   </select>
                 </Field>
 
-                <Field label="API key" hint="Stored in SQLite; add more later for rotation">
+                <Field
+                  label="API key"
+                  hint={
+                    knownService ? (
+                      <>
+                        Make the key on{' '}
+                        <a href={knownService.keyUrl} target="_blank" rel="noreferrer noopener" className="link link-primary font-semibold">
+                          {knownService.displayName}'s key page
+                        </a>
+                        . {knownService.note}
+                      </>
+                    ) : (
+                      'Stored in SQLite; add more later for rotation'
+                    )
+                  }
+                >
                   <input
                     type="password"
                     placeholder="sk-..."
@@ -572,7 +606,8 @@ function Field({
   children,
 }: {
   label: string;
-  hint?: string;
+  /** Words under the field; a node where they carry a link. */
+  hint?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
@@ -583,7 +618,7 @@ function Field({
       {children}
       {hint && (
         <label className="label">
-          <span className="label-text-alt text-[10px] text-base-content/50">{hint}</span>
+          <span className="label-text-alt text-[10px] text-base-content/50 whitespace-normal leading-relaxed">{hint}</span>
         </label>
       )}
     </div>
