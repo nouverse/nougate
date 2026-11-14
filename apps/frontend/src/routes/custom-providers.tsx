@@ -8,7 +8,8 @@ import {
   useInvalidateCustomProviders,
 } from '@/hooks/useQueries';
 import { api } from '@/lib/api';
-import { KNOWN_SERVICES, knownServiceAt, startFrom } from '@/lib/known-services';
+import { COST_LABEL, KNOWN_SERVICES, knownServiceAt, startFrom } from '@/lib/known-services';
+import { KeyHints } from '@/components/shared/KeyHints';
 import { CustomApiStyle, CustomProviderModel, JitterConfig } from '@/lib/types';
 import { ConfirmModal } from '@/components/shared/ConfirmModal';
 import { CollapsibleCard } from '@/components/shared/CollapsibleCard';
@@ -297,7 +298,7 @@ function CustomProvidersPage() {
                         <a href={knownService.keyUrl} target="_blank" rel="noreferrer noopener" className="link link-primary font-semibold">
                           {knownService.displayName}'s key page
                         </a>
-                        . {knownService.note}
+                        . <span className="font-semibold">{COST_LABEL[knownService.cost]}.</span> {knownService.note}
                       </>
                     ) : (
                       'Stored in SQLite; add more later for rotation'
@@ -325,6 +326,9 @@ function CustomProvidersPage() {
 
 
               </div>
+
+              {/* Every service's key page and what it costs, folded until asked for; a line fills the form as its chip does. */}
+              <KeyHints onUse={(service) => setForm(startFrom(form, service))} />
 
               <label className="flex items-start gap-3 cursor-pointer">
                 <input

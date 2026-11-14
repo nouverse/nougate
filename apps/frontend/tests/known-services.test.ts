@@ -1,30 +1,30 @@
 import { describe, expect, test } from 'bun:test';
 
 /**
- * The services the add-provider form can start from. Each is a set of starting values a person would otherwise copy
- * out of a service's documentation, and a wrong one makes a provider that refuses every request with nothing to say
- * why: so what the list holds is held to the form's own rules, and what a press does to the form is held too.
+ * The services the add-provider form can start from, and the hint each carries. A wrong address makes a provider that
+ * refuses every request with nothing to say why, and a wrong word about cost is a bill somebody did not expect: so
+ * what the list holds is held to the form's own rules and to the kind of cost it says, the addresses are written out
+ * here a second time as their services' own documentation gives them, and what a press does to the form is held too.
  */
 
-const { KNOWN_SERVICES, knownServiceAt, startFrom } = await import('@/lib/known-services');
+const { COST_LABEL, KNOWN_SERVICES, knownServiceAt, startFrom } = await import('@/lib/known-services');
 
 /** The backend's rule for a provider id (`PROVIDER_ID_PATTERN`), which the form's field repeats. */
 const PROVIDER_ID = /^[a-z][a-z0-9_-]*$/;
 
 describe('the known services', () => {
+  test('are the ones a person is likely to mean, in this order', () => {
+    expect(KNOWN_SERVICES.map((service) => service.displayName)).toEqual(['OpenAI', 'Anthropic', 'Google Gemini', 'DeepSeek', 'Z.ai', 'OpenCode Zen', 'Command Code']);
+  });
+
   test('each holds what the form needs, in the form the backend takes', () => {
-    expect(KNOWN_SERVICES.length).toBeGreaterThan(0);
     for (const service of KNOWN_SERVICES) {
       expect({ service: service.id, id: PROVIDER_ID.test(service.id) }).toEqual({ service: service.id, id: true });
-      // Stored as typed: with its version path, and no slash at its end for `/models` to be added to.
-      expect(service.baseUrl).toMatch(/^https:\/\/[a-z0-9.-]+\/.*v1$/);
+      // Stored as typed: no slash at its end, for `/models`, `/chat/completions` and `/messages` to be added to.
+      expect({ service: service.id, at: new URL(service.baseUrl).protocol, slash: service.baseUrl.endsWith('/') }).toEqual({ service: service.id, at: 'https:', slash: false });
+      expect(new URL(service.keyUrl).protocol).toBe('https:');
       expect(['openai', 'anthropic']).toContain(service.apiStyle);
       expect(service.displayName.trim()).toBe(service.displayName);
-      expect(service.note.length).toBeGreaterThan(20);
-      // The key is made on the service's own site, never somebody else's.
-      const site = (url: string) => new URL(url).hostname.split('.').slice(-2).join('.');
-      expect(new URL(service.keyUrl).protocol).toBe('https:');
-      expect(site(service.keyUrl)).toBe(site(service.baseUrl));
     }
   });
 
@@ -33,11 +33,41 @@ describe('the known services', () => {
     expect(new Set(KNOWN_SERVICES.map((service) => service.baseUrl)).size).toBe(KNOWN_SERVICES.length);
   });
 
-  test('the two that were asked for are there, by the addresses their own documentation gives', () => {
-    const at = Object.fromEntries(KNOWN_SERVICES.map((service) => [service.id, [service.baseUrl, service.apiStyle, service.keyUrl]]));
-    expect(at['opencode-zen']).toEqual(['https://opencode.ai/inference/openai/v1', 'openai', 'https://opencode.ai/console']);
-    expect(at.commandcode).toEqual(['https://api.commandcode.ai/provider/v1', 'openai', 'https://commandcode.ai/settings/keys']);
-    // OpenCode Go refuses a request with no session header, which a custom provider does not send: not offered.
+  test("the addresses and key pages, as each service's own documentation gives them", () => {
+    expect(Object.fromEntries(KNOWN_SERVICES.map((service) => [service.id, [service.apiStyle, service.baseUrl, service.keyUrl]]))).toEqual({
+      openai: ['openai', 'https://api.openai.com/v1', 'https://platform.openai.com/api-keys'],
+      anthropic: ['anthropic', 'https://api.anthropic.com/v1', 'https://platform.claude.com/settings/keys'],
+      gemini: ['openai', 'https://generativelanguage.googleapis.com/v1beta/openai', 'https://aistudio.google.com/apikey'],
+      deepseek: ['openai', 'https://api.deepseek.com/v1', 'https://platform.deepseek.com/api_keys'],
+      zai: ['openai', 'https://api.z.ai/api/paas/v4', 'https://z.ai/manage-apikey/apikey-list'],
+      'opencode-zen': ['openai', 'https://opencode.ai/inference/openai/v1', 'https://opencode.ai/console'],
+      commandcode: ['openai', 'https://api.commandcode.ai/provider/v1', 'https://commandcode.ai/settings/keys'],
+    });
+  });
+
+  test('each says what it costs in its first words, and the words agree with the kind of cost it is marked as', () => {
+    for (const service of KNOWN_SERVICES) {
+      const said =
+        service.cost === 'included'
+          ? /^Your .+ plan includes the key\b/.test(service.note)
+          : /^(Charged per (use|request)|Free within its limits, then charged per use)\b/.test(service.note);
+      expect({ service: service.id, cost: service.cost, said }).toEqual({ service: service.id, cost: service.cost, said: true });
+    }
+    expect(COST_LABEL).toEqual({ 'per-use': 'Pay per use', included: 'In your plan' });
+  });
+
+  test('what is part of a plan says nothing is charged outside it; what is charged by use says which subscription does not cover it', () => {
+    const note = Object.fromEntries(KNOWN_SERVICES.map((service) => [service.id, service.note]));
+    expect(KNOWN_SERVICES.filter((service) => service.cost === 'included').map((service) => service.id)).toEqual(['commandcode']);
+    expect(note.commandcode).toContain('nothing is charged outside it');
+    expect(note.commandcode).toContain('Every plan but Go');
+    expect(note.openai).toContain('A ChatGPT subscription does not cover it');
+    expect(note.anthropic).toContain('apart from a Claude subscription');
+    expect(note.zai).toContain('does not cover use from here');
+  });
+
+  test('a service that needs more than a key and an address is not offered', () => {
+    // OpenCode Go refuses a request with no session header, which a custom provider does not send.
     expect(KNOWN_SERVICES.some((service) => service.baseUrl.includes('/go/'))).toBe(false);
   });
 });
@@ -52,7 +82,7 @@ describe('the service an address is', () => {
 
   test('is none for any other address, a longer one that begins the same, or nothing typed', () => {
     const zen = KNOWN_SERVICES.find((service) => service.id === 'opencode-zen')!;
-    expect(knownServiceAt('https://api.deepseek.com/v1')).toBeUndefined();
+    expect(knownServiceAt('https://openrouter.ai/api/v1')).toBeUndefined();
     expect(knownServiceAt(`${zen.baseUrl}/extra`)).toBeUndefined();
     expect(knownServiceAt(zen.baseUrl.replace('https://', 'http://'))).toBeUndefined();
     expect(knownServiceAt('')).toBeUndefined();
@@ -66,6 +96,8 @@ describe('a form started from a service', () => {
   test('takes its id, name, address and style', () => {
     const service = KNOWN_SERVICES.find((one) => one.id === 'commandcode')!;
     expect(startFrom(form, service)).toMatchObject({ id: 'commandcode', displayName: 'Command Code', baseUrl: 'https://api.commandcode.ai/provider/v1', apiStyle: 'openai' });
+    // The one that is talked to another way says so.
+    expect(startFrom({ ...form, apiStyle: 'openai' as const }, KNOWN_SERVICES.find((one) => one.id === 'anthropic')!).apiStyle).toBe('anthropic');
   });
 
   test('keeps what the person typed that the service does not say, and leaves the form it was given as it was', () => {
