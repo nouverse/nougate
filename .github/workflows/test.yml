@@ -6,9 +6,13 @@ on:
   pull_request:
     branches: [main]
 
+# On a GitHub-hosted runner, as Nouride's public repository is: this one is public too, so its minutes cost nothing,
+# and a pull request from a fork never runs on a machine at home. The self-hosted line is kept, commented, beside
+# each `runs-on`, for going back.
 jobs:
   test:
-    runs-on: [self-hosted, build-runner]
+    # runs-on: [self-hosted, build-runner]
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout repository

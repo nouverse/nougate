@@ -1,3 +1,4 @@
 self-hosted-runner:
-  # The homelab build runner (VM 107) every job runs on.
+  # The homelab build runner (VM 107). No job runs on it now: each job's line for it is kept, commented, beside its
+  # `runs-on`, and this is the label that line names.
   labels: [build-runner]

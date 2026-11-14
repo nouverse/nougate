@@ -17,7 +17,9 @@ jobs:
   build-and-push:
     # A push to main that passed: not a pull request's run, not a failed one.
     if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
-    runs-on: [self-hosted, build-runner]
+    # On a GitHub-hosted runner, as Test is (test.yml says why). The image is for linux/amd64, which that runner is.
+    # runs-on: [self-hosted, build-runner]
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
