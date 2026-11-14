@@ -8,7 +8,8 @@ import {
   useInvalidateCustomProviders,
 } from '@/hooks/useQueries';
 import { api } from '@/lib/api';
-import { COST_LABEL, KNOWN_SERVICES, knownServiceAt, startFrom } from '@/lib/known-services';
+import { COST_LABEL, KNOWN_SERVICES, type ProviderForm, creationOf, knownServiceAt, startFrom } from '@/lib/known-services';
+import { headersFromText, headersToText } from '@/lib/extra-headers';
 import { KeyHints } from '@/components/shared/KeyHints';
 import { CustomApiStyle, CustomProviderModel, JitterConfig } from '@/lib/types';
 import { ConfirmModal } from '@/components/shared/ConfirmModal';
@@ -21,21 +22,12 @@ export const Route = createFileRoute('/custom-providers')({
   component: CustomProvidersPage,
 });
 
-interface NewProviderForm {
-  id: string;
-  displayName: string;
-  baseUrl: string;
-  apiStyle: CustomApiStyle;
-  apiKey: string;
-  keyLabel: string;
-  autoLoadModels: boolean;
-}
-
-const EMPTY_FORM: NewProviderForm = {
+const EMPTY_FORM: ProviderForm = {
   id: '',
   displayName: '',
   baseUrl: '',
   apiStyle: 'openai',
+  extraHeaders: '',
   apiKey: '',
   keyLabel: '',
   autoLoadModels: true,
@@ -50,7 +42,7 @@ function CustomProvidersPage() {
   const { data: detail } = useCustomProvider(selectedId);
 
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState<NewProviderForm>(EMPTY_FORM);
+  const [form, setForm] = useState<ProviderForm>(EMPTY_FORM);
   const [newKey, setNewKey] = useState({ apiKey: '', label: '' });
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   // Models are fetched only once the panel is opened — an aggregator can list
@@ -82,16 +74,7 @@ function CustomProvidersPage() {
   };
 
   const createMutation = useMutation({
-    mutationFn: () =>
-      api.post<any>('/api/custom-providers', {
-        id: form.id,
-        displayName: form.displayName || form.id,
-        baseUrl: form.baseUrl,
-        apiStyle: form.apiStyle,
-        apiKey: form.apiKey || undefined,
-        keyLabel: form.keyLabel || undefined,
-        autoLoadModels: form.autoLoadModels,
-      }),
+    mutationFn: () => api.post<any>('/api/custom-providers', creationOf(form)),
     onSuccess: (result) => {
       const created = result.provider;
       setSelectedId(created.id);
@@ -329,6 +312,8 @@ function CustomProvidersPage() {
 
               {/* Every service's key page and what it costs, folded until asked for; a line fills the form as its chip does. */}
               <KeyHints onUse={(service) => setForm(startFrom(form, service))} />
+
+              <ExtraHeadersField value={form.extraHeaders} onChange={(extraHeaders) => setForm({ ...form, extraHeaders })} />
 
               <label className="flex items-start gap-3 cursor-pointer">
                 <input
@@ -629,6 +614,29 @@ function Field({
   );
 }
 
+/** What the extra headers are for and how a line is written: the same words on the add form and on a saved provider. */
+const HEADERS_HINT = 'Only if the upstream asks for them. One on each line, as Name: value. {session} as a value becomes the id of the conversation on each request.';
+
+/**
+ * A provider's extra headers, one on each line. A known service fills what it asks for (OpenCode Go's session header),
+ * and every line stays the person's to change.
+ */
+function ExtraHeadersField({ value, onChange, saved = false }: { value: string; onChange: (text: string) => void; /** A saved provider: a line may be a name alone. */ saved?: boolean }) {
+  return (
+    <Field label="Extra headers" hint={saved ? `${HEADERS_HINT} A saved one shows its name only: leave its line as it is to keep it, or remove the line to drop it.` : HEADERS_HINT}>
+      <textarea
+        className="textarea textarea-bordered w-full bg-base-100 font-mono text-xs leading-relaxed"
+        rows={Math.max(2, value.split('\n').length)}
+        aria-label="Extra headers"
+        spellCheck={false}
+        placeholder="Name: value"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </Field>
+  );
+}
+
 function ProviderSettings({
   detail,
   onSave,
@@ -645,6 +653,9 @@ function ProviderSettings({
   const [apiStyle, setApiStyle] = useState<CustomApiStyle>(detail.apiStyle);
   const [enabled, setEnabled] = useState<boolean>(detail.enabled);
   const [jitter, setJitter] = useState<JitterConfig>(detail.jitter);
+  // As lines; a saved value is not sent to the page, so its line is its name alone.
+  const savedHeaders = headersToText(detail.extraHeaders);
+  const [extraHeaders, setExtraHeaders] = useState(savedHeaders);
 
   // Re-seed the form whenever a different provider is selected.
   useEffect(() => {
@@ -653,7 +664,8 @@ function ProviderSettings({
     setApiStyle(detail.apiStyle);
     setEnabled(detail.enabled);
     setJitter(detail.jitter);
-  }, [detail.id, detail.baseUrl, detail.displayName, detail.apiStyle, detail.enabled, detail.jitter]);
+    setExtraHeaders(savedHeaders);
+  }, [detail.id, detail.baseUrl, detail.displayName, detail.apiStyle, detail.enabled, detail.jitter, savedHeaders]);
 
   return (
     <div className="card bg-base-200 border border-base-300 shadow-sm">
@@ -704,6 +716,8 @@ function ProviderSettings({
           </Field>
 
         </div>
+
+        <ExtraHeadersField value={extraHeaders} onChange={setExtraHeaders} saved />
 
         {/* Own row, not a grid cell: the description wraps instead of running
             off the card on narrow screens. */}
@@ -784,7 +798,7 @@ function ProviderSettings({
             type="button"
             className="btn btn-sm btn-primary rounded-xl font-semibold gap-1.5"
             disabled={isSaving}
-            onClick={() => onSave({ displayName, baseUrl, apiStyle, enabled, jitter })}
+            onClick={() => onSave({ displayName, baseUrl, apiStyle, enabled, jitter, extraHeaders: headersFromText(extraHeaders) })}
           >
             <Save className="w-3.5 h-3.5" />
             Save

@@ -138,6 +138,76 @@ function rowToModel(row: any): CustomProviderModelRecord {
 /**
  * Normalize a base URL so endpoint building can assume no trailing slash.
  */
+/** A header's name as HTTP takes one, in the letters services use for theirs. */
+const HEADER_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+/**
+ * Headers the request says for itself. A key typed as a header would be kept and shown as plain text, where a key
+ * added as a key is masked and rotated. `anthropic-version` is not one of them: a provider may pin its own.
+ */
+const OWN_HEADERS = new Set(['authorization', 'x-api-key', 'content-type']);
+const MAX_HEADERS = 16;
+const MAX_HEADER_VALUE = 1024;
+
+/**
+ * In a header's value, where the gateway writes the conversation's id on each request (`executor.ts`). The one value
+ * that is no secret by what it is, so the one a view shows.
+ */
+export const SESSION_PLACEHOLDER = '{session}';
+
+/**
+ * A provider's extra headers as its form sent them, which is the whole set: a header the form no longer names is
+ * removed. A name with no value keeps the value saved under it, because a saved value is never sent back to the form
+ * (`visibleHeaders`) to be sent here again.
+ */
+function normalizeExtraHeaders(
+  asked: unknown,
+  saved: Record<string, string> = {},
+): Record<string, string> {
+  if (typeof asked !== 'object' || asked === null || Array.isArray(asked)) {
+    throw new CustomProviderError('Extra headers must be a set of names with their values.');
+  }
+  const savedBy = new Map(Object.entries(saved).map(([name, value]) => [name.toLowerCase(), value]));
+  const headers: Record<string, string> = {};
+  const seen = new Set<string>();
+  for (const [typed, given] of Object.entries(asked)) {
+    const name = typed.trim();
+    const lower = name.toLowerCase();
+    if (!HEADER_NAME.test(name)) {
+      throw new CustomProviderError(`"${typed}" is not a header's name.`);
+    }
+    if (OWN_HEADERS.has(lower)) {
+      throw new CustomProviderError(`${name} is a header the request sends itself. Add the key as an API key.`);
+    }
+    // HTTP reads a header's name in any case: two spellings of one would be sent as one header with both values.
+    if (seen.has(lower)) {
+      throw new CustomProviderError(`Header ${name} is there twice.`);
+    }
+    seen.add(lower);
+    const value = typeof given === 'string' && given.trim() ? given.trim() : savedBy.get(lower);
+    if (value === undefined) {
+      throw new CustomProviderError(`Header ${name} needs a value.`);
+    }
+    if (/[\r\n]/.test(value) || value.length > MAX_HEADER_VALUE) {
+      throw new CustomProviderError(`Header ${name} has a value a header cannot carry.`);
+    }
+    headers[name] = value;
+  }
+  if (seen.size > MAX_HEADERS) {
+    throw new CustomProviderError(`A provider takes at most ${MAX_HEADERS} extra headers.`);
+  }
+  return headers;
+}
+
+/**
+ * A provider's extra headers as a browser is told them: every name, and a value only where it is `{session}`. Any
+ * other may hold a gateway's key, and is kept from the page as a stored API key is.
+ */
+export function visibleHeaders(headers: Record<string, string>): Record<string, string | null> {
+  return Object.fromEntries(
+    Object.entries(headers).map(([name, value]) => [name, value === SESSION_PLACEHOLDER ? value : null]),
+  );
+}
+
 function normalizeBaseUrl(baseUrl: string): string {
   const trimmed = baseUrl.trim().replace(/\/+$/, '');
   if (!/^https?:\/\//i.test(trimmed)) {
@@ -167,7 +237,8 @@ export interface CreateCustomProviderInput {
   displayName?: string;
   baseUrl: string;
   apiStyle?: CustomApiStyle;
-  extraHeaders?: Record<string, string>;
+  /** The whole set, as the form holds it; a name with no value keeps the saved one (`normalizeExtraHeaders`). */
+  extraHeaders?: Record<string, string | null>;
   enabled?: boolean;
   jitter?: Partial<JitterConfig>;
 }
@@ -194,7 +265,7 @@ export async function createCustomProvider(input: CreateCustomProviderInput): Pr
     baseUrl: normalizeBaseUrl(input.baseUrl ?? ''),
     apiStyle: input.apiStyle === 'anthropic' ? 'anthropic' : 'openai',
     enabled: input.enabled !== false,
-    extraHeaders: input.extraHeaders ?? {},
+    extraHeaders: input.extraHeaders === undefined ? {} : normalizeExtraHeaders(input.extraHeaders),
     jitter: normalizeJitterConfig(input.jitter),
     createdAt: now,
     updatedAt: now,
@@ -234,7 +305,7 @@ export async function updateCustomProvider(
     baseUrl: updates.baseUrl ? normalizeBaseUrl(updates.baseUrl) : existing.baseUrl,
     apiStyle: updates.apiStyle ?? existing.apiStyle,
     enabled: updates.enabled ?? existing.enabled,
-    extraHeaders: updates.extraHeaders ?? existing.extraHeaders,
+    extraHeaders: updates.extraHeaders === undefined ? existing.extraHeaders : normalizeExtraHeaders(updates.extraHeaders, existing.extraHeaders),
     // Merged field by field, so the dashboard can send just the one control the
     // user touched without resetting the other two to defaults.
     jitter: normalizeJitterConfig({ ...existing.jitter, ...updates.jitter }),

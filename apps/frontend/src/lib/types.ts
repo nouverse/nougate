@@ -200,7 +200,8 @@ export interface CustomProviderSummary {
   baseUrl: string;
   apiStyle: CustomApiStyle;
   enabled: boolean;
-  extraHeaders: Record<string, string>;
+  /** By name. A saved value is `null`, never sent to the page, but for `{session}`: the one that is no secret. */
+  extraHeaders: Record<string, string | null>;
   jitter: JitterConfig;
   createdAt: number;
   updatedAt: number;

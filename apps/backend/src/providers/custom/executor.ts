@@ -3,9 +3,11 @@ import { getProxyConfig } from '@/config/manager';
 import { adminEventBus } from '@/core/events';
 import { capRotationPool } from '@/core/rotation-pool';
 import { ProviderUnavailableError } from '@/core/upstream-errors';
+import { NOUGATE_VERSION } from '@/core/version';
 import {
   type CustomProviderKeyRecord,
   type CustomProviderRecord,
+  SESSION_PLACEHOLDER,
   listProviderKeys,
   persistKeyState,
 } from './store';
@@ -63,14 +65,31 @@ export function modelsEndpoint(provider: CustomProviderRecord): string {
 /**
  * Auth headers follow the convention of the selected API style: OpenAI uses a
  * Bearer token, Anthropic uses x-api-key plus an API version.
+ *
+ * `sessionId` is the request's conversation (`RequestContext.sessionId`), written wherever an extra header's value
+ * says `{session}`. A service that routes or caches by conversation asks for it in a header of its own name, and one
+ * refuses a request without it: OpenCode Go answers 400 `MissingSessionID` unless `x-opencode-session` is sent. The
+ * provider says which header, and nothing here reads the service's name. A call that belongs to no conversation, the
+ * model listing, carries an id of its own: a header left empty or as the bare placeholder would be one more refusal
+ * to explain.
+ *
+ * The gateway says who it is, by its own name where the HTTP library's went: a service that tells its clients apart
+ * asks for that. An extra header named `user-agent`, in any case, is the operator's own answer.
  */
 export function buildHeaders(
   provider: CustomProviderRecord,
   apiKey: string,
+  sessionId?: string,
 ): Record<string, string> {
+  const session = sessionId || crypto.randomUUID().replaceAll('-', '');
+  const extra = Object.fromEntries(
+    Object.entries(provider.extraHeaders).map(([name, value]) => [name, String(value).replaceAll(SESSION_PLACEHOLDER, session)]),
+  );
+  const namesItself = Object.keys(extra).some((name) => name.toLowerCase() === 'user-agent');
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    ...provider.extraHeaders,
+    ...(namesItself ? {} : { 'User-Agent': `nougate/${NOUGATE_VERSION}` }),
+    ...extra,
   };
 
   if (provider.apiStyle === 'anthropic') {
@@ -180,6 +199,8 @@ export interface CustomExecuteOptions {
   body: any;
   modelSpec: IModelSpec;
   clientId?: string;
+  /** The request's conversation, for a provider whose extra headers ask for it (`SESSION_PLACEHOLDER`). */
+  sessionId?: string;
 }
 
 /**
@@ -245,7 +266,7 @@ export async function executeCustomRequest(
     try {
       const response = await fetch(endpoint, {
         method: 'POST',
-        headers: buildHeaders(provider, key.apiKey),
+        headers: buildHeaders(provider, key.apiKey, options.sessionId),
         body: JSON.stringify(body),
         signal: controller.signal,
       });

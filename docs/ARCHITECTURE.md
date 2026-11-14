@@ -381,6 +381,12 @@ in `custom_providers`. It is the reference for "provider as data":
 
 - The record carries id, display name, base URL, API style (`openai` | `anthropic`),
   extra headers and an enabled flag.
+- What a service needs beyond a key is said by the record, never read from its id: an extra
+  header whose value holds `{session}` is sent with the request's conversation id
+  (`RequestContext.sessionId`) in its place, which is how a provider on OpenCode Go says
+  `x-opencode-session`. The dashboard's known services fill that header into the form; the
+  backend knows no service by name. A saved header's value is not sent to the dashboard
+  (`visibleHeaders`), and a save that names a header without a value keeps the one stored.
 - Keys are accounts, with rotation, health and cooldown.
 - Models are rows, optionally auto-discovered from the upstream `/models` endpoint.
   Re-syncing adds new models and never overwrites hand-edited prices.

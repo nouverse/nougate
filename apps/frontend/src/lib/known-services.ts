@@ -1,3 +1,4 @@
+import { headersFromText, headersToText } from './extra-headers';
 import type { CustomApiStyle } from './types';
 
 /**
@@ -12,9 +13,10 @@ import type { CustomApiStyle } from './types';
  * not cover the same company's API, and a few services do include the key in a plan. Each says which it is.
  *
  * Each entry was read from the service's own documentation and its address asked without a key: it refused for the
- * key alone, which is what a right address does. A service that needs more than a key (OpenCode Go asks for a session
- * header on every request, which a custom provider does not send) is left out, since the hint would lead to a
- * provider that refuses everything.
+ * key alone, which is what a right address does. A service that needs more than a key says what in `headers`, which
+ * a press puts in the form's extra headers, where the person sees them and may change them: OpenCode Go refuses a
+ * request that does not say its conversation in `x-opencode-session`, and the gateway writes the conversation's id
+ * where a header's value says `{session}`.
  */
 export interface KnownService {
   /** The provider id the form starts with: the prefix its models are called by. */
@@ -29,6 +31,11 @@ export interface KnownService {
   cost: 'per-use' | 'included';
   /** What it costs and what to know first, in a sentence or two. */
   note: string;
+  /**
+   * Headers the service asks for beyond its key, which a press fills the form's extra headers with. `{session}` in a
+   * value is where the gateway writes the conversation's id on each request.
+   */
+  headers?: Record<string, string>;
 }
 
 export const KNOWN_SERVICES: KnownService[] = [
@@ -87,6 +94,16 @@ export const KNOWN_SERVICES: KnownService[] = [
     note: 'Charged per request, from credits you add there. Its free models answer only inside OpenCode itself.',
   },
   {
+    id: 'opencode-go',
+    displayName: 'OpenCode Go',
+    baseUrl: 'https://opencode.ai/inference/go/openai/v1',
+    apiStyle: 'openai',
+    keyUrl: 'https://opencode.ai/console',
+    cost: 'included',
+    note: "Your OpenCode Go plan includes the key: use counts against the plan's limits and stops there, so nothing is charged outside it unless you turn on Extra Usage there. OpenCode means Go for coding agents.",
+    headers: { 'x-opencode-session': '{session}' },
+  },
+  {
     id: 'commandcode',
     displayName: 'Command Code',
     baseUrl: 'https://api.commandcode.ai/provider/v1',
@@ -109,13 +126,42 @@ export function knownServiceAt(baseUrl: string): KnownService | undefined {
   return KNOWN_SERVICES.find((service) => service.baseUrl === at);
 }
 
+/** The add form's fields: what a known service can start, and what the person types beside it. */
+export interface ProviderForm {
+  id: string;
+  displayName: string;
+  baseUrl: string;
+  apiStyle: CustomApiStyle;
+  /** One header on each line, as `Name: value` (`extra-headers.ts`). */
+  extraHeaders: string;
+  apiKey: string;
+  keyLabel: string;
+  autoLoadModels: boolean;
+}
+
 /**
- * A form started from a known service: its id, name, address and style. What the person already typed that the
- * service does not say (a key, its label, whether to load the models) is kept.
+ * What the add form sends to create a provider: its fields, the extra headers as the lines of their field say them.
+ * None are sent for a field left empty, which is what a provider with no extra headers is.
  */
-export function startFrom<T extends { id: string; displayName: string; baseUrl: string; apiStyle: CustomApiStyle }>(
-  form: T,
-  service: KnownService,
-): T {
-  return { ...form, id: service.id, displayName: service.displayName, baseUrl: service.baseUrl, apiStyle: service.apiStyle };
+export function creationOf(form: ProviderForm) {
+  const headers = headersFromText(form.extraHeaders);
+  return {
+    id: form.id,
+    displayName: form.displayName || form.id,
+    baseUrl: form.baseUrl,
+    apiStyle: form.apiStyle,
+    apiKey: form.apiKey || undefined,
+    keyLabel: form.keyLabel || undefined,
+    autoLoadModels: form.autoLoadModels,
+    ...(Object.keys(headers).length > 0 ? { extraHeaders: headers } : {}),
+  };
+}
+
+/**
+ * A form started from a known service: its id, name, address and style, and the headers it asks for, which replace
+ * what the field held so one service's header never stays on a form pointed at another. What the person already typed
+ * that the service does not say (a key, its label, whether to load the models) is kept.
+ */
+export function startFrom(form: ProviderForm, service: KnownService): ProviderForm {
+  return { ...form, id: service.id, displayName: service.displayName, baseUrl: service.baseUrl, apiStyle: service.apiStyle, extraHeaders: headersToText(service.headers) };
 }

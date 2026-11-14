@@ -7,14 +7,14 @@ import { describe, expect, test } from 'bun:test';
  * here a second time as their services' own documentation gives them, and what a press does to the form is held too.
  */
 
-const { COST_LABEL, KNOWN_SERVICES, knownServiceAt, startFrom } = await import('@/lib/known-services');
+const { COST_LABEL, KNOWN_SERVICES, creationOf, knownServiceAt, startFrom } = await import('@/lib/known-services');
 
 /** The backend's rule for a provider id (`PROVIDER_ID_PATTERN`), which the form's field repeats. */
 const PROVIDER_ID = /^[a-z][a-z0-9_-]*$/;
 
 describe('the known services', () => {
   test('are the ones a person is likely to mean, in this order', () => {
-    expect(KNOWN_SERVICES.map((service) => service.displayName)).toEqual(['OpenAI', 'Anthropic', 'Google Gemini', 'DeepSeek', 'Z.ai', 'OpenCode Zen', 'Command Code']);
+    expect(KNOWN_SERVICES.map((service) => service.displayName)).toEqual(['OpenAI', 'Anthropic', 'Google Gemini', 'DeepSeek', 'Z.ai', 'OpenCode Zen', 'OpenCode Go', 'Command Code']);
   });
 
   test('each holds what the form needs, in the form the backend takes', () => {
@@ -41,6 +41,7 @@ describe('the known services', () => {
       deepseek: ['openai', 'https://api.deepseek.com/v1', 'https://platform.deepseek.com/api_keys'],
       zai: ['openai', 'https://api.z.ai/api/paas/v4', 'https://z.ai/manage-apikey/apikey-list'],
       'opencode-zen': ['openai', 'https://opencode.ai/inference/openai/v1', 'https://opencode.ai/console'],
+      'opencode-go': ['openai', 'https://opencode.ai/inference/go/openai/v1', 'https://opencode.ai/console'],
       commandcode: ['openai', 'https://api.commandcode.ai/provider/v1', 'https://commandcode.ai/settings/keys'],
     });
   });
@@ -58,17 +59,23 @@ describe('the known services', () => {
 
   test('what is part of a plan says nothing is charged outside it; what is charged by use says which subscription does not cover it', () => {
     const note = Object.fromEntries(KNOWN_SERVICES.map((service) => [service.id, service.note]));
-    expect(KNOWN_SERVICES.filter((service) => service.cost === 'included').map((service) => service.id)).toEqual(['commandcode']);
-    expect(note.commandcode).toContain('nothing is charged outside it');
+    expect(KNOWN_SERVICES.filter((service) => service.cost === 'included').map((service) => service.id)).toEqual(['opencode-go', 'commandcode']);
+    for (const plan of ['opencode-go', 'commandcode']) expect(note[plan]).toContain('nothing is charged outside it');
+    // The one way a Go plan does charge outside it, and what OpenCode means the plan for.
+    expect(note['opencode-go']).toContain('unless you turn on Extra Usage there');
+    expect(note['opencode-go']).toContain('OpenCode means Go for coding agents');
+    expect(note['opencode-zen']).toStartWith('Charged per request');
     expect(note.commandcode).toContain('Every plan but Go');
     expect(note.openai).toContain('A ChatGPT subscription does not cover it');
     expect(note.anthropic).toContain('apart from a Claude subscription');
     expect(note.zai).toContain('does not cover use from here');
   });
 
-  test('a service that needs more than a key and an address is not offered', () => {
-    // OpenCode Go refuses a request with no session header, which a custom provider does not send.
-    expect(KNOWN_SERVICES.some((service) => service.baseUrl.includes('/go/'))).toBe(false);
+  test('a service that needs more than a key says what: the one here that asks for a header', () => {
+    // OpenCode Go refuses a request with no session header on it.
+    expect(Object.fromEntries(KNOWN_SERVICES.filter((service) => service.headers).map((service) => [service.id, service.headers]))).toEqual({
+      'opencode-go': { 'x-opencode-session': '{session}' },
+    });
   });
 });
 
@@ -91,7 +98,7 @@ describe('the service an address is', () => {
 });
 
 describe('a form started from a service', () => {
-  const form = { id: 'mine', displayName: 'Mine', baseUrl: 'https://example.test/v1', apiStyle: 'anthropic' as const, apiKey: 'typed-already', keyLabel: 'work', autoLoadModels: false };
+  const form = { id: 'mine', displayName: 'Mine', baseUrl: 'https://example.test/v1', apiStyle: 'anthropic' as const, extraHeaders: '', apiKey: 'typed-already', keyLabel: 'work', autoLoadModels: false };
 
   test('takes its id, name, address and style', () => {
     const service = KNOWN_SERVICES.find((one) => one.id === 'commandcode')!;
@@ -107,5 +114,40 @@ describe('a form started from a service', () => {
     expect(form.id).toBe('mine');
     // And the address it now holds is the service's: the hint under the key follows from it.
     expect(knownServiceAt(started.baseUrl)).toBe(service);
+  });
+
+  test("takes the headers the service asks for into the field a person sees: OpenCode Go's, as a line", () => {
+    const go = KNOWN_SERVICES.find((one) => one.id === 'opencode-go')!;
+    expect(startFrom(form, go).extraHeaders).toBe('x-opencode-session: {session}');
+  });
+
+  test("a service that asks for none empties the field: one service's header does not stay on a form pointed at another", () => {
+    const go = KNOWN_SERVICES.find((one) => one.id === 'opencode-go')!;
+    const zen = KNOWN_SERVICES.find((one) => one.id === 'opencode-zen')!;
+    expect(startFrom(startFrom(form, go), zen).extraHeaders).toBe('');
+  });
+});
+
+describe('what the add form sends', () => {
+  const typed = { id: 'mine', displayName: '', baseUrl: 'https://example.test/v1', apiStyle: 'openai' as const, extraHeaders: '', apiKey: '', keyLabel: '', autoLoadModels: true };
+  const go = KNOWN_SERVICES.find((service) => service.id === 'opencode-go')!;
+
+  test('is its fields: a name left empty is the id, and a key, a label or headers left empty are not sent', () => {
+    expect(creationOf(typed)).toEqual({ id: 'mine', displayName: 'mine', baseUrl: 'https://example.test/v1', apiStyle: 'openai', apiKey: undefined, keyLabel: undefined, autoLoadModels: true });
+    expect(creationOf({ ...typed, displayName: 'Mine', apiKey: 'typed-key', keyLabel: 'work', autoLoadModels: false })).toMatchObject({ displayName: 'Mine', apiKey: 'typed-key', keyLabel: 'work', autoLoadModels: false });
+    expect(creationOf({ ...typed, extraHeaders: ' \n\n' })).not.toHaveProperty('extraHeaders');
+  });
+
+  test("a provider started from OpenCode Go is created with the header Go refuses a request without", () => {
+    expect(creationOf(startFrom(typed, go))).toMatchObject({ id: 'opencode-go', baseUrl: go.baseUrl, extraHeaders: { 'x-opencode-session': '{session}' } });
+  });
+
+  test('the headers sent are the lines of the field as the person left them: one added, the filled one changed or removed', () => {
+    const started = startFrom(typed, go);
+    expect(creationOf({ ...started, extraHeaders: `${started.extraHeaders}\nHTTP-Referer: https://example.test` }).extraHeaders).toEqual({ 'x-opencode-session': '{session}', 'HTTP-Referer': 'https://example.test' });
+    expect(creationOf({ ...started, extraHeaders: 'x-opencode-session: fixed-by-hand' }).extraHeaders).toEqual({ 'x-opencode-session': 'fixed-by-hand' });
+    expect(creationOf({ ...started, extraHeaders: '' })).not.toHaveProperty('extraHeaders');
+    // Typed by hand on any address: the field is what is sent, whatever the address is.
+    expect(creationOf({ ...typed, extraHeaders: 'x-team: ops' }).extraHeaders).toEqual({ 'x-team': 'ops' });
   });
 });

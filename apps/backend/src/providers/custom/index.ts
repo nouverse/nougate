@@ -272,6 +272,7 @@ export class CustomProvider implements IProvider {
       body: upstreamBody,
       modelSpec,
       clientId: params.ctx.clientId,
+      sessionId: params.ctx.sessionId,
     });
 
     // Upstream rejected the request itself — hand the error back untouched.

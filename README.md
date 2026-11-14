@@ -523,7 +523,15 @@ What a custom provider carries:
   from the model name, which handles aggregator IDs like `anthropic/claude-opus-4.5` correctly.
   A model nothing can price is marked **unpriced** and counts as $0 rather than being given an
   invented rate — set a number when you want it included in spend.
-- **Extra headers** — merged into every upstream request, for gateways that need them.
+- **Extra headers** — sent with every upstream request, for a service that asks for more than
+  a key. One on each line of the provider's form, as `Name: value`. Where a value says
+  `{session}`, the gateway writes the id of the conversation on each request: OpenCode Go
+  refuses a request without `x-opencode-session`, so picking **OpenCode Go** under *Start from
+  a service* fills `x-opencode-session: {session}`, and every line stays yours to change. A
+  saved header shows its name only, as a stored key does; a line left as it is keeps its
+  value. `Authorization`, `x-api-key` and `Content-Type` are the request's own and are not
+  taken: add a key as an API key. Requests to a custom provider say `User-Agent:
+  nougate/<version>`, unless an extra header names another.
 
 Provider IDs must be lowercase (`[a-z][a-z0-9_-]*`) and cannot collide with a built-in
 provider. Disabling a provider unregisters its prefix without deleting its keys or models.

@@ -12,6 +12,7 @@ import {
   removeProviderKey,
   updateCustomProvider,
   upsertProviderModels,
+  visibleHeaders,
 } from '@/providers/custom/store';
 import { AccountLimitError, getMaxAccountMultiplexing } from '@/core/rotation-pool';
 import { syncProviderModels } from '@/providers/custom/model-sync';
@@ -80,6 +81,7 @@ async function describeProvider(id: string) {
   // Models panel fetches them from /models when it is opened.
   return {
     ...record,
+    extraHeaders: visibleHeaders(record.extraHeaders),
     keys: (await listProviderKeys(id)).map(maskKey),
     modelCount: (await listProviderModels(id)).length,
     // Null when MAX_ACCOUNT_MULTIPLEXING is unset, which the dashboard renders
@@ -114,6 +116,7 @@ export async function handleCustomProvidersRoute(
           await Promise.all(
             providers.map(async (record) => ({
               ...record,
+              extraHeaders: visibleHeaders(record.extraHeaders),
               keyCount: (await listProviderKeys(record.id)).length,
               modelCount: (await listProviderModels(record.id)).length,
             })),
